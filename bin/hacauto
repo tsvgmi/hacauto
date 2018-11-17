@@ -1,0 +1,67 @@
+#!/bin/bash
+. ${0%/*}/../etc/tool.env
+#######################################################################
+# File: 	admtool
+# Description:  Sysadmin tools
+# Created:	2002-06-23
+# $Id$
+#######################################################################
+PATH=$PATH:/sbin:/usr/sbin
+if [ -f ~/.rvm/scripts/rvm ]; then
+  unset RUBY RUBYOPT RUBYLIB
+  [ -f ~/.rvm/scripts/rvm ] && . ~/.rvm/scripts/rvm
+fi
+
+#------------------------------------------------ Begin of script ---
+#------------------------------------------------ Begin of script ---
+#------------------------------------------------ Begin of script ---
+
+F_subCommand $*
+oper=$1; shift
+case $oper in
+  download-transpose)
+    while getopts :s: i; do
+      case $i in
+      s) offset=$OPTARG ;;
+      esac
+    done
+    let i=$OPTIND-1; shift $i
+    OPTIND=0
+
+    tdir=$1
+    if [ -d "$tdir" ]; then
+      true
+    elif [ -f "$tdir" ]; then
+      wfile=$tdir
+      tdir=$PWD
+    elif [ ${tdir#http} != $tdir ]; then
+      echo "Downloading from youtube"
+      rm -f youtube.mp3
+      hacauto.rb youtube_dl $tdir -o youtube
+      tdir=$PWD
+      wfile=youtube.mp3
+    else
+      echo "Don't know how to handle $tdir"
+      exit 1
+    fi
+    if [ ! "$wfile" ]; then
+      set -- $(ls -t $tdir/*.mp3)
+      wfile=$1
+    fi
+    echo "Latest file is $wfile"
+    if [ "$offset" ]; then
+      ofile=test.mp3
+      echo "Transpose $wfile by $offset semitone to $ofile"
+      sox $wfile $ofile pitch ${offset}00
+      wfile=$ofile
+    fi
+    open -a "Sonic Visualiser" $wfile
+    ;;
+
+  *)
+    roper=$(echo $oper | tr '-' '_')
+    exec bundle exec hacauto.rb $roper "$@"
+    ;;
+esac
+exit 0
+
