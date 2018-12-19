@@ -45,22 +45,21 @@ case $oper in
       exit 1
     fi
     if [ ! "$wfile" ]; then
-      set -- $(ls -t $tdir/*.mp3)
-      wfile=$1
+      wfile=$(ls -t $tdir/*.mp3 | head -1)
     fi
     echo "Latest file is $wfile"
     if [ "$offset" ]; then
       ofile=test.mp3
       echo "Transpose $wfile by $offset semitone to $ofile"
-      sox $wfile $ofile pitch ${offset}00
+      sox "$wfile" $ofile pitch ${offset}00
       wfile=$ofile
     fi
-    open -a "Sonic Visualiser" $wfile
+    open -a "Sonic Visualiser" "$wfile"
     ;;
 
   *)
     roper=$(echo $oper | tr '-' '_')
-    exec bundle exec hacauto.rb $roper "$@"
+    exec hacauto.rb $roper "$@"
     ;;
 esac
 exit 0

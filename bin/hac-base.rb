@@ -94,7 +94,7 @@ end
 class ClickLog
   def initialize(auser)
     @kmap    = {}
-    @logfile = "hac_click-#{auser}.log"
+    @logfile = "logs/hac_click-#{auser}.log"
     if test(?s, @logfile)
       File.read(@logfile).split("\n").each do |l|
         @kmap[l] = true

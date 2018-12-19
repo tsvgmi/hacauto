@@ -367,6 +367,9 @@ EOH
   end
 
   def create_from_site(spage, store, coptions={})
+    require 'byebug'
+
+    byebug
     donelist = []
     loop do
       sinfo = store.peek
@@ -400,6 +403,7 @@ EOH
         break if input != :next
       end
 
+      Plog.dump_info(sinfo:sinfo, text_mode:text_mode)
       if sinfo[:href]
         if text_mode
           puts sinfo.to_yaml
@@ -806,6 +810,9 @@ class HACAuto
       [slist, nlist]
     end
 
+    def filter_slist
+    end
+
     def update_pl_desc(spage, plno, title, description)
       path = "/playlist/v/#{plno}"
       spage.goto(path)
@@ -846,7 +853,7 @@ class HACAuto
       _connect_site do |spage|
         bar = ProgressBar.new(slist.size)
         slist.each_with_index do |sentry, index|
-          sname, surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
+          sname, _surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
           Plog.info "Next to add is #{sname} - [#{index+1}/#{slist.size}]"
           hacfill.add_to_plist(spage, plname, sentry, options)
           bar.increment!
@@ -870,7 +877,10 @@ class HACAuto
           Plog.info "Next to import is #{sname} - [#{index+1}/#{slist.size}]"
           input = hacfill.get_command_from_user
           break unless input
-          unless input.is_a?(Symbol)
+          if input.is_a?(Symbol)
+            if input == :text_mode
+            end
+          else
             hacfill.create_song(spage, sentry, coptions)
           end
         end
@@ -924,15 +934,6 @@ class HACAuto
         (csize >= minc) && (csize <= maxc)
       end
       result.to_yaml
-    end
-
-    def hac_playlist_pref(path, *users)
-      options = getOption
-      setlist = HacSource.new(options).playlist_pref(path, users, getOption)
-      _connect_site do |spage|
-        nlinks = setlist.map{|r| r[:href]}
-        spage.click_links(nlinks, "#song-favorite-star-btn", options)
-      end
     end
 
     # Saving my stuff locally
@@ -1064,6 +1065,19 @@ class HACAuto
         source.song_list(url, options)
       end
       result.to_yaml
+    end
+
+    def playfile_to_hac(plname, file)
+      require 'byebug'
+
+      byebug
+      options = getOption
+      options[:site_filter] = 'hac'
+      slist   = File.read(file).split("\n").map do |r|
+        {name: r.sub(/,.*$/,'')}
+      end
+      slist, nlist = HacSource.new(options).find_matching_songs(slist)
+      _post_playlist(plname, slist, options)
     end
 
     # Convert a playlist to HAC (find matching song and build list)
@@ -1209,6 +1223,11 @@ class HACAuto
         end
       end
       result
+    end
+
+    def sendto(url, method, *args)
+      options = getOption
+      MusicSource.mk_source(url, options).send(method, url, options, *args)
     end
   end
 end

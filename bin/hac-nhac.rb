@@ -678,7 +678,7 @@ class ZingSource < MusicSource
       if url =~ /beta.mp3.zing.vn/
         slist = spage.page.css(".card-info").map do |sitem|
           sinfo  = sitem.css('.title a')[0]
-          href   = base_url + sinfo['href']
+          href   = base_url + (sinfo['href'] || '')
           name   = sinfo.text.strip
           artist = sitem.css('.artist').text.strip
           {
@@ -861,6 +861,7 @@ class HacSource < MusicSource
     author    = page.css("#song-detail-info tr")[1].css("td")[0].text.strip
     genre     = page.css("#song-detail-info tr")[1].css("td")[1].text.strip
     perf_link = page.css('.perform a').last['href']
+    song_key  = (lnote + lyric).scan(/\[([^\]]+)\]/)[0][0]
     ret = {
       title:     page.css('#song-title').text.strip,
       artist:    artist.join(', '),
@@ -869,7 +870,34 @@ class HacSource < MusicSource
       lnote:     lnote,
       lyric:     lyric,
       perf_link: perf_link,
+      song_key:  song_key,
     }
+  end
+
+  def list_for_user(url, options={})
+    offset = 0
+    result = []
+    loop do
+      page = get_page("#{url}?offset=#{offset}")
+      list = page.css('.playlist-item')
+      break if list.size <= 0
+      result += list.map do |item|
+        alink = item.css('.playlist-item-title a')[0]
+        href  = alink['href']
+        sname = href.split('/')[-2..-1].join('/')
+        list_id = href.split('/')[-2].to_i
+        count = item.css('.playlist-item-count').text.strip.to_i
+        {
+          id:         list_id,
+          href:       href,
+          sname:      sname,
+          name:       alink.text.strip,
+          song_count: count,
+        }
+      end
+      offset += 18
+    end
+    result
   end
 
   def thanh_vien(count)
@@ -892,9 +920,12 @@ class HacSource < MusicSource
       songs = page.css('.song-item')
       break if songs.size <= 0
       page.css('.song-item').each do |sitem|
+        href = sitem.css('a.song-title')[0]['href']
+        song_id = href.split('/')[4]
         entry = {
+          song_id: song_id.to_i,
           name:    sitem.css('.song-title').text.strip,
-          href:    sitem.css('a.song-title')[0]['href'],
+          href:    href,
           artist:  sitem.css('.song-singers').text.strip.sub(/^-\s*/, ''),
           preview: sitem.css('.song-preview-lyric').text.strip.
                       gsub(/\[[^\]]*\]/, ''),
@@ -904,34 +935,6 @@ class HacSource < MusicSource
       offset += 10
     end
     entries
-  end
-
-  def playlist_pref(url, users, options={})
-    require 'open-uri'
-
-    slist   = playlist(url, options)
-    setlist = []
-    bar     = ProgressBar.new(slist.size)
-    slist.each do |sitem|
-      fs = sitem[:href].split('/')
-      sno, sposter = fs[4], fs[6]
-      
-      # Song does not have poster preference, see if I could override
-      unless sposter
-        users.each do |auser|
-          murl = sitem[:href] + "#{auser}"
-          begin
-            open(murl)
-            setlist << sitem
-            break
-          rescue OpenURI::HTTPError => errmsg
-            Plog.dump_error(url:murl, errmsg:errmsg)
-          end
-        end
-      end
-      bar.increment!
-    end
-    setlist
   end
 
   def song_list(url, options={})
