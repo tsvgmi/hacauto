@@ -202,7 +202,7 @@ class NhacSource < MusicSource
   end
 
   def song_list(url, options={})
-    page   = get_page(url)
+    page  = get_page(url)
     limit = (options[:limit] || 9999).to_i
     case url
     when %r{^https://nhac.vn/?$}
@@ -217,7 +217,45 @@ class NhacSource < MusicSource
       links = page.css('.item-in-list .h4-song-item')[0..limit-1].
         map do |atrack|
         tlinks = atrack.css('a')
-        arefs = atrack.css('a').map {|a| [a.text, a['href']]}
+        arefs  = atrack.css('a').map {|a| [a.text, a['href']]}
+        info   = {
+          name:   tlinks[0].text.strip,
+          href:   tlinks[0]['href'],
+          artist: tlinks[1].text.strip,
+        }
+        info
+      end.uniq {|e| e[:href]}
+    end
+    links
+  end
+
+  def browser_song_list(spage, url, options={})
+    spage.goto(url)
+    limit = (options[:limit] || 9999).to_i
+    page  = spage.page
+    case url
+    when %r{^https://nhac.vn/?$}
+      links = page.css('.info_song_home')[0..limit-1].map do |atrack|
+        {
+          name: atrack.css('.name a')[0].text.strip,
+          href: atrack.css('.name a')[0]['href'],
+          artist: atrack.css('.singer a')[0].text.strip,
+        }
+      end
+    when %r{/album/}
+      links = page.css('.items .present')[0..limit-1].
+        map do |atrack|
+        info = {
+          name:   atrack.css('a')[0].text.strip,
+          href:   atrack.css('a')[0]['href'],
+          artist: atrack.css('.artist').text.strip,
+        }
+        info
+      end
+    else
+      links = page.css('.item-in-list .h4-song-item')[0..limit-1].
+        map do |atrack|
+        tlinks = atrack.css('a')
         info = {
           name:   tlinks[0].text.strip,
           href:   tlinks[0]['href'],
@@ -902,6 +940,7 @@ class HacSource < MusicSource
 
   def thanh_vien(count)
     url   = "#{@base_url}/user/month"
+    Plog.dump_info(url:url)
     page  = get_page(url)
     tlist = page.css('td .one-line').map{|e| e['href'].split('/').last}[0..count-1]
     Plog.dump_info(tlist:tlist)

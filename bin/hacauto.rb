@@ -14,27 +14,18 @@ require 'cgi'
 require 'byebug'
 require 'progress_bar'
 require 'core'
+require 'site_connect'
 require_relative 'hac-base'
 require_relative 'hac-nhac'
 
-class SPage
-  attr_reader :sdriver, :page, :auser, :clicks
+class SPage < SelPage
+  #attr_reader :sdriver, :page, :auser, :clicks
+  attr_reader :auser
 
   def initialize(sdriver)
-    @sdriver = sdriver
+    super(sdriver)
     @auser   = sdriver.auser
-    @clicks  = 0
     @clog    = ClickLog.new(@auser)
-    refresh
-  end
-
-  def refresh
-    @page = Nokogiri::HTML(@sdriver.page_source)
-  end
-
-  def find_and_click_links(lselector, rselector, options={})
-    links = @page.css(lselector).map {|asong| asong['href']}
-    click_links(links, rselector, options)
   end
 
   def find_and_click_song_links(lselector, rselector, options={})
@@ -66,7 +57,7 @@ class SPage
     click_links(links, rselector, options)
     song_items
   end
-  
+
   def click_links(links, rselector, options={})
     limit = (options[:limit] || 1000).to_i
     links = links.select {|r| !@clog.was_clicked?(@auser, r, rselector)}
@@ -78,18 +69,9 @@ class SPage
       goto(link)
       @sdriver.click_and_wait(rselector, 3)
       @clicks += 1
+      @clog.log_click(@auser, link, rselector)
       break if @clicks >= limit
     end
-  end
-
-  def goto(link)
-    @sdriver.goto(link)
-    sleep(2)
-    refresh
-  end
-
-  def method_missing(method, *argv)
-    @sdriver.send(method.to_s, *argv)
   end
 end
 
@@ -127,6 +109,12 @@ class SiteConnect
   def self.connect_zing(options)
     Plog.info "Connect to Zing"
     sdriver = SDriver.new('https://mp3.zing.vn', browser:options[:browser])
+    sdriver
+  end
+
+  def self.connect_nhacvn(options)
+    Plog.info "Connect to NhacVN"
+    sdriver = SDriver.new('https://nhac.vn', browser:options[:browser])
     sdriver
   end
 end
@@ -367,9 +355,6 @@ EOH
   end
 
   def create_from_site(spage, store, coptions={})
-    require 'byebug'
-
-    byebug
     donelist = []
     loop do
       sinfo = store.peek
@@ -527,6 +512,8 @@ class HACAuto
           @sdriver = SiteConnect.connect_gmusic(getOption)
         when :zing
           @sdriver = SiteConnect.connect_zing(getOption)
+        when :nhacvn
+          @sdriver = SiteConnect.connect_nhacvn(getOption)
         else
           @sdriver = SiteConnect.connect_hac(getOption)
         end
@@ -1068,9 +1055,6 @@ class HACAuto
     end
 
     def playfile_to_hac(plname, file)
-      require 'byebug'
-
-      byebug
       options = getOption
       options[:site_filter] = 'hac'
       slist   = File.read(file).split("\n").map do |r|
@@ -1094,6 +1078,12 @@ class HACAuto
           if source.is_a?(ZingSource)
             slist = nil
             _connect_site(:zing) do |spage|
+              slist = source.browser_song_list(spage, url, options)
+            end
+            slist
+          elsif source.is_a?(NhacSource)
+            slist = nil
+            _connect_site(:nhacvn) do |spage|
               slist = source.browser_song_list(spage, url, options)
             end
             slist
@@ -1149,11 +1139,12 @@ class HACAuto
     end
 
     RatingUsers = %w(mbtc9522 metacritic kelichi ceenee)
+    AdminUsers  = %w(gau307 kabigon91 trungdq88)
     def _getOptions
       options = getOption
       if options[:top_exclude]
         top_users = HacSource.new(options).thanh_vien(options[:top_exclude].to_i)
-        options[:exclude_user] = (top_users + RatingUsers).join(',')
+        options[:exclude_user] = (top_users + RatingUsers + AdminUsers).join(',')
       end
       options
     end
