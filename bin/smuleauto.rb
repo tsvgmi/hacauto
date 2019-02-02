@@ -70,15 +70,12 @@ class SmuleAuto
       _connect_site(:smule_download) do |spage|
         flist.each do |afile|
           Plog.dump_info(afile:afile)
-          surl   = "https://smule.com/#{afile[:href]}"
-          if true
-            spage.goto('smule-downloader')
-            spage.type('#url', surl)
-            spage.click_and_wait('form input.ipsButton')
-            spage.execute_script("window.scrollTo(0,1000)")
-          else
-            spage.goto("smule-downloader/?url=#{CGI.escape(surl)}")
-          end
+          surl   = "https://smule.com#{afile[:href]}"
+          spage.goto('smule-downloader')
+          spage.find_element(id:'url').clear
+          spage.type('#url', surl)
+          spage.click_and_wait('form input.ipsButton')
+          spage.execute_script("window.scrollTo(0,1000)")
           spage.click_and_wait('a[download]')
           media_url = spage.current_url
 
@@ -108,7 +105,8 @@ end
 
 if (__FILE__ == $0)
   SmuleAuto.handleCli(
-    ['--browser',          '-b', 1],
-    ['--limit',            '-l', 1],
+    ['--auth',    '-a', 1],
+    ['--browser', '-b', 1],
+    ['--limit',   '-l', 1],
   )
 end

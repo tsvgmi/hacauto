@@ -163,7 +163,14 @@ class SiteConnect
     end
 
     def connect_smule_download(options)
-      SDriver.new('https://sing.salon', browser:options[:browser])
+      auth    = options[:auth]
+      sdriver = SDriver.new('https://sing.salon', browser:options[:browser])
+      identity, password = auth.split(':')
+      sdriver.click_and_wait('#elUserSignIn')
+      sdriver.type('input[name="auth"]', identity + "\n")
+      sdriver.type('input[name="password"]', password + "\n")
+      sdriver.click_and_wait('#elSignIn_submit')
+      sdriver
     end
   end
   
