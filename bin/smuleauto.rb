@@ -20,6 +20,9 @@ class SmuleAuto
   class << self
     def _scan_user_list(user)
       result = []
+      require 'byebug'
+
+      byebug
       _connect_site(:smule) do |spage|
         spage.goto(user)
         Plog.info "Scroll to end of page"
@@ -29,35 +32,42 @@ class SmuleAuto
           #Plog.info "Loop #{index}"
         end
         spage.refresh
-        sitems = spage.page.css(".profile-content-block .recording-listItem")
+        #sitems = spage.page.css(".profile-content-block .recording-listItem")
+        sitems = spage.page.css("._8u57ot")
         sitems.each do |sitem|
-          if plink = sitem.css('a.playable')[0]
-            record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
+          #if plink = sitem.css('a.playable')[0]
+          if plink = sitem.css('a._1sgodipg')[0]
+            next if sitem.css('._1wii2p1').size <= 0
+            #record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
+            record_by = sitem.css('._1acrv77g .false').map{|rb| rb.text.strip}
             result << {
-              title:     plink['title'],
+              title:     plink.text.strip,
               href:      plink['href'],
               record_by: record_by,
-              listens:   sitem.css('.stat-listens').first.text.to_i,
-              loves:     sitem.css('.stat-loves').first.text.to_i,
+              #listens:   sitem.css('.stat-listens').first.text.to_i,
+              listens:   sitem.css('._1wii2p1')[0].text.to_i,
+              #loves:     sitem.css('.stat-loves').first.text.to_i,
+              loves:     sitem.css('._1wii2p1')[1].text.to_i,
             }
           end
         end
       end
+      Plog.info("Found #{result.size} songs")
       result
     end
 
-    def download_for_user(user)
-      _download_list(_scan_user_list(user))
+    def download_for_user(user, tdir='.')
+      _download_list(_scan_user_list(user), tdir)
     end
 
-    def download_from_file(sfile)
-      _download_list(YAML.load_file(sfile))
+    def download_from_file(sfile, tdir='.')
+      _download_list(YAML.load_file(sfile), tdir)
     end
 
-    def _download_list(flist)
+    def _download_list(flist, tdir)
       options = getOption
       flist   = flist.select do |afile|
-        odir  = "smule/#{afile[:record_by].join('-')}"
+        odir  = tdir + "/smule/#{afile[:record_by].join('-')}"
         FileUtils.mkdir_p(odir, verbose:true) unless test(?d, odir)
         title = afile[:title].strip
         afile[:ofile] = File.join(odir, title + '.m4a')

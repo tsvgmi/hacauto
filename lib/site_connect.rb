@@ -7,6 +7,7 @@
 #++
 require File.dirname(__FILE__) + "/../etc/toolenv"
 require 'selenium-webdriver'
+require 'openssl'
 
 module HtmlRes
   def get_page_curl(url)
