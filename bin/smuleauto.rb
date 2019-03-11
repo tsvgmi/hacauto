@@ -14,10 +14,61 @@ require 'byebug'
 require 'core'
 require 'site_connect'
 
-class SmuleAuto
+module SmuleAuto
   extendCli __FILE__
 
+  class Content
+    attr_reader :content
+
+    def initialize(cdir='.')
+      @cdir  = cdir
+      @cfile = "#{cdir}/content.yml"
+      if test(?f, @cfile)
+        @content = YAML.load_file(@cfile)
+      else
+        @content = []
+      end
+    end
+
+    def fix_dir
+      Dir.glob("#{@cdir}/*-*") do |adir|
+        next unless test(?d, adir)
+        new_name = File.basename(adir).split('-').sort.join('-')
+        if new_name != File.basename(adir)
+          FileUtils.move(adir, "#{@cdir}/#{new_name}", verbose:true)
+        end
+      end
+    end
+
+    def writeback
+      @content = @content.uniq {|r| r[:href] }
+      File.open(@cfile, 'w') do |fod|
+        Plog.info("Writing #{@content.size} entries to #{@cfile}")
+        fod.puts @content.to_yaml
+      end
+      self
+    end
+
+    def add_new(block)
+      @content = @content.concat(block).uniq {|r| r[:href]}
+      self
+    end
+
+    def list
+      @content.map do |r|
+        #title     = r[:title].encode('UTF-8', :invalid => :replace, :undef => :replace)
+        title     = r[:title].scrub
+        record_by = r[:record_by].join(', ')
+        [title, record_by]
+      end.sort_by {|t, r| "#{t.downcase}:#{r}"}.each do |title, record_by|
+        puts "%-50.50s %s" % [title, record_by]
+      end
+      self
+    end
+  end
+
   class << self
+
     def _scan_user_list(user, options={})
       result = []
       pages  = (options[:pages] || 20).to_i
@@ -57,6 +108,7 @@ class SmuleAuto
           }
         end
 
+        s_singers = (options[:singers] || "").split(',').sort
         collab_links.each do |alink|
           spage.goto(alink)
           sitems       = spage.page.css(".duets.content .recording-listItem")
@@ -64,6 +116,12 @@ class SmuleAuto
             plink = sitem.css('a.playable')[0]
             next unless plink
             record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
+            if s_singers.size > 0
+              if (s_singers & record_by) != record_by
+                Plog.dump_info(msg:'Skip download for singers', s_singers:s_singers, record_by:record_by)
+                next
+              end
+            end
             result << {
               title:     plink['title'],
               href:      plink['href'],
@@ -81,7 +139,7 @@ class SmuleAuto
     def _download_list(flist, tdir)
       options = getOption
       flist   = flist.select do |afile|
-        odir  = tdir + "/smule/#{afile[:record_by].join('-')}"
+        odir  = tdir + "/#{afile[:record_by].sort.join('-')}"
         FileUtils.mkdir_p(odir, verbose:true) unless test(?d, odir)
         title = afile[:title].strip
         afile[:ofile] = File.join(odir, title + '.m4a')
@@ -126,11 +184,16 @@ class SmuleAuto
     end
 
     def download_for_user(user, tdir='.')
-      result = _scan_user_list(user, getOption)
-      if tdir
-        File.open("#{tdir}/content.yml") do |fod|
-          fod.puts result.to_yaml
-        end
+      options = getOption
+      if options[:quick]
+        result = Content.new(tdir).content
+      else
+        result = _scan_user_list(user, getOption)
+        Content.new(tdir).add_new(result).writeback if tdir
+      end
+      if result.size <= 0
+        Plog.info("Nothing found to download")
+        return true
       end
       _download_list(result, tdir)
     end
@@ -141,25 +204,18 @@ class SmuleAuto
 
     def scan_user_list(user, tdir=nil)
       result = _scan_user_list(user, getOption)
-      if tdir
-        File.open("#{tdir}/content.yml") do |fod|
-          fod.puts result.to_yaml
-        end
-      end
+      Content.new(tdir).add_new(result).writeback if tdir
       result.to_yaml
     end
 
     def show_content(tdir='.')
-      data = YAML.load_file("#{tdir}/content.yml")
-      data.map do |r|
-        #title     = r[:title].encode('UTF-8', :invalid => :replace, :undef => :replace)
-        title     = r[:title].scrub
-        record_by = r[:record_by].join(', ')
-        [title, record_by]
-      end.sort_by {|t, r| "#{t.downcase}:#{r}"}.each do |title, record_by|
-        puts "%-50.50s %s" % [title, record_by]
-      end
-      nil
+      Content.new(tdir).list
+      true
+    end
+
+    def fix_dir(tdir='.')
+      Content.new(tdir).fix_dir
+      true
     end
   end
 end
@@ -171,6 +227,7 @@ if (__FILE__ == $0)
     ['--limit',   '-l', 1],
     ['--mysongs', '-m', 0],
     ['--pages',   '-p', 1],
+    ['--quick',   '-q', 0],
     ['--singers', '-s', 1],
   )
 end
