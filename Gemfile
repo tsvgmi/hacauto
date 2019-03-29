@@ -7,4 +7,6 @@ gem "byebug"
 gem "selenium-webdriver"
 gem "nokogiri"
 gem "midi"
+gem "sequel"
+gem "sqlite3"
 

@@ -20,47 +20,52 @@ module SmuleAuto
   class Content
     attr_reader :content
 
-    def initialize(cdir='.')
+    def initialize(user, cdir='.')
+      @user  = user
       @cdir  = cdir
-      @cfile = "#{cdir}/content.yml"
+      @cfile = "#{cdir}/content-#{user}.yml"
       if test(?f, @cfile)
         @content = YAML.load_file(@cfile)
-      else
-        @content = []
-      end
-    end
-
-    def fix_dir
-      Dir.glob("#{@cdir}/*-*") do |adir|
-        next unless test(?d, adir)
-        new_name = File.basename(adir).split('-').sort.join('-')
-        if new_name != File.basename(adir)
-          FileUtils.move(adir, "#{@cdir}/#{new_name}", verbose:true)
+        if @content.is_a?(Array)
+          content, @content = @content, {}
+          content.each do |r|
+            @content[r[:href]] = r
+          end
         end
+      else
+        @content = {}
       end
     end
 
     def writeback
-      @content = @content.uniq {|r| r[:href] }
-      File.open(@cfile, 'w') do |fod|
-        Plog.info("Writing #{@content.size} entries to #{@cfile}")
-        fod.puts @content.to_yaml
+      # Backup copy to my home
+      cfile = ENV['HOME'] + "/content-#{@user}.yml"
+      [@cfile, cfile].each do |afile|
+        File.open(afile, 'w') do |fod|
+          Plog.info("Writing #{@content.size} entries to #{afile}")
+          fod.puts @content.to_yaml
+        end
       end
       self
     end
 
     def add_new(block)
-      @content = @content.concat(block).uniq {|r| r[:href]}
+      now = Time.now
+      block.each do |r|
+        r[:updated_at]     = now
+        @content[r[:href]] = r
+      end
       self
     end
 
     def list
-      @content.map do |r|
-        #title     = r[:title].encode('UTF-8', :invalid => :replace, :undef => :replace)
-        title     = r[:title].scrub
-        record_by = r[:record_by].join(', ')
-        [title, record_by]
-      end.sort_by {|t, r| "#{t.downcase}:#{r}"}.each do |title, record_by|
+      block = []
+      @content.each do |href, r|
+        title          = r[:title].scrub
+        record_by      = r[:record_by].join(', ')
+        block << [title, record_by]
+      end
+      block.sort_by {|t, r| "#{t.downcase}:#{r}"}.each do |title, record_by|
         puts "%-50.50s %s" % [title, record_by]
       end
       self
@@ -90,11 +95,14 @@ module SmuleAuto
           next unless plink
           next if sitem.css('._1wii2p1').size <= 0
           #record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
+          since = sitem.css('._1wii2p1')[2].text
           if options[:mysongs]
             if collabs = sitem.css('a._1ce31vza')[0]
               href = collabs['href']
               if href =~ /ensembles$/
-                collab_links << collabs['href']
+                if (since =~ /(hr|d)$/)
+                  collab_links << collabs['href']
+                end
               end
             end
           end
@@ -105,6 +113,8 @@ module SmuleAuto
             record_by: record_by,
             listens:   sitem.css('._1wii2p1')[0].text.to_i,
             loves:     sitem.css('._1wii2p1')[1].text.to_i,
+            since:     since,
+            avatar:    (sitem.css('img')[0] || {})['src'],
           }
         end
 
@@ -123,11 +133,13 @@ module SmuleAuto
               end
             end
             result << {
-              title:     plink['title'],
+              title:     plink['title'].strip,
               href:      plink['href'],
               record_by: record_by,
               listens:   sitem.css('.stat-listens').first.text.to_i,
               loves:     sitem.css('.stat-loves').first.text.to_i,
+              since:     sitem.css('.stat-timeago').first.text.strip,
+              avatar:    plink['data-src'],
             }
           end
         end
@@ -141,7 +153,7 @@ module SmuleAuto
       flist   = flist.select do |afile|
         odir  = tdir + "/#{afile[:record_by].sort.join('-')}"
         FileUtils.mkdir_p(odir, verbose:true) unless test(?d, odir)
-        title = afile[:title].strip
+        title = afile[:title].strip.gsub(/\//, '-')
         afile[:ofile] = File.join(odir, title + '.m4a')
         !test(?s, afile[:ofile])
       end
@@ -186,10 +198,10 @@ module SmuleAuto
     def download_for_user(user, tdir='.')
       options = getOption
       if options[:quick]
-        result = Content.new(tdir).content
+        result = Content.new(user, tdir).content
       else
         result = _scan_user_list(user, getOption)
-        Content.new(tdir).add_new(result).writeback if tdir
+        Content.new(user, tdir).add_new(result).writeback if tdir
       end
       if result.size <= 0
         Plog.info("Nothing found to download")
@@ -204,19 +216,15 @@ module SmuleAuto
 
     def scan_user_list(user, tdir=nil)
       result = _scan_user_list(user, getOption)
-      Content.new(tdir).add_new(result).writeback if tdir
+      Content.new(user, tdir).add_new(result).writeback if tdir
       result.to_yaml
     end
 
-    def show_content(tdir='.')
-      Content.new(tdir).list
+    def show_content(user, tdir='.')
+      Content.new(user, tdir).list
       true
     end
 
-    def fix_dir(tdir='.')
-      Content.new(tdir).fix_dir
-      true
-    end
   end
 end
 
