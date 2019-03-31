@@ -88,8 +88,9 @@ module ChordMerger
   end
 
   def merge_chord_lines(lyric)
-    chords = []
-    result = []
+    chords  = []
+    result  = []
+    options = {shift_space:true}
     lyric.split(/\n/).each do |l|
       l, is_chord_line = detect_and_clean_chord_line(l)
       if is_chord_line
@@ -110,7 +111,28 @@ module ChordMerger
             if l.size <= pos
               l += ' ' * 80
             end
+            #Plog.dump_error(start:l[0..pos-1], pos:pos, remain:l[pos..-1])
+
+            # Need to back until I find a space
+            if options[:shift_space]
+              if (pos > 0) && (l[pos] != ' ') && (l[pos-1] != ' ')
+                cpos = pos-1
+                while cpos > 0
+                  if l[cpos] == ' '
+                    Plog.dump_error(pos:pos, cpos:cpos+1)
+                    pos = cpos+1
+                    break
+                  end
+                  cpos -= 1
+                end
+                if cpos == 0
+                  pos = 0
+                end
+              end
+            end
+
             l.insert(pos, "[#{text}]")
+            #Plog.dump_error(l:l)
           rescue => errmsg
             Plog.error errmsg
           end

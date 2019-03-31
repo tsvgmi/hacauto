@@ -53,7 +53,9 @@ module SmuleAuto
       now = Time.now
       block.each do |r|
         r[:updated_at]     = now
-        @content[r[:href]] = r
+        r[:sid]            = File.basename(r[:href])
+        @content.delete(r[:href])
+        @content[r[:sid]] = r
       end
       self
     end
