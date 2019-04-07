@@ -10,3 +10,6 @@ gem "midi"
 gem "sequel"
 gem "sqlite3"
 
+group "music" do
+  gem "taglib-ruby"
+end
