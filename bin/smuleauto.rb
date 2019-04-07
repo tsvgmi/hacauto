@@ -29,8 +29,8 @@ module SmuleAuto
       else
         @content = {}
       end
-      if test(?f, @cfile)
-        content     = YAML.load_file(@cfile)
+      if test(?f, @ffile)
+        content     = YAML.load_file(@ffile)
         @followers  = content[:followers]
         @followings = content[:followings]
       else
@@ -48,30 +48,32 @@ module SmuleAuto
           fod.puts @content.to_yaml
         end
       end
-      cfile = ENV['HOME'] + "/follows-#{@user}.yml"
-      [@cfile, cfile].each do |afile|
+
+      ffile = ENV['HOME'] + "/follows-#{@user}.yml"
+      [@ffile, ffile].each do |afile|
         File.open(afile, 'w') do |fod|
           Plog.info("Writing #{@content.size} entries to #{afile}")
           fod.puts({
             followers:  @followers,
             followings: @followings,
-          }).to_yaml
+          }.to_yaml)
         end
       end
       self
     end
 
     def add_follows(followings, followers)
-      @followers  = [@followers + followers].uniq
-      @followings = [@followings + followings].uniq
+      @followers  = @followers.concat(followers).uniq
+      @followings = @followings.concat(followings).uniq
+      self
     end
 
     def add_new(block, isfav=false)
       now = Time.now
       block.each do |r|
-        r[:updated_at]     = now
-        r[:sid]            = File.basename(r[:href])
-        r[:isfav]          = isfav
+        r[:updated_at] = now
+        r[:sid]        = File.basename(r[:href])
+        r[:isfav]      = isfav if isfav
         @content.delete(r[:href])
         @content[r[:sid]] = r
       end
