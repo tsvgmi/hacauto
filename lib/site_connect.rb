@@ -10,8 +10,13 @@ require 'selenium-webdriver'
 require 'openssl'
 
 module HtmlRes
-  def get_page_curl(url)
-    `curl -ks #{url}`
+  def get_page_curl(url, options={})
+    content = `curl -ks #{url}`
+    if options[:raw]
+      content
+    else
+      Nokogiri::HTML(content)
+    end
   end
 
   def get_page(url)
@@ -19,6 +24,7 @@ module HtmlRes
 
     # Some sites does not have good SSL certs.  That's OK here.
     
+    Plog.dump_info(url:url)
     fid  = open(url, ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE)
     page = Nokogiri::HTML(fid.read)
     fid.close

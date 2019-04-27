@@ -162,7 +162,7 @@ class TabGuitarSource < MusicSource
     require 'json'
 
     Plog.info("Extract lyrics from #{url}")
-    blob  = get_page_curl(url).split("\n").grep(/window.UGAPP.store.page/)[0]
+    blob  = get_page_curl(url, raw:true).split("\n").grep(/window.UGAPP.store.page/)[0]
     blob  = JSON.parse(blob.sub(/^[^{]*/o, '').sub(/;\s*$/o, ''))['data']
     lyric = merge_chord_lines(blob.dig('tab_view', 'wiki_tab', 'content'))
     {
@@ -963,7 +963,7 @@ class HacSource < MusicSource
   def thanh_vien(count)
     url   = "#{@base_url}/user/month"
     Plog.dump_info(url:url)
-    page  = get_page(url)
+    page  = get_page_curl(url)
     tlist = page.css('td .one-line').map{|e| e['href'].split('/').last}[0..count-1]
     Plog.dump_info(tlist:tlist)
     tlist

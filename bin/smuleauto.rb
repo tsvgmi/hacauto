@@ -34,41 +34,41 @@ module SmuleAuto
         @followers  = content[:followers]
         @followings = content[:followings]
       else
-        @followers  = []
-        @followings = []
+        @followers  = {}
+        @followings = {}
       end
+    end
+
+    def _write_with_backup(mfile, content)
+      bakfile = File.join(ENV['HOME'], File.basename(mfile))
+      [mfile, bakfile].each do |afile|
+        File.open(afile, 'w') do |fod|
+          Plog.info("Writing #{content.size} entries to #{afile}")
+          fod.puts content.to_yaml
+        end
+      end
+
     end
 
     def writeback
-      # Backup copy to my home
-      cfile = ENV['HOME'] + "/content-#{@user}.yml"
-      [@cfile, cfile].each do |afile|
-        File.open(afile, 'w') do |fod|
-          Plog.info("Writing #{@content.size} entries to #{afile}")
-          fod.puts @content.to_yaml
-        end
-      end
+      _write_with_backup(@cfile, @content)
+      _write_with_backup(@ffile,
+                         followers: @followers, followings: @followings)
+      self
+    end
 
-      ffile = ENV['HOME'] + "/follows-#{@user}.yml"
-      [@ffile, ffile].each do |afile|
-        File.open(afile, 'w') do |fod|
-          Plog.info("Writing #{@content.size} entries to #{afile}")
-          fod.puts({
-            followers:  @followers,
-            followings: @followings,
-          }.to_yaml)
-        end
+    def set_follows(followings, followers)
+      @followings, @followers = {}, {}
+      followings.each do |e|
+        @followings[e[:name]] = e
+      end
+      followers.each do |e|
+        @followers[e[:name]] = e
       end
       self
     end
 
-    def add_follows(followings, followers)
-      @followers  = @followers.concat(followers).uniq
-      @followings = @followings.concat(followings).uniq
-      self
-    end
-
-    def add_new(block, isfav=false)
+    def add_new_songs(block, isfav=false)
       now = Time.now
       block.each do |r|
         r[:updated_at] = now
@@ -159,6 +159,18 @@ module SmuleAuto
       _scan_songs
     end
 
+    def scan_songs_and_favs
+      @spage.goto(@user)
+      songs = _scan_songs
+      @spage.goto(@user)
+      @spage.click_and_wait('._bovhcl:nth-child(3)')
+      favs  = _scan_songs
+      {
+        songs: songs,
+        favs:  favs,
+      }
+    end
+
     def _scroll_to_bottom
       pages  = (@options[:pages] || 20).to_i
       Plog.info "Scroll to end of page"
@@ -174,7 +186,13 @@ module SmuleAuto
       result = []
       sitems = @spage.page.css("._1mcyx7uu")
       sitems.each do |sitem|
-        result << sitem.css("._1gt02qe").text.strip
+        name   = sitem.css("._1gt02qe").text.strip
+        avatar = sitem.css("._1eeaa3cb")[0]['style']
+        avatar = avatar.sub(/^.*url\("/, '').sub(/".*$/, '')
+        result << {
+          name:   name,
+          avatar: avatar,
+        }
       end
       result
     end
@@ -236,6 +254,11 @@ module SmuleAuto
         limit = options[:limit].to_i
         flist = flist[0..limit-1]
       end
+      if flist.size <= 0
+        Plog.info "No new files to download"
+        return
+      end
+      Plog.info "Downloading #{flist.size} songs"
       _connect_site(:smule_download) do |spage|
         flist.each do |afile|
           Plog.dump_info(afile:afile)
@@ -275,28 +298,28 @@ module SmuleAuto
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible"
       end
-      result = SmuleScanner.new(user, getOption).scan_songs
-      Content.new(user, tdir).add_new(result).writeback if tdir
-      if result.size <= 0
-        Plog.info("Nothing found to download")
-        return true
-      end
-      _download_list(result, tdir)
+      result = scan_songs_and_favs(user, tdir)
+      _download_list(result[:songs], tdir)
     end
 
     def download_from_file(sfile, tdir='.')
       _download_list(YAML.load_file(sfile), tdir)
     end
 
-    def scan_songs(user, tdir=nil)
-      result = SmuleScanner.new(user, getOption).scan_songs
-      Content.new(user, tdir).add_new(result).writeback if tdir
-      result.to_yaml
+    def scan_songs_and_favs(user, tdir=nil)
+      result = SmuleScanner.new(user, getOption).scan_songs_and_favs
+      if tdir
+        content = Content.new(user, tdir)
+        content.add_new_songs(result[:songs], false)
+        content.add_new_songs(result[:favs],  true)
+        content.writeback
+      end
+      result
     end
 
     def scan_favs(user, tdir=nil)
       result = SmuleScanner.new(user, getOption).scan_favs
-      Content.new(user, tdir).add_new(result, true).writeback if tdir
+      Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
       result.to_yaml
     end
 
@@ -305,7 +328,7 @@ module SmuleAuto
       followings = scanner.scan_followings
       followers  = scanner.scan_followers
       if tdir
-        Content.new(user, tdir).add_follows(followings, followers).writeback
+        Content.new(user, tdir).set_follows(followings, followers).writeback
       end
       {
         followings: followings,

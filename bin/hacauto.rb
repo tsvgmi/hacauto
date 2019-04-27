@@ -84,6 +84,8 @@ class SiteConnect
     hac_source = HacSource.new(options)
     sdriver    = SDriver.new(hac_source.base_url, user:identity,
                              browser:options[:browser])
+    Plog.info("Wait a bit for CDN verification")
+    sleep(10)
     sdriver.click_and_wait('#login-link', 5)
     sdriver.type('#identity', identity)
     sdriver.type('#password', password)
