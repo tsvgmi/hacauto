@@ -29,6 +29,21 @@ module SmuleAuto
       else
         @content = {}
       end
+      # Tempo to purge bad data
+      if true
+        plist = []
+        @content.each do |k, v|
+          if v[:sid] && (k != v[:sid])
+            plist << k
+          end
+        end
+        plist.each do |pk|
+          Plog.info("Purging #{pk}")
+          v = @content[pk]
+          @content.delete(pk)
+          @content[v[:sid]] = v
+        end
+      end
       if test(?f, @ffile)
         content     = YAML.load_file(@ffile)
         @followers  = content[:followers]
@@ -72,7 +87,8 @@ module SmuleAuto
       now = Time.now
       block.each do |r|
         r[:updated_at] = now
-        r[:sid]        = File.basename(r[:href])
+        fs             = r[:href].split('/')
+        r[:sid]        = (fs[-1] == 'ensembles') ? fs[-2] : fs[-1]
         r[:isfav]      = isfav if isfav
         @content.delete(r[:href])
         @content[r[:sid]] = r
@@ -110,7 +126,7 @@ module SmuleAuto
       s_singers = (@options[:singers] || "").split(',').sort
       collab_links.each do |alink|
         @spage.goto(alink)
-        sitems       = @spage.page.css(".duets.content .recording-listItem")
+        sitems = @spage.page.css(".duets.content .recording-listItem")
         sitems.each do |sitem|
           plink = sitem.css('a.playable')[0]
           next unless plink
@@ -122,13 +138,15 @@ module SmuleAuto
             end
           end
           result << {
-            title:     plink['title'].strip,
-            href:      plink['href'],
-            record_by: record_by,
-            listens:   sitem.css('.stat-listens').first.text.to_i,
-            loves:     sitem.css('.stat-loves').first.text.to_i,
-            since:     sitem.css('.stat-timeago').first.text.strip,
-            avatar:    plink['data-src'],
+            title:       plink['title'].strip,
+            href:        plink['href'],
+            record_by:   record_by,
+            listens:     sitem.css('.stat-listens').first.text.to_i,
+            loves:       sitem.css('.stat-loves').first.text.to_i,
+            since:       sitem.css('.stat-timeago').first.text.strip,
+            avatar:      plink['data-src'],
+            is_ensemble: false,
+            parent:      alink,
           }
         end
       end
@@ -209,26 +227,31 @@ module SmuleAuto
         next unless plink
         next if sitem.css('._1wii2p1').size <= 0
         #record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
-        since = sitem.css('._1wii2p1')[2].text
-        if @options[:mysongs]
-          if collabs = sitem.css('a._1ce31vza')[0]
-            href = collabs['href']
-            if href =~ /ensembles$/
-              if (since =~ /(hr|d)$/)
+        since     = sitem.css('._1wii2p1')[2].text
+        record_by = nil
+        is_ensemble = false
+        if collabs = sitem.css('a._1ce31vza')[0]
+          href = collabs['href']
+          if href =~ /ensembles$/
+            if (since =~ /(hr|d)$/)
+              if @options[:mysongs]
                 collab_links << collabs['href']
               end
+              is_ensemble = true
             end
+            record_by = [@user]
           end
         end
-        record_by = sitem.css('._1wcgsqp').map{|rb| rb.text.strip}
+        record_by ||= sitem.css('._1wcgsqp').map{|rb| rb.text.strip}
         result << {
-          title:     plink.text.strip,
-          href:      plink['href'],
-          record_by: record_by,
-          listens:   sitem.css('._1wii2p1')[0].text.to_i,
-          loves:     sitem.css('._1wii2p1')[1].text.to_i,
-          since:     since,
-          avatar:    (sitem.css('img')[0] || {})['src'],
+          title:       plink.text.strip,
+          href:        plink['href'],
+          record_by:   record_by,
+          listens:     sitem.css('._1wii2p1')[0].text.to_i,
+          loves:       sitem.css('._1wii2p1')[1].text.to_i,
+          since:       since,
+          avatar:      (sitem.css('img')[0] || {})['src'],
+          is_ensemble: is_ensemble,
         }
       end
 
@@ -247,7 +270,7 @@ module SmuleAuto
         odir  = tdir + "/#{afile[:record_by].sort.join('-')}"
         FileUtils.mkdir_p(odir, verbose:true) unless test(?d, odir)
         title = afile[:title].strip.gsub(/\//, '-')
-        afile[:ofile] = File.join(odir, title + '.m4a')
+        afile[:ofile] = File.join(odir, title.gsub(/\&/, '-') + '.m4a')
         !test(?s, afile[:ofile])
       end
       if options[:limit]
