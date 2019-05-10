@@ -204,9 +204,12 @@ module SmuleAuto
       result = []
       sitems = @spage.page.css("._1mcyx7uu")
       sitems.each do |sitem|
-        name   = sitem.css("._1gt02qe").text.strip
+        name   = sitem.css("._409m7v").text.strip
         avatar = sitem.css("._1eeaa3cb")[0]['style']
         avatar = avatar.sub(/^.*url\("/, '').sub(/".*$/, '')
+        if name.empty? || avatar.empty?
+          raise ("No name or avatar detected for #{sitem.inspect}")
+        end
         result << {
           name:   name,
           avatar: avatar,
@@ -221,6 +224,9 @@ module SmuleAuto
       sitems       = @spage.page.css("._8u57ot")
       result       = []
       collab_links = []
+      require 'byebug'
+
+      byebug
       sitems.each do |sitem|
         #if plink = sitem.css('a.playable')[0]
         plink = sitem.css('a._1sgodipg')[0]
@@ -230,7 +236,7 @@ module SmuleAuto
         since     = sitem.css('._1wii2p1')[2].text
         record_by = nil
         is_ensemble = false
-        if collabs = sitem.css('a._1ce31vza')[0]
+        if collabs = sitem.css('a._api99xt')[0]
           href = collabs['href']
           if href =~ /ensembles$/
             if (since =~ /(hr|d)$/)
@@ -242,7 +248,13 @@ module SmuleAuto
             record_by = [@user]
           end
         end
-        record_by ||= sitem.css('._1wcgsqp').map{|rb| rb.text.strip}
+        unless record_by
+          s1 = sitem.css('._1bho7ie')[0]
+          s1 = s1 ? s1.text.strip : nil
+          s2 = sitem.css('._1t74rwnk')[0]
+          s2 = s2 ? s2.text.strip : nil
+          record_by ||= [s1, s2].compact
+        end
         result << {
           title:       plink.text.strip,
           href:        plink['href'],
