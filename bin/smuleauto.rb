@@ -224,9 +224,6 @@ module SmuleAuto
       sitems       = @spage.page.css("._8u57ot")
       result       = []
       collab_links = []
-      require 'byebug'
-
-      byebug
       sitems.each do |sitem|
         #if plink = sitem.css('a.playable')[0]
         plink = sitem.css('a._1sgodipg')[0]
