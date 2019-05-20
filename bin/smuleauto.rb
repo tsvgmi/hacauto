@@ -62,7 +62,6 @@ module SmuleAuto
           fod.puts content.to_yaml
         end
       end
-
     end
 
     def writeback
@@ -128,26 +127,17 @@ module SmuleAuto
         @spage.goto(alink)
         sitems = @spage.page.css(".duets.content .recording-listItem")
         sitems.each do |sitem|
-          plink = sitem.css('a.playable')[0]
-          next unless plink
-          record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
+          next unless sinfo = _scan_a_collab_song(sitem)
           if s_singers.size > 0
+            record_by = sinfo[:record_by]
             if (s_singers & record_by) != record_by
-              Plog.dump_info(msg:'Skip download for singers', s_singers:s_singers, record_by:record_by)
+              Plog.dump_info(msg:'Skip download for singers',
+                             s_singers:s_singers, record_by:record_by)
               next
             end
           end
-          result << {
-            title:       plink['title'].strip,
-            href:        plink['href'],
-            record_by:   record_by,
-            listens:     sitem.css('.stat-listens').first.text.to_i,
-            loves:       sitem.css('.stat-loves').first.text.to_i,
-            since:       sitem.css('.stat-timeago').first.text.strip,
-            avatar:      plink['data-src'],
-            is_ensemble: false,
-            parent:      alink,
-          }
+          sinfo.update(parent:alink)
+          result << sinfo
         end
       end
       Plog.info("Found #{result.size} songs in collabs")
@@ -160,6 +150,79 @@ module SmuleAuto
       _scan_songs
     end
 
+    def play_favs(pduration=1.0)
+      pduration = pduration.to_f
+      if pduration > 1.0
+        pduration = 1.0
+      end
+      @spage.goto(@user)
+      @spage.click_and_wait('._bovhcl:nth-child(3)')
+      index    = 0
+      playlist = []
+      _each_main_song do |sitem|
+        playlist << _scan_a_main_song(sitem)
+      end
+      playlist.each_with_index do |pentry, index|
+        pentry[:play_path] = (playlist[index+1] || {})[:play_path]
+      end
+
+      playlist = playlist.sort_by {|r| r[:listens]}
+      playlist.each do |pentry|
+        next unless pentry[:play_path]
+        element = @spage.find_element(:css, pentry[:play_path])
+        @spage.execute_script("arguments[0].scrollIntoView()", element)
+        sleep 1
+        @spage.execute_script("window.scrollBy(0, -200)")
+        @spage.click_and_wait(pentry[:play_path])
+        @spage.refresh
+        duration = @spage.page.css("._vln25l")[0].text.split(':')
+        secs     = duration[0].to_i * 60 + duration[1].to_i
+        psecs = secs * pduration
+
+        Plog.dump_info(title:pentry[:title], record:pentry[:record_by],
+                       listens:pentry[:listens], psecs:psecs)
+        sleep psecs
+      end
+    end
+
+    def play_recents(pduration=1.0)
+      pduration = pduration.to_f
+      if pduration > 1.0
+        pduration = 1.0
+      end
+      @spage.goto(@user)
+      playlist = []
+      _each_main_song do |sitem|
+        sentry             = _scan_a_main_song(sitem)
+        play_div           = sitem.css('._1xmmk8d1')[0]
+        sentry[:play_path] = play_div.css_path
+        unless sentry[:collab_url]
+          playlist << sentry
+        end
+      end
+      playlist.each_with_index do |pentry, index|
+        pentry[:play_path] = (playlist[index+1] || {})[:play_path]
+      end
+      playlist = playlist.sort_by {|r| r[:listens]}
+      psize    = (@options[:size] || playlist.size).to_i
+      playlist[0..psize-1].each do |pentry|
+        next unless pentry[:play_path]
+        element = @spage.find_element(:css, pentry[:play_path])
+        @spage.execute_script("arguments[0].scrollIntoView()", element)
+        sleep 1
+        @spage.execute_script("window.scrollBy(0, -200)")
+        @spage.click_and_wait(pentry[:play_path])
+        @spage.refresh
+        duration = @spage.page.css("._vln25l")[0].text.split(':')
+        secs     = duration[0].to_i * 60 + duration[1].to_i
+        psecs = secs * pduration
+
+        Plog.dump_info(title:pentry[:title], record:pentry[:record_by],
+                       listens:pentry[:listens], psecs:psecs)
+        sleep psecs
+      end
+    end
+    
     def scan_followers
       @spage.goto(@user)
       @spage.click_and_wait('._bovhcl:nth-child(4)')
@@ -178,14 +241,9 @@ module SmuleAuto
     end
 
     def scan_songs_and_favs
-      @spage.goto(@user)
-      songs = _scan_songs
-      @spage.goto(@user)
-      @spage.click_and_wait('._bovhcl:nth-child(3)')
-      favs  = _scan_songs
       {
-        songs: songs,
-        favs:  favs,
+        songs: scan_songs,
+        favs:  scan_favs,
       }
     end
 
@@ -218,50 +276,31 @@ module SmuleAuto
       result
     end
 
-    def _scan_songs
+    def _each_main_song
       _scroll_to_bottom
-      #sitems = driver.page.css(".profile-content-block .recording-listItem")
       sitems       = @spage.page.css("._8u57ot")
       result       = []
       collab_links = []
       sitems.each do |sitem|
-        #if plink = sitem.css('a.playable')[0]
         plink = sitem.css('a._1sgodipg')[0]
         next unless plink
         next if sitem.css('._1wii2p1').size <= 0
-        #record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
-        since     = sitem.css('._1wii2p1')[2].text
-        record_by = nil
-        is_ensemble = false
-        if collabs = sitem.css('a._api99xt')[0]
-          href = collabs['href']
-          if href =~ /ensembles$/
-            if (since =~ /(hr|d)$/)
-              if @options[:mysongs]
-                collab_links << collabs['href']
-              end
-              is_ensemble = true
-            end
-            record_by = [@user]
+        yield sitem
+      end
+    end
+
+    def _scan_songs
+      result       = []
+      collab_links = []
+      _each_main_song do |sitem|
+        sentry = _scan_a_main_song(sitem)
+        next unless sentry
+        result << sentry
+        if @options[:mysongs] && (collab_url = sentry[:collab_url])
+          if (sentry[:since] =~ /(hr|d)$/)
+            collab_links << collab_url
           end
         end
-        unless record_by
-          s1 = sitem.css('._1bho7ie')[0]
-          s1 = s1 ? s1.text.strip : nil
-          s2 = sitem.css('._1t74rwnk')[0]
-          s2 = s2 ? s2.text.strip : nil
-          record_by ||= [s1, s2].compact
-        end
-        result << {
-          title:       plink.text.strip,
-          href:        plink['href'],
-          record_by:   record_by,
-          listens:     sitem.css('._1wii2p1')[0].text.to_i,
-          loves:       sitem.css('._1wii2p1')[1].text.to_i,
-          since:       since,
-          avatar:      (sitem.css('img')[0] || {})['src'],
-          is_ensemble: is_ensemble,
-        }
       end
 
       if collab_links.size > 0
@@ -269,6 +308,63 @@ module SmuleAuto
       end
       Plog.info("Found #{result.size} songs")
       result
+    end
+
+    def _scan_a_main_song(sitem)
+      plink = sitem.css('a._1sgodipg')[0]
+      if !plink || (sitem.css('._1wii2p1').size <= 0)
+        return nil
+      end
+      since       = sitem.css('._1wii2p1')[2].text
+      record_by   = nil
+      collab_url  = nil
+      is_ensemble = false
+      if collabs = sitem.css('a._api99xt')[0]
+        href = collabs['href']
+        if href =~ /ensembles$/
+          collab_url  = href
+          is_ensemble = true
+          record_by   = [@user]
+        end
+      end
+      unless record_by
+        s1 = sitem.css('._1bho7ie')[0]
+        s1 = s1 ? s1.text.strip : nil
+        s2 = sitem.css('._1t74rwnk')[0]
+        s2 = s2 ? s2.text.strip : nil
+        record_by ||= [s1, s2].compact
+      end
+      play_div  = sitem.css('._1xmmk8d1')[0]
+      {
+        title:       plink.text.strip,
+        href:        plink['href'],
+        record_by:   record_by,
+        listens:     sitem.css('._1wii2p1')[0].text.to_i,
+        loves:       sitem.css('._1wii2p1')[1].text.to_i,
+        since:       since,
+        avatar:      (sitem.css('img')[0] || {})['src'],
+        is_ensemble: is_ensemble,
+        collab_url:  collab_url,
+        play_path:   play_div.css_path,
+      }
+    end
+
+    def _scan_a_collab_song(sitem)
+      unless plink = sitem.css('a.playable')[0]
+        return nil
+      end
+      record_by = sitem.css('.recording-by a').map{|rb| rb['title']}
+      {
+        title:       plink['title'].strip,
+        href:        plink['href'],
+        record_by:   record_by,
+        listens:     sitem.css('.stat-listens').first.text.to_i,
+        loves:       sitem.css('.stat-loves').first.text.to_i,
+        since:       sitem.css('.stat-timeago').first.text.strip,
+        avatar:      plink['data-src'],
+        is_ensemble: false,
+        play_path:   plink.css_path,
+      }
     end
   end
 
@@ -328,7 +424,7 @@ module SmuleAuto
     def download_for_user(user, tdir='.')
       options = getOption
       unless test(?d, tdir)
-        raise "Target dir #{tdir} not accessible"
+        raise "Target dir #{tdir} not accessible to download music to"
       end
       result = scan_songs_and_favs(user, tdir)
       _download_list(result[:songs], tdir)
@@ -373,6 +469,14 @@ module SmuleAuto
       true
     end
 
+    def play_favs(user, pduration="1.0")
+      SmuleScanner.new(user, getOption).play_favs(pduration)
+    end
+
+    def play_recents(user, pduration="1.0")
+      SmuleScanner.new(user, getOption).play_recents(pduration)
+    end
+
   end
 end
 
@@ -385,5 +489,6 @@ if (__FILE__ == $0)
     ['--pages',   '-p', 1],
     ['--quick',   '-q', 0],
     ['--singers', '-s', 1],
+    ['--size',    '-S', 1],
   )
 end
