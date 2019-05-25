@@ -88,10 +88,10 @@ class SDriver
     sleep(1)
   end
 
-  def click_and_wait(selector, wtime=3)
+  def click_and_wait(selector, wtime=3, index=0)
     begin
       Plog.info "Click on #{selector}"
-      @driver.find_element(:css, selector).click
+      @driver.find_elements(:css, selector)[index].click
       sleep(wtime) if wtime > 0
     rescue => errmsg
       errmsg
@@ -131,10 +131,9 @@ class SiteConnect
 
   class << self
     def connect_hac(options)
-      auth    = options[:auth] || 'thienv:kKtx75LUY9GA'
+      auth    = options[:auth]
       identity, password = auth.split(':')
-      hac_source = HacSource.new(options)
-      sdriver    = SDriver.new(hac_source.base_url, user:identity,
+      sdriver    = SDriver.new(options[:url], user:identity,
                                browser:options[:browser])
       sdriver.click_and_wait('#login-link', 5)
       sdriver.type('#identity', identity)
@@ -146,7 +145,7 @@ class SiteConnect
     def connect_gmusic(options)
       auth    = options[:auth]
       identity, password = auth.split(':')
-      sdriver = SDriver.new('https://play.google.com/music', user:identity,
+      sdriver = SDriver.new(options[:url], user:identity,
                              browser:options[:browser])
       sdriver.click_and_wait('paper-button[data-action="signin"]')
       sdriver.type('#identifierId', identity + "\n")
@@ -166,38 +165,57 @@ class SiteConnect
     end
 
     def connect_smule(options)
-      SDriver.new('https://www.smule.com', browser:options[:browser])
+      sdriver = SDriver.new(options[:url], browser:options[:browser])
+      if auth = options[:auth]
+        identity, password = auth.split(':')
+        sdriver.click_and_wait('._1ob71s7', 2)          # Login
+        sdriver.click_and_wait('._bcznkc', 2, 1)        # Email
+        sdriver.type('input[name="snp-username"]', identity + "\n")
+        sleep 1
+        sdriver.type('input[name="snp-password"]', password + "\n")
+        sdriver.click_and_wait('._1tkfhqj')             # Login
+      end
+      sdriver
     end
 
     def connect_smule_download(options)
-      auth    = options[:auth]
-      sdriver = SDriver.new('https://sing.salon', browser:options[:browser])
-      identity, password = auth.split(':')
-      sdriver.click_and_wait('#elUserSignIn')
-      sdriver.type('input[name="auth"]', identity + "\n")
-      sdriver.type('input[name="password"]', password + "\n")
-      sdriver.click_and_wait('#elSignIn_submit')
+      sdriver = SDriver.new(options[:url], browser:options[:browser])
+      if auth = options[:auth]
+        identity, password = auth.split(':')
+        sdriver.click_and_wait('#elUserSignIn')
+        sdriver.type('input[name="auth"]', identity + "\n")
+        sdriver.type('input[name="password"]', password + "\n")
+        sdriver.click_and_wait('#elSignIn_submit')
+      end
       sdriver
     end
   end
   
   def initialize(site, options={})
+      require 'byebug'
+
+      byebug
     Plog.info "Connect to site: #{site}"
+    config  = YAML.load_file("access.yml")[site.to_s]
+    unless config
+      raise "Unsupported target: #{site}"
+    end
+    config.update(options.compact)
     case site
     when :gmusic
-      @driver = SiteConnect.connect_gmusic(options)
+      @driver = SiteConnect.connect_gmusic(config)
     when :zing
-      @driver = SiteConnect.connect_zing(options)
+      @driver = SiteConnect.connect_zing(config)
     when :nhacvn
-      @driver = SiteConnect.connect_nhacvn(options)
+      @driver = SiteConnect.connect_nhacvn(config)
     when :smule
-      @driver = SiteConnect.connect_smule(options)
+      @driver = SiteConnect.connect_smule(config)
     when :smule_download
-      @driver = SiteConnect.connect_smule_download(options)
+      @driver = SiteConnect.connect_smule_download(config)
     when :hac
-      @driver = SiteConnect.connect_hac(options)
+      @driver = SiteConnect.connect_hac(config)
     else
-      raise "Unsupported target: #{site}"
+      @driver = SiteConnect.connect_other(config)
     end
   end
 

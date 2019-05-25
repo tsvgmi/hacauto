@@ -29,21 +29,22 @@ module SmuleAuto
       else
         @content = {}
       end
-      # Tempo to purge bad data
-      if true
-        plist = []
-        @content.each do |k, v|
-          if v[:sid] && (k != v[:sid])
-            plist << k
-          end
-        end
-        plist.each do |pk|
-          Plog.info("Purging #{pk}")
-          v = @content[pk]
-          @content.delete(pk)
-          @content[v[:sid]] = v
+
+      @content.each do |k, r|
+        case v = r[:since]
+        when /(min|m)$/
+          r[:sincev] = v.to_i / 60.0
+        when /hr?$/
+          r[:sincev] = v.to_i
+        when /d$/
+          r[:sincev] = v.to_i * 24
+        when /mo$/
+          r[:sincev] = v.to_i * 24 * 30
+        when /yr$/
+          r[:sincev] = v.to_i * 24 * 365
         end
       end
+
       if test(?f, @ffile)
         content     = YAML.load_file(@ffile)
         @followers  = content[:followers]
@@ -57,6 +58,10 @@ module SmuleAuto
     def _write_with_backup(mfile, content)
       bakfile = File.join(ENV['HOME'], File.basename(mfile))
       [mfile, bakfile].each do |afile|
+        b2file = afile + ".bak"
+        if test(?f, afile)
+          FileUtils.move(afile, b2file, verbose:true)
+        end
         File.open(afile, 'w') do |fod|
           Plog.info("Writing #{content.size} entries to #{afile}")
           fod.puts content.to_yaml
@@ -150,75 +155,34 @@ module SmuleAuto
       _scan_songs
     end
 
-    def play_favs(pduration=1.0)
+    def play_set(cselect, pduration=1.0)
       pduration = pduration.to_f
       if pduration > 1.0
         pduration = 1.0
       end
-      @spage.goto(@user)
-      @spage.click_and_wait('._bovhcl:nth-child(3)')
-      index    = 0
-      playlist = []
-      _each_main_song do |sitem|
-        playlist << _scan_a_main_song(sitem)
-      end
-      playlist.each_with_index do |pentry, index|
-        pentry[:play_path] = (playlist[index+1] || {})[:play_path]
-      end
+      sort_by, order = (@options[:order] || "listens:a").split(':')
+      order = 'a' unless order
 
-      playlist = playlist.sort_by {|r| r[:listens]}
-      playlist.each do |pentry|
-        next unless pentry[:play_path]
-        element = @spage.find_element(:css, pentry[:play_path])
-        @spage.execute_script("arguments[0].scrollIntoView()", element)
-        sleep 1
-        @spage.execute_script("window.scrollBy(0, -200)")
-        @spage.click_and_wait(pentry[:play_path])
-        @spage.refresh
-        duration = @spage.page.css("._vln25l")[0].text.split(':')
-        secs     = duration[0].to_i * 60 + duration[1].to_i
-        psecs = secs * pduration
-
-        Plog.dump_info(title:pentry[:title], record:pentry[:record_by],
-                       listens:pentry[:listens], psecs:psecs)
-        sleep psecs
+      cselect = cselect.sort_by {|r| r[sort_by.to_sym]}
+      if order == 'd'
+        cselect = cselect.reverse
       end
-    end
-
-    def play_recents(pduration=1.0)
-      pduration = pduration.to_f
-      if pduration > 1.0
-        pduration = 1.0
-      end
-      @spage.goto(@user)
-      playlist = []
-      _each_main_song do |sitem|
-        sentry             = _scan_a_main_song(sitem)
-        play_div           = sitem.css('._1xmmk8d1')[0]
-        sentry[:play_path] = play_div.css_path
-        unless sentry[:collab_url]
-          playlist << sentry
+      size    = (@options[:size] || 100).to_i
+      cselect = cselect[0..size-1]
+      Plog.info("Playing #{cselect.size} songs")
+      cselect.each do |sitem|
+        @spage.goto(sitem[:href])
+        duration_s = @spage.page.css("._vln25l")[0]
+        if duration_s
+          duration = @spage.page.css("._vln25l")[0].text.split(':')
+          secs     = duration[0].to_i * 60 + duration[1].to_i
+          psecs    = secs * pduration
+        else
+          psecs    = 210 * pduration
         end
-      end
-      playlist.each_with_index do |pentry, index|
-        pentry[:play_path] = (playlist[index+1] || {})[:play_path]
-      end
-      playlist = playlist.sort_by {|r| r[:listens]}
-      psize    = (@options[:size] || playlist.size).to_i
-      playlist[0..psize-1].each do |pentry|
-        next unless pentry[:play_path]
-        element = @spage.find_element(:css, pentry[:play_path])
-        @spage.execute_script("arguments[0].scrollIntoView()", element)
-        sleep 1
-        @spage.execute_script("window.scrollBy(0, -200)")
-        @spage.click_and_wait(pentry[:play_path])
-        @spage.refresh
-        duration = @spage.page.css("._vln25l")[0].text.split(':')
-        secs     = duration[0].to_i * 60 + duration[1].to_i
-        psecs = secs * pduration
-
-        Plog.dump_info(title:pentry[:title], record:pentry[:record_by],
-                       listens:pentry[:listens], psecs:psecs)
+        Plog.dump_info(title:sitem[:title], record:sitem[:record_by],
+                       listens:sitem[:listens], psecs:psecs)
+        sitem[:listens] += 1
         sleep psecs
       end
     end
@@ -422,11 +386,16 @@ module SmuleAuto
     end
 
     def download_for_user(user, tdir='.')
-      options = getOption
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
-      result = scan_songs_and_favs(user, tdir)
+
+      options = getOptions
+      auth    = options[:auth]
+      options.delete(:auth)
+      result  = scan_songs_and_favs(user, tdir)
+      options[:auth] = auth
+
       _download_list(result[:songs], tdir)
     end
 
@@ -469,12 +438,34 @@ module SmuleAuto
       true
     end
 
-    def play_favs(user, pduration="1.0")
-      SmuleScanner.new(user, getOption).play_favs(pduration)
+    def play_favs(user, tdir='.', pduration="1.0")
+      cselect = []
+      content = Content.new(user, tdir)
+      at_exit { content.writeback }
+      content.content.each do |k, v|
+        cselect << v if v[:isfav]
+      end
+      SmuleScanner.new(user, getOption).play_set(cselect, pduration)
     end
 
-    def play_recents(user, pduration="1.0")
-      SmuleScanner.new(user, getOption).play_recents(pduration)
+    def play_recents(user, tdir='.', pduration="1.0")
+      cselect = []
+      content = Content.new(user, tdir)
+      at_exit { content.writeback }
+      content.content.each do |k, v|
+        cselect << v if (v[:sincev] < 24*7)
+      end
+      SmuleScanner.new(user, getOption).play_set(cselect, pduration)
+    end
+
+    def play_singer(user, singer, tdir='.', pduration="1.0")
+      cselect = []
+      content = Content.new(user, tdir)
+      at_exit { content.writeback }
+      content.content.each do |k, v|
+        cselect << v if (v[:record_by].grep(/#{singer}/i).size > 0)
+      end
+      SmuleScanner.new(user, getOption).play_set(cselect, pduration)
     end
 
   end
@@ -486,6 +477,7 @@ if (__FILE__ == $0)
     ['--browser', '-b', 1],
     ['--limit',   '-l', 1],
     ['--mysongs', '-m', 0],
+    ['--order',   '-o', 1],
     ['--pages',   '-p', 1],
     ['--quick',   '-q', 0],
     ['--singers', '-s', 1],
