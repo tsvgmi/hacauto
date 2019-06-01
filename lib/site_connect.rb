@@ -156,14 +156,6 @@ class SiteConnect
       sdriver
     end
 
-    def connect_zing(options)
-      SDriver.new('https://mp3.zing.vn', browser:options[:browser])
-    end
-
-    def connect_nhacvn(options)
-      SDriver.new('https://nhac.vn', browser:options[:browser])
-    end
-
     def connect_smule(options)
       sdriver = SDriver.new(options[:url], browser:options[:browser])
       if auth = options[:auth]
@@ -189,12 +181,13 @@ class SiteConnect
       end
       sdriver
     end
+
+    def connect_other(options)
+      SDriver.new(options[:url], browser:options[:browser])
+    end
   end
   
   def initialize(site, options={})
-      require 'byebug'
-
-      byebug
     Plog.info "Connect to site: #{site}"
     config  = YAML.load_file("access.yml")[site.to_s]
     unless config
@@ -204,10 +197,6 @@ class SiteConnect
     case site
     when :gmusic
       @driver = SiteConnect.connect_gmusic(config)
-    when :zing
-      @driver = SiteConnect.connect_zing(config)
-    when :nhacvn
-      @driver = SiteConnect.connect_nhacvn(config)
     when :smule
       @driver = SiteConnect.connect_smule(config)
     when :smule_download
