@@ -9,6 +9,8 @@ gem "nokogiri"
 gem "midi"
 gem "sequel"
 gem "sqlite3"
+gem "http"
+gem "ruby-progressbar"
 
 group "music" do
   gem "taglib-ruby"

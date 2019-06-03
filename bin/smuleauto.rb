@@ -10,6 +10,8 @@ require File.dirname(__FILE__) + "/../etc/toolenv"
 require 'nokogiri'
 require 'yaml'
 require 'cgi'
+require 'http'
+require 'ruby-progressbar'
 require 'core'
 require 'site_connect'
 
@@ -41,6 +43,22 @@ end
 
 module SmuleAuto
   extendCli __FILE__
+
+  class AudioHandler
+    def initialize(link)
+      @olink   = link.sub(/\/ensembles$/, '')
+      source   = HTTP.follow.get(@olink).to_s 
+      document = Nokogiri::HTML(source)
+      @link    = document.at('meta[name="twitter:player:stream"]')['content']
+    end
+
+    def get_audio(ofile)
+      audio = HTTP.follow.get(@link)
+      File.open(ofile, 'wb') do |f|
+        f.write(audio.body)
+      end
+    end
+  end
 
   class Content
     attr_reader :content
@@ -149,6 +167,7 @@ module SmuleAuto
         end
         yield k, v
       end
+      true
     end
   end
 
@@ -342,8 +361,9 @@ module SmuleAuto
       phref    = plink['href'].split('/')
       sid      = phref[-1] == 'ensembles' ? phref[-2] : phref[-1]
       created  = Time.now - time_since(since)
+      title    = clean_emoji(plink.text.strip)
       {
-        title:       plink.text.strip,
+        title:       title,
         href:        plink['href'],
         record_by:   record_by,
         listens:     sitem.css('._1wii2p1')[0].text.to_i,
@@ -366,8 +386,9 @@ module SmuleAuto
       sid       = phref[-1] == 'ensembles' ? phref[-2] : phref[-1]
       since     = sitem.css('.stat-timeago').first.text.strip
       created   = Time.now - time_since(since)
+      title    = clean_emoji(plink['title'].strip)
       {
-        title:       plink['title'].strip,
+        title:       title,
         href:        plink['href'],
         record_by:   record_by,
         listens:     sitem.css('.stat-listens').first.text.to_i,
@@ -390,8 +411,9 @@ module SmuleAuto
       [ofile, sfile]
     end
 
-    def _download_list(flist, tdir)
+    def _prepare_download(flist, tdir)
       options = getOption
+      bar     = ProgressBar.create(title:"Preparing list", total:flist.size)
       flist   = flist.select do |afile|
         afile[:ofile], afile[:sfile] = _ofile(afile, tdir)
         odir          = File.dirname(afile[:ofile])
@@ -407,7 +429,11 @@ module SmuleAuto
           Plog.dump_error(errmsg:errmsg, sfile:afile[:sfile],
                           ofile:afile[:ofile])
         end
-        !test(?f, afile[:sfile])
+        unless res = test(?f, afile[:sfile]) && test(?l, afile[:ofile])
+          Plog.dump_info(msg:"Missing", afile:afile)
+        end
+        bar.increment
+        !res
       end
       if options[:limit]
         limit = options[:limit].to_i
@@ -415,6 +441,35 @@ module SmuleAuto
       end
       if flist.size <= 0
         Plog.info "No new files to download"
+        return nil
+      end
+      flist
+    end
+
+    def _download_list(flist, tdir)
+      unless flist = _prepare_download(flist, tdir)
+        return
+      end
+      bar = ProgressBar.create(title:"Downloading songs", total:flist.size)
+      flist.each do |afile|
+        Plog.dump_info(afile:afile)
+        begin
+          unless test(?f, afile[:sfile])
+            surl = "https://smule.com#{afile[:href]}"
+            AudioHandler.new(surl).get_audio(afile[:sfile])
+          end
+          FileUtils.symlink(afile[:sfile], afile[:ofile],
+                            verbose:true, force:true)
+          _update_mp4tag(afile)
+        rescue => errmsg
+          Plog.dump_error(errmsg:errmsg)
+        end
+        bar.increment
+      end
+    end
+
+    def _download_list_from_smule_dl(flist, tdir)
+      unless flist = _prepare_download(flist, tdir)
         return
       end
       Plog.info "Downloading #{flist.size} songs"
@@ -431,9 +486,11 @@ module SmuleAuto
           media_url = spage.current_url
 
           # Route to null in case quote causing -o to not take effect
-          command   = "curl -o \"#{afile[:sfile]}\" \"#{media_url}\" >/dev/null"
-          Plog.info("+ #{command}")
-          system command
+          unless test(?f, afile[:sfile])
+            command = "curl -o \"#{afile[:sfile]}\" \"#{media_url}\" >/dev/null"
+            Plog.info("+ #{command}")
+            system command
+          end
           FileUtils.symlink(afile[:sfile], afile[:ofile],
                             verbose:true, force:true)
           _update_mp4tag(afile)
@@ -483,14 +540,6 @@ module SmuleAuto
       result  = scan_songs_and_favs(user, tdir)
       _download_list(result[:songs], tdir)
 
-      content = Content.new(user, tdir)
-      content.add_new_songs(result[:songs], false)
-      content.add_new_songs(result[:favs],  true)
-      content.writeback
-    end
-
-    def download_from_file(sfile, tdir='.')
-      _download_list(YAML.load_file(sfile), tdir)
       content = Content.new(user, tdir)
       content.add_new_songs(result[:songs], false)
       content.add_new_songs(result[:favs],  true)
@@ -574,63 +623,49 @@ module SmuleAuto
       end
     end
 
-    def set_ofile(user, tdir='.')
+    def fix_titles(user, tdir='.')
       options = getOption
       content = Content.new(user, tdir)
       changed = false
-      dllist  = []
       content.each(options[:filter]) do |k, v|
-        ofile, sfile = _ofile(v, tdir)
-        unless v[:ofile]
-          v[:ofile] = ofile
-          changed = true
+        newtitle = clean_emoji(v[:title])
+        #Plog.dump_info(title:v[:title], newtitle:newtitle)
+        next if newtitle == v[:title]
+        old_ofile = v[:ofile]
+        v[:title] = newtitle
+        v[:ofile], v[:sfile] = _ofile(v, tdir)
+        if v[:ofile] != old_ofile
+          Plog.dump_info(old_ofile:old_ofile, v:v)
+          # Possible the run was erroring out so even link was moved
+          # but store was not updated
+          if !test(?f, v[:ofile])
+            FileUtils.remove(old_ofile, verbose:true, force:true) if old_ofile
+            FileUtils.symlink(v[:sfile], v[:ofile],
+                              verbose: true, force:true)
+          end
         end
-        unless v[:sfile]
-          v[:sfile] = sfile
-          changed = true
-        end
-        if sfile && !test(?f, sfile)
-          dllist << v
-          Plog.dump_info(dsize:dlist.size, sfile:sfile)
-        end
-        if changed 
-          Plog.dump_info(dsize:dlist.size, ofile:ofile, sfile:sfile)
-        end
+        changed = true
       end
-      if changed 
-        Plog.dump_info(changed:changed)
-        content.writeback
-      end
-      if dllist.size > 0
-        _download_list(dllist, tdir)
-      end
+      content.writeback if changed
     end
 
-    def set_mp4info(user, tdir='.')
-      require 'taglib'
-
+    def download_from_file(user, tdir='.')
       options = getOption
       content = Content.new(user, tdir)
+      olist   = []
       content.each(options[:filter]) do |k, v|
-        ofile   = v[:sfile]
-        album   = Time.now.strftime("Smule-%Y.%m")
-        comment = Time.now.strftime("Download from smule on %Y-%m-%d")
-        if ofile && test(?f, ofile)
-          mp4 = TagLib::MP4::File.new(ofile)
-          next if (!mp4.tag || mp4.tag.title != 'ver:1')
-          title           = clean_emoji(v[:title])
-          mp4.tag.title   = title
-          mp4.tag.artist  = v[:record_by].join(', ')
-          mp4.tag.album   = album
-          mp4.tag.comment = comment
-          mp4.save
-          Plog.dump_info(title:mp4.tag.title, sid:v[:sid])
-          Plog.info("Updated #{ofile}")
-        end
+        olist << v
       end
-      true
+      if olist.size > 0
+        _download_list(olist, tdir)
+        content.writeback
+      end
     end
 
+    def download_song(url, ofile=nil)
+      ofile ||= url.split('/').last + ".m4a"
+      AudioHandler.new(url).get_audio(ofile)
+    end
   end
 end
 
