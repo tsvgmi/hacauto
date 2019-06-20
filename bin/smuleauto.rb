@@ -1,9 +1,6 @@
 #!/usr/bin/env ruby
 #---------------------------------------------------------------------------
 # File:        hacauto.rb
-# Date:        2017-07-29 09:54:48 -0700
-# Copyright:   E*Trade, 2017
-# $Id$
 #---------------------------------------------------------------------------
 #++
 require File.dirname(__FILE__) + "/../etc/toolenv"
@@ -141,10 +138,17 @@ module SmuleAuto
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
         # Keep the 1st created, b/c it is more accurate
-        if old_content = @content[r[:sid]]
-          r[:created] = old_content[:created]
+        sid = r[:sid]
+        if @content[sid]
+          @content[sid].update(
+            listens:   r[:listens],
+            loves:     r[:loves],
+            since:     r[:since],
+            record_by: r[:record_by],   # In case user change login
+          )
+        else
+          @content[sid] = r
         end
-        @content[r[:sid]] = r
       end
       self
     end

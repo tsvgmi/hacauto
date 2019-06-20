@@ -1,9 +1,5 @@
 #---------------------------------------------------------------------------
 # File:        toolenv.rb
-# Date:        Thu Nov 22 18:45:57 -0500 2007
-# Copyright:   Mocana, 2007
-# Description: Bootstrap for MSS ruby scripts
-# $Id: toolenv.rb 56 2010-06-29 17:47:56Z tvuong $
 #---------------------------------------------------------------------------
 #+++
 if !ENV["TOOL_DEFINED"]
