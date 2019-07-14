@@ -134,6 +134,14 @@ module SmuleAuto
 
     def add_new_songs(block, isfav=false)
       now = Time.now
+
+      # Favlist must be reset if specified
+      if isfav
+        @content.each do |sid, sinfo|
+          sinfo.delete(:isfav)
+        end
+      end
+
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
@@ -145,6 +153,7 @@ module SmuleAuto
             loves:     r[:loves],
             since:     r[:since],
             record_by: r[:record_by],   # In case user change login
+            isfav:     r[:isfav]
           )
         else
           @content[sid] = r
@@ -258,7 +267,7 @@ module SmuleAuto
     end
 
     def download
-      #begin
+      begin
         if @options[:force] || !test(?f, @info[:sfile])
           audio_handler = AudioHandler.new(@surl)
           audio_handler.get_audio(@info[:sfile])
@@ -272,9 +281,9 @@ module SmuleAuto
           FileUtils.symlink(@info[:sfile], @info[:ofile],
                             verbose:true, force:true)
         end
-      #rescue => errmsg
-        #Plog.dump_error(errmsg:errmsg)
-      #end
+      rescue => errmsg
+        Plog.dump_error(errmsg:errmsg)
+      end
     end
 
     def update_mp4tag
