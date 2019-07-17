@@ -147,14 +147,17 @@ module SmuleAuto
         r[:isfav]      = isfav if isfav
         # Keep the 1st created, b/c it is more accurate
         sid = r[:sid]
-        if @content[sid]
-          @content[sid].update(
+        if c = @content[sid]
+          c.update(
             listens:   r[:listens],
             loves:     r[:loves],
             since:     r[:since],
             record_by: r[:record_by],   # In case user change login
             isfav:     r[:isfav]
           )
+          if c[:isfav]
+            c[:oldfav] = true
+          end
         else
           @content[sid] = r
         end
