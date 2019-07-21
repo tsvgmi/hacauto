@@ -155,9 +155,7 @@ module SmuleAuto
             record_by: r[:record_by],   # In case user change login
             isfav:     r[:isfav]
           )
-          if c[:isfav]
-            c[:oldfav] = true
-          end
+          c[:oldfav] = true if c[:isfav]
         else
           @content[sid] = r
         end
@@ -647,6 +645,20 @@ module SmuleAuto
       content = Content.new(user, tdir)
       content.add_new_songs(result[:songs], false)
       content.add_new_songs(result[:favs],  true)
+      content.writeback
+      true
+    end
+
+    # Not quite working yet .....
+    def download_collab(user, tdir, collab_url)
+      unless test(?d, tdir)
+        raise "Target dir #{tdir} not accessible to download music to"
+      end
+
+      result = SmuleScanner.new(user, getOption).scan_collab_list([collab_url])
+      _download_list(result, tdir)
+      content = Content.new(user, tdir)
+      content.add_new_songs(result, false)
       content.writeback
       true
     end
