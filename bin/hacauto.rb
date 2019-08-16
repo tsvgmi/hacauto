@@ -321,32 +321,36 @@ EOH
 
   def create_song(spage, sinfo, options={})
     surl = sinfo[:href]
-    info = sinfo[:lyrics] ? sinfo : get_page_lyric(surl)
-    unless info
-      return nil
+    unless sinfo[:lyric]
+      if info = get_page_lyric(surl)
+        unless sinfo[:lyrics]
+          return nil
+        end
+        sinfo.update(info)
+      end
     end
-    Plog.dump_info(pcount:info[:pcount])
-    #Plog.dump_info(info:info)
+
+    Plog.dump_info(pcount:sinfo[:pcount])
     begin
-      spage.click_and_wait('#create-song-link')
+      spage.click_and_wait('#create-song-link', 4)
       spage.click_and_wait('#auto-caret-btn', 0)
-      spage.type('#song-name',    info[:title])
-      lnote = info[:lnote] || ""
+      spage.type('#song-name', sinfo[:title])
+      lnote = sinfo[:lnote] || ""
       if options[:addn_note]
         lnote += "\n#{options[:addn_note]}"
       end
       if !lnote.empty?
-        spage.type('#song-lyric', lnote.strip + "\n===\n" + info[:lyric])
+        spage.type('#song-lyric', lnote.strip + "\n===\n" + sinfo[:lyric])
       else
-        spage.type('#song-lyric', info[:lyric])
+        spage.type('#song-lyric', sinfo[:lyric])
       end
-      spage.type('#song-authors', info[:author])
-      spage.type('#song-genres',  info[:genre])
-      spage.type('#singer-names', info[:artist])
-      spage.type('#singer-key',   info[:chord])
-      spage.type('#song-link',    info[:source])
+      spage.type('#song-authors', sinfo[:author])
+      spage.type('#song-genres',  sinfo[:genre])
+      spage.type('#singer-names', sinfo[:artist])
+      spage.type('#singer-key',   sinfo[:chord])
+      spage.type('#song-link',    sinfo[:source])
       Plog.info "Review page to fill in remaining info and submit afterward"
-      play_song(info, spage)
+      play_song(sinfo, spage)
     rescue => errmsg
       Plog.error errmsg
     end
@@ -796,9 +800,6 @@ class HACAuto
       [slist, nlist]
     end
 
-    def filter_slist
-    end
-
     def update_pl_desc(spage, plno, title, description)
       path = "/playlist/v/#{plno}"
       spage.goto(path)
@@ -930,7 +931,8 @@ class HACAuto
 
     def hac_download_song(url)
       options = getOption
-      HacSource.new(options).download_song(url, options)
+      source  = HacSource.new(options).download_song(url, options)
+      source[:lyric].gsub(/\[[^\]]+\]/, '')
     end
 
     def hac_download_lyrics_for_slist(slfile)

@@ -875,7 +875,7 @@ class HacSource < MusicSource
       return
     end
 
-    sinfo = {href:href}
+    sinfo = {href:href, ofile:ofile}
     sinfo.update(lyric_info(sinfo[:href]) || {})
     
     Plog.info("Writing to #{ofile}")
@@ -883,6 +883,7 @@ class HacSource < MusicSource
       fod.puts sinfo.to_yaml
       #fod.puts JSON.pretty_generate(sinfo)
     end
+    sinfo
   end
 
   def download_songs(user, options={})

@@ -160,8 +160,8 @@ class SiteConnect
       sdriver = SDriver.new(options[:url], browser:options[:browser])
       if auth = options[:auth]
         identity, password = auth.split(':')
-        sdriver.click_and_wait('._1ob71s7', 2)          # Login
-        sdriver.click_and_wait('._bcznkc', 2, 1)        # Email
+        sdriver.click_and_wait('#react-login-button', 2)          # Login
+        sdriver.click_and_wait('._cul1gj', 2, 1)        # Email
         sdriver.type('input[name="snp-username"]', identity + "\n")
         sleep 1
         sdriver.type('input[name="snp-password"]', password + "\n")

@@ -367,7 +367,7 @@ module SmuleAuto
 
     def scan_favs
       @spage.goto(@user)
-      @spage.click_and_wait('._bovhcl:nth-child(3)')
+      @spage.click_and_wait('._16qibwx:nth-child(3)')
       _scan_songs
     end
 
@@ -405,13 +405,13 @@ module SmuleAuto
     
     def scan_followers
       @spage.goto(@user)
-      @spage.click_and_wait('._bovhcl:nth-child(4)')
+      @spage.click_and_wait('._16qibwx:nth-child(4)')
       _scan_users
     end
 
     def scan_followings
       @spage.goto(@user)
-      @spage.click_and_wait('._bovhcl:nth-child(5)')
+      @spage.click_and_wait('._16qibwx:nth-child(5)')
       _scan_users
     end
 
@@ -443,7 +443,7 @@ module SmuleAuto
     def _scan_users
       _scroll_to_bottom
       result = []
-      sitems = @spage.page.css("._1mcyx7uu")
+      sitems = @spage.page.css("._aju92n9")
       sitems.each do |sitem|
         name   = sitem.css("._409m7v").text.strip
         avatar = sitem.css("._1eeaa3cb")[0]['style']
@@ -514,13 +514,12 @@ module SmuleAuto
         end
       end
       unless record_by
-        s1 = sitem.css('._1bho7ie')[0]
-        s1 = s1 ? s1.text.strip : nil
-        s2 = sitem.css('._1t74rwnk')[0]
-        s2 = s2 ? s2.text.strip : nil
-        record_by ||= [s1, s2].compact
+        s1        = sitem.css('._1iurgbx')[0]
+        s1        = s1 ? s1.text.strip : nil
+        s2        = sitem.css('._1iurgbx')[1]
+        s2        = s2 ? s2.text.strip : nil
+        record_by = [s1, s2].compact
       end
-      play_div = sitem.css('._1xmmk8d1')[0]
       phref    = plink['href'].split('/')
       sid      = phref[-1] == 'ensembles' ? phref[-2] : phref[-1]
       created  = Time.now - time_since(since)
