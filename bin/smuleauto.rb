@@ -121,6 +121,11 @@ module SmuleAuto
     end
 
     def set_follows(followings, followers)
+      # Clear the list first
+      @singers.each do |singer, sinfo|
+        @singers[singer].delete(:following)
+        @singers[singer].delete(:follower)
+      end
       followings.each do |singer|
         @singers[singer[:name]] ||= singer
         @singers[singer[:name]][:following] = true
@@ -406,18 +411,21 @@ module SmuleAuto
     def scan_followers
       @spage.goto(@user)
       @spage.click_and_wait('._16qibwx:nth-child(4)')
+      sleep(2)
       _scan_users
     end
 
     def scan_followings
       @spage.goto(@user)
       @spage.click_and_wait('._16qibwx:nth-child(5)')
+      sleep(2)
       _scan_users
     end
 
     def scan_songs
       @spage.goto(@user)
-      _scan_songs
+      pages = (@options[:pages] || 100).to_i
+      _scan_songs(pages)
     end
 
     def scan_songs_and_favs
@@ -427,14 +435,12 @@ module SmuleAuto
       }
     end
 
-    def _scroll_to_bottom
-      pages  = (@options[:pages] || 20).to_i
+    def _scroll_to_bottom(pages=nil)
+      pages ||= 100
       bar    = ProgressBar.create(title:"Scroll to end", total:pages)
-      @spage.execute_script("window.scrollTo(0,2500)")
-      sleep 1
       (1..pages).each_with_index do |apage, index|
-        @spage.execute_script("window.scrollTo(0,1000000)")
-        sleep 0.5
+        @spage.execute_script("window.scrollBy({top:700, left:0, behaviour:'smooth'})")
+        sleep 0.1
         bar.increment
       end
       @spage.refresh
@@ -456,11 +462,12 @@ module SmuleAuto
           avatar: avatar,
         }
       end
+      Plog.dump_info(user:result.size)
       result
     end
 
-    def _each_main_song
-      _scroll_to_bottom
+    def _each_main_song(pages)
+      _scroll_to_bottom(pages)
       sitems       = @spage.page.css("._8u57ot")
       result       = []
       collab_links = []
@@ -475,10 +482,10 @@ module SmuleAuto
       end
     end
 
-    def _scan_songs
+    def _scan_songs(pages=100)
       result       = []
       collab_links = []
-      _each_main_song do |sitem|
+      _each_main_song(pages) do |sitem|
         sentry = _scan_a_main_song(sitem)
         next unless sentry
         result << sentry
@@ -638,9 +645,21 @@ module SmuleAuto
         raise "Target dir #{tdir} not accessible to download music to"
       end
 
-      result  = scan_songs_and_favs(user, tdir)
+      result  = scan_songs_and_favs(user)
       _download_list(result[:songs], tdir)
 
+      content = Content.new(user, tdir)
+      content.add_new_songs(result[:songs], false)
+      content.add_new_songs(result[:favs],  true)
+      content.writeback
+      true
+    end
+
+    def collect_songs(user, tdir='.')
+      unless test(?d, tdir)
+        raise "Target dir #{tdir} not accessible to download music to"
+      end
+      result  = scan_songs_and_favs(user)
       content = Content.new(user, tdir)
       content.add_new_songs(result[:songs], false)
       content.add_new_songs(result[:favs],  true)
@@ -662,7 +681,7 @@ module SmuleAuto
       true
     end
 
-    def scan_songs_and_favs(user, tdir=nil)
+    def scan_songs_and_favs(user)
       SmuleScanner.new(user, getOption).scan_songs_and_favs
     end
 
@@ -676,13 +695,11 @@ module SmuleAuto
       scanner    = SmuleScanner.new(user, getOption)
       followings = scanner.scan_followings
       followers  = scanner.scan_followers
+      
       if tdir
         Content.new(user, tdir).set_follows(followings, followers).writeback
       end
-      {
-        followings: followings,
-        followers:  followers,
-      }.to_yaml
+      true
     end
 
     def show_content(user, tdir='.')

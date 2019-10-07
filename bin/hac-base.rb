@@ -38,6 +38,7 @@ class ClickLog
   end
 
   def was_clicked?(user, link, selector)
+    link = link.sub(/\/$/, '')
     mkey = "#{user}@#{link}@#{selector}"
     if @kmap[mkey]
       Plog.info "Skipping previous action: #{mkey}"
@@ -47,6 +48,7 @@ class ClickLog
   end
 
   def log_click(user, link, selector)
+    link = link.sub(/\/$/, '')
     if was_clicked?(user, link, selector)
       return true
     end

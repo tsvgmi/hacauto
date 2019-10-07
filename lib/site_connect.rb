@@ -8,6 +8,7 @@
 require File.dirname(__FILE__) + "/../etc/toolenv"
 require 'selenium-webdriver'
 require 'openssl'
+require 'open-uri'
 
 module HtmlRes
   def get_page_curl(url, options={})
@@ -20,8 +21,6 @@ module HtmlRes
   end
 
   def get_page(url)
-    require 'open-uri'
-
     # Some sites does not have good SSL certs.  That's OK here.
     
     Plog.dump_info(url:url)
@@ -82,8 +81,8 @@ class SDriver
     @url    = base_url
     @auser  = options[:user]
     browser = (options[:browser] || 'firefox').to_sym
+    Plog.info("Goto #{@url} using #{browser}")
     @driver = Selenium::WebDriver.for browser
-    Plog.info("Goto #{@url}")
     @driver.navigate.to(@url)
     sleep(1)
   end

@@ -52,6 +52,10 @@ class MusicSource
         SpotifySource.new
       when /tabs.ultimate-guitar.com/
         TabGuitarSource.new
+      when /guitartwitt.com/
+        GuitarTwitt.new
+      when /chordsworld.com/
+        ChordsWorld.new
       when %r{zing}
         ZingSource.new
       else
@@ -87,6 +91,7 @@ module ChordMerger
     chords
   end
 
+  # Merge the blob where chord line goes on top of lyric line
   def merge_chord_lines(lyric)
     chords  = []
     result  = []
@@ -146,23 +151,24 @@ module ChordMerger
   end
 end
 
-class TabGuitarSource < MusicSource
-  include ChordMerger
-
-  def detect_and_clean_chord_line(l)
-    if l.include?('[ch]')
-      l = l.gsub(/\[\/?ch\]/o, '')
-      [l, true]
-    else
-      [l, false]
-    end
-  end
-
+class GuitarTwitt < MusicSource
+  
+  # WIP:  Not parseable?
   def lyric_info(url)
-    require 'json'
+    require 'byebug'
 
+    byebug
     Plog.info("Extract lyrics from #{url}")
-    blob  = get_page_curl(url, raw:true).split("\n").grep(/window.UGAPP.store.page/)[0]
+    page    = get_page_curl(url)
+    content = page.css('.entry-content')
+    ltext   = []
+    content.css('p, h4').each do |ap|
+      nap = Nokogiri::HTML(ap.to_html.gsub('<br>', '<p>'))
+      ltext.concat(nap.css('p'))
+    end
+    
+    
+    blob  = get_page_curl(url, raw:true)
     blob  = JSON.parse(blob.sub(/^[^{]*/o, '').sub(/;\s*$/o, ''))['data']
     lyric = merge_chord_lines(blob.dig('tab_view', 'wiki_tab', 'content'))
     {
@@ -176,7 +182,7 @@ class TabGuitarSource < MusicSource
   end
 end
 
-class ChordZoneSource < MusicSource
+class ChordsWorld < MusicSource
   include ChordMerger
 
   def detect_and_clean_chord_line(l)
@@ -193,15 +199,61 @@ class ChordZoneSource < MusicSource
   end
 
   def lyric_info(url)
+    require 'json'
+      require 'byebug'
+
+      byebug
+
     Plog.info("Extract lyrics from #{url}")
-    page  = get_page(url)
-    lyric = page.css('.entry-content pre').text
-    lyric = merge_chord_lines(lyric)
-    artist, title = page.css('h3.post-title').text.strip.split(/\s*-\s*/)
+    page  = get_page_curl(url)
+    blob  = page.css('.contentprotect')
+    lyric = merge_chord_lines(blob.text)
+    lyric = lyric.split("\n").select{|l| l !~ /adsbygoogle/}.join("\n")
+    etitle =  page.css('.entry-title').text
+    artist, title = etitle.split(/\s+-\s+/, 2)
     {
       lyric:  lyric,
-      title:  title.sub(/\s*Chords and Lyrics\s*$/io, ''),
+      title:  title,
       artist: artist,
+      source: url,
+    }
+  end
+end
+
+class TabGuitarSource < MusicSource
+  include ChordMerger
+
+  def detect_and_clean_chord_line(l)
+    if l.include?('[ch]')
+      l = l.gsub(/\[\/?ch\]/, '')
+      cline = true
+    else
+      cline = true
+      words = l.split
+      words.each do |w|
+        if w !~ /^\[?[-A-G][Mmb#ajdimsu0-9]*(\/[A-Gb#]*)?\]?$/o
+          cline = false
+          break
+        end
+      end
+      cline = false if words.size <= 0
+    end
+    [l, cline]
+  end
+
+  def lyric_info(url)
+    require 'json'
+
+    Plog.info("Extract lyrics from #{url}")
+    blob  = get_page_curl(url, raw:true).split("\n").grep(/window.UGAPP.store.page/)[0]
+    blob  = JSON.parse(blob.sub(/^[^{]*/o, '').sub(/;\s*$/o, ''))['data']
+    lyric = merge_chord_lines(blob.dig('tab_view', 'wiki_tab', 'content'))
+    {
+      lyric:  lyric,
+      title:  blob.dig('tab', 'song_name'),
+      artist: (blob.dig('tab', 'recording', 'recording_artists') || []).
+                map{|r| r.dig('artist', 'name')}.join(', '),
+      author: blob.dig('tab', 'artist_name'),
       source: url,
     }
   end

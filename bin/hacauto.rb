@@ -49,7 +49,10 @@ class SPage < SelPage
         end
         next if (rcount < pcount)
       end
-      links << item.css('a.song-title')[0]['href']
+      # Only click from real song link
+      link = item.css('a.song-title')[0]['href'].
+        sub(/\/manage\/song\/approve\//, '/song/')
+      links << link
     end
     click_links(links, rselector, options)
     song_items
@@ -57,7 +60,9 @@ class SPage < SelPage
 
   def click_links(links, rselector, options={})
     limit = (options[:limit] || 1000).to_i
-    links = links.select {|r| !@clog.was_clicked?(@auser, r, rselector)}
+    unless options[:force]
+      links = links.select {|r| !@clog.was_clicked?(@auser, r, rselector)}
+    end
     if links.size <= 0
       return
     end
@@ -501,7 +506,7 @@ class HACAuto
 
   class << self
     def hav_find_matching_song(url)
-      options = getOption
+      options = _getOptions
       linfo   = AutoFill.new(options).get_page_lyric(url)
       HavSource.new.find_matching_song(linfo[:title]).first
     end
@@ -512,13 +517,13 @@ class HACAuto
       else
         case site
         when :gmusic
-          @sdriver = SiteConnect.connect_gmusic(getOption)
+          @sdriver = SiteConnect.connect_gmusic(_getOptions)
         when :zing
-          @sdriver = SiteConnect.connect_zing(getOption)
+          @sdriver = SiteConnect.connect_zing(_getOptions)
         when :nhacvn
-          @sdriver = SiteConnect.connect_nhacvn(getOption)
+          @sdriver = SiteConnect.connect_nhacvn(_getOptions)
         else
-          @sdriver = SiteConnect.connect_hac(getOption)
+          @sdriver = SiteConnect.connect_hac(_getOptions)
         end
         do_close = true
       end
@@ -538,7 +543,7 @@ class HACAuto
     end
 
     def _each_page(link)
-      options = getOption
+      options = _getOptions
       if value = options[:page]
         page, incr = value.split(',')
         page = value.to_i
@@ -562,7 +567,7 @@ class HACAuto
     end
 
     def rate_today
-      options = getOption
+      options = _getOptions
       _connect_site do |spage|
         spage.find_and_click_links('a.hot-today-item-song',
                           '#contribute-rating-control', options)
@@ -570,7 +575,7 @@ class HACAuto
     end
 
     def rate_week
-      options = getOption
+      options = _getOptions
       _connect_site do |spage|
         spage.find_and_click_song_links('div#weekly-monthly-list',
                           '#contribute-rating-control', options)
@@ -591,8 +596,8 @@ class HACAuto
       end
     end
 
-    def rate_path(path, level=3)
-      options    = getOption
+    def rate_path(path, level)
+      options    = _getOptions
       hac_source = HacSource.new(options)
       path       = path.sub(/#{hac_source.base_url}/i, '')
       _each_page(path) do |spage|
@@ -604,6 +609,10 @@ class HACAuto
 
     def rate_user(user, level)
       rate_path("profile/posted/#{user}", level)
+    end
+
+    def rate_posted(level=3)
+      rate_path("manage/song/approved", level)
     end
 
     def rate_rhymth(rhymth, level=3)
@@ -619,7 +628,7 @@ class HACAuto
     end
 
     def like_user(user)
-      options = getOption
+      options = _getOptions
       _each_page("/profile/posted/#{user}") do |spage|
         nlinks = []
         sitems = spage.page.css(".song-item")
@@ -634,7 +643,7 @@ class HACAuto
     end
 
     def approve_versions(user)
-      options = getOption
+      options = _getOptions
       _each_page("/profile/posted/#{user}") do |spage|
         nlinks = []
         sitems = spage.page.css(".song-item")
@@ -690,7 +699,7 @@ class HACAuto
     end
 
     def create_from_site(*sfiles)
-      options          = getOption
+      options          = _getOptions
       options[:random] = true
       coptions         = options[:with_attribution] ? {addn_note:'Source: hopamviet.vn'} : {}
       store            = SongStore.new(sfiles, options)
@@ -702,7 +711,7 @@ class HACAuto
 
     # Get the song from hav but missing from hac.  Optionally create the songs on hac
     def hav_find_missing(curl)
-      options = getOption
+      options = _getOptions
       slist   = HavSource.new.scan_song_list(curl, options)
       slist   = AutoFill.new(options).find_missing_song(slist)
       options[:ofile] ||= File.basename(curl).sub(/\..*$/, '') + '.yml'
@@ -713,7 +722,7 @@ class HACAuto
     end
 
     def hav_load_songs(sfile)
-      options = getOption
+      options = _getOptions
       slist   = YAML.load_file(sfile)
       bar     = ProgressBar.new(slist.size)
       slist.each do |sinfo|
@@ -735,7 +744,7 @@ class HACAuto
     end
 
     def hah_xem_nhieu(list_no=0)
-      options = getOption
+      options = _getOptions
       options[:list_no] = list_no
       xem_nhieu('https://hopamhay.com')
     end
@@ -753,7 +762,7 @@ class HACAuto
     end
 
     def xem_nhieu(url)
-      options = getOption
+      options = _getOptions
       slist, nlist = _collect_and_filter do
         MusicSource.mk_source(url).song_list_with_filter(url, options)
       end
@@ -761,7 +770,7 @@ class HACAuto
     end
 
     def _collect_and_filter
-      options = getOption
+      options = _getOptions
       slist   = yield
       if slist && (slist[0] || {})[:href]
         slist   = slist.uniq {|r| r[:href]}
@@ -887,7 +896,7 @@ class HACAuto
 
     def zing_song_list(url=nil)
       base_url ||= 'https://nhac.vn'
-      options = getOption
+      options = _getOptions
       slist   = []
       _connect_site(:zing) do |spage|
         slist = ZingSource.new.browser_song_list(spage, url, options)
@@ -902,7 +911,7 @@ class HACAuto
     end
 
     def zing_xem_nhieu(url=nil)
-      options = getOption
+      options = _getOptions
       slist   = []
       _connect_site(:zing) do |spage|
         slist, nlist = _collect_and_filter do
@@ -925,18 +934,18 @@ class HACAuto
 
     # Saving my stuff locally
     def hac_download_songs(user='thienv')
-      options = getOption
+      options = _getOptions
       HacSource.new(options).download_songs(user, options)
     end
 
     def hac_download_song(url)
-      options = getOption
+      options = _getOptions
       source  = HacSource.new(options).download_song(url, options)
       source[:lyric].gsub(/\[[^\]]+\]/, '')
     end
 
     def hac_download_lyrics_for_slist(slfile)
-      options    = getOption
+      options    = _getOptions
       hac_source = HacSource.new(options)
       YAML.load_file(slfile).each do |e|
         hrefs = e[:href].split('/')
@@ -955,7 +964,7 @@ class HACAuto
     end
 
     def hac_classify_waiting(user='thienv')
-      options    = getOption
+      options    = _getOptions
       hac_source = HacSource.new(options)
       url        = "#{hac_source.base_url}/manage/song/approving"
       _each_page(url) do |spage|
@@ -975,7 +984,7 @@ class HACAuto
 
     def lyric_info(url)
       begin
-        MusicSource.mk_source(url, getOption).lyric_info(url)
+        MusicSource.mk_source(url, _getOptions).lyric_info(url)
       rescue => errmsg
         Plog.error "Error retrieving #{url} - #{errmsg}"
         nil
@@ -983,7 +992,7 @@ class HACAuto
     end
 
     def song_list(url)
-      options = getOption
+      options = _getOptions
       begin
         MusicSource.mk_source(url, options).song_list(url, options)
       rescue => errmsg
@@ -993,7 +1002,7 @@ class HACAuto
     end
 
     def monitor_lyric(url, ofile='monitor-out.yml')
-      options       = getOption
+      options       = _getOptions
       source        = MusicSource.mk_source(url, options)
       mcontent      = []
       checked_lists = []
@@ -1047,7 +1056,7 @@ class HACAuto
     end
 
     def playlist(url)
-      options = getOption
+      options = _getOptions
       source  = MusicSource.mk_source(url)
       result, _tmp = _collect_and_filter do
         source.song_list(url, options)
@@ -1056,7 +1065,7 @@ class HACAuto
     end
 
     def playfile_to_hac(plname, file)
-      options = getOption
+      options = _getOptions
       options[:site_filter] = 'hac'
       slist   = File.read(file).split("\n").map do |r|
         {name: r.sub(/,.*$/,'')}
@@ -1067,7 +1076,7 @@ class HACAuto
 
     # Convert a playlist to HAC (find matching song and build list)
     def playlist_to_hac(plname, url)
-      options = getOption
+      options = _getOptions
       plname  = CGI.unescape(plname) if plname.include?('%')
       options[:site_filter] = 'hac'
       options[:src_url]     = url
@@ -1099,13 +1108,13 @@ class HACAuto
     # Find list of matching songs from HAV.  List is normally from NCT
     def hav_matching_songs(cfile)
       slist, nlist = HavSource.new.find_matching_songs(YAML.load_file(cfile))
-      _output_data(slist, getOption)
+      _output_data(slist, _getOptions)
     end
 
     def youtube_dl(url)
       require 'tempfile'
 
-      options = getOption
+      options = _getOptions
       odir    = options[:odir] || '.'
       ofile   = options[:ofile] || '%(title)s-%(creator)s-%(release_date)s'
       tmpf    = Tempfile.new('youtube')
@@ -1218,7 +1227,7 @@ class HACAuto
     end
 
     def sendto(url, method, *args)
-      options = getOption
+      options = _getOptions
       MusicSource.mk_source(url, options).send(method, url, options, *args)
     end
   end
