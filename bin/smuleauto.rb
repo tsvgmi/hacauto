@@ -440,7 +440,7 @@ module SmuleAuto
       bar    = ProgressBar.create(title:"Scroll to end", total:pages)
       (1..pages).each_with_index do |apage, index|
         @spage.execute_script("window.scrollBy({top:700, left:0, behaviour:'smooth'})")
-        sleep 0.1
+        sleep 0.2
         bar.increment
       end
       @spage.refresh
