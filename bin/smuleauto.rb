@@ -79,14 +79,26 @@ module SmuleAuto
     end
   end
 
+  class ConfigFile
+    def initialize(cfile)
+      @cfile = cfile
+      if test(?f, @cfile)
+        @content = YAML.load_file(@cfile)
+      else
+        @content = {}
+      end
+    end
+  end
+
   class Content
     attr_reader :content, :singers
 
     def initialize(user, cdir='.')
-      @user  = user
-      @cdir  = cdir
-      @cfile = "#{cdir}/content-#{user}.yml"
-      @sfile = "#{cdir}/singers.yml"
+      @user    = user
+      @cdir    = cdir
+      @cfile   = "#{cdir}/content-#{user}.yml"
+      @sfile   = "#{cdir}/singers.yml"
+      @tagfile = "#{cdir}/songtags.yml"
       if test(?f, @cfile)
         @content = YAML.load_file(@cfile)
       else
@@ -100,7 +112,7 @@ module SmuleAuto
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
     end
 
-    def _write_with_backup(mfile, content)
+    def _write_with_backup(mfile, content, format=:yaml)
       bakfile = File.join(ENV['HOME'], File.basename(mfile))
       [mfile, bakfile].each do |afile|
         b2file = afile + ".bak"
@@ -109,7 +121,12 @@ module SmuleAuto
         end
         File.open(afile, 'w') do |fod|
           Plog.info("Writing #{content.size} entries to #{afile}")
-          fod.puts content.to_yaml
+          case format
+          when :text
+            fod.puts content
+          else
+            fod.puts content.to_yaml
+          end
         end
       end
     end
@@ -117,6 +134,21 @@ module SmuleAuto
     def writeback
       _write_with_backup(@cfile, @content)
       _write_with_backup(@sfile, @singers)
+
+      tagset  = {}
+      if test(?f, @tagfile)
+        File.read(@tagfile).split("\n").each do |l|
+          k, v = l.split(':::')
+          tagset[k.downcase] = (v || '').split(',')
+        end
+      end
+      @content.each do |sid, asong|
+        title = asong[:title].downcase
+        tagset[title] ||= []
+      end
+      tagset = tagset.to_a.sort_by{|k, v| k.downcase}.
+        map {|k, v| "#{k}:::#{v.join(',')}"}
+      _write_with_backup(@tagfile, tagset, :text)
       self
     end
 
@@ -503,6 +535,18 @@ module SmuleAuto
       result
     end
 
+    # Account to move songs to.  i.e. user close old account and open
+    # new one and we want to associate with new account
+    Alternate = {
+      '__MinaTrinh__' => 'Mina_________',
+    }
+
+    def _record_by_map(record_by)
+      record_by.map do |ri|
+        Alternate[ri] || ri
+      end
+    end
+
     def _scan_a_main_song(sitem)
       plink = sitem.css('a._1sgodipg')[0]
       if !plink || (sitem.css('._1wii2p1').size <= 0)
@@ -534,7 +578,7 @@ module SmuleAuto
       {
         title:       title,
         href:        plink['href'],
-        record_by:   record_by,
+        record_by:   _record_by_map(record_by),
         listens:     sitem.css('._1wii2p1')[0].text.to_i,
         loves:       sitem.css('._1wii2p1')[1].text.to_i,
         since:       since,
@@ -559,7 +603,7 @@ module SmuleAuto
       {
         title:       title,
         href:        plink['href'],
-        record_by:   record_by,
+        record_by:   _record_by_map(record_by),
         listens:     sitem.css('.stat-listens').first.text.to_i,
         loves:       sitem.css('.stat-loves').first.text.to_i,
         since:       sitem.css('.stat-timeago').first.text.strip,
@@ -803,6 +847,11 @@ module SmuleAuto
       if changed
         content.writeback
       end
+    end
+
+    def make_song_tags(user, tdir='.')
+      content = Content.new(user, tdir)
+      content.writeback
     end
   end
 end
