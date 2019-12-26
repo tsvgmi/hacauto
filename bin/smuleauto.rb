@@ -112,8 +112,16 @@ module SmuleAuto
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
     end
 
+    def following
+      @singers.select{|k, v| v[:following]}
+    end
+
+    def follower
+      @singers.select{|k, v| v[:follower]}
+    end
+
     def _write_with_backup(mfile, content, format=:yaml)
-      bakfile = File.join(ENV['HOME'], File.basename(mfile))
+      bakfile = File.join(ENV['PWD'], 'data', File.basename(mfile))
       [mfile, bakfile].each do |afile|
         b2file = afile + ".bak"
         if test(?f, afile)
@@ -132,6 +140,8 @@ module SmuleAuto
     end
 
     def writeback
+      require 'time'
+
       _write_with_backup(@cfile, @content)
       _write_with_backup(@sfile, @singers)
 
@@ -170,6 +180,8 @@ module SmuleAuto
     end
 
     def add_new_songs(block, isfav=false)
+      require 'time'
+
       now = Time.now
 
       # Favlist must be reset if specified
@@ -179,6 +191,7 @@ module SmuleAuto
         end
       end
 
+      first_bad_date = Time.parse('2019-07-01')
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
@@ -192,7 +205,9 @@ module SmuleAuto
             record_by: r[:record_by],   # In case user change login
             isfav:     r[:isfav]
           )
-          c[:oldfav] = true if c[:isfav]
+          if c[:isfav]
+            c[:oldfav] = true
+          end
         else
           @content[sid] = r
         end
@@ -370,6 +385,7 @@ module SmuleAuto
       @options   = options
       @connector = SiteConnect.new(:smule, @options)
       @spage     = SelPage.new(@connector.driver)
+      sleep(1)
       at_exit {
         @connector.close
       }
@@ -406,6 +422,21 @@ module SmuleAuto
       @spage.goto(@user)
       @spage.click_and_wait('._16qibwx:nth-child(3)')
       _scan_songs
+    end
+
+    def set_unfavs(songs)
+      songs.each do |asong|
+        @spage.goto(asong[:href])
+        @spage.click_and_wait('._13ryz2x')
+        @spage.click_and_wait('._117spsl')
+      end
+    end
+
+    def unfavs_old(count)
+      result    = scan_favs
+      new_size  = result.size - count
+      set_unfavs(result[new_size..-1])
+      result[0..new_size-1]
     end
 
     def play_set(cselect, pduration=1.0)
@@ -458,13 +489,6 @@ module SmuleAuto
       @spage.goto(@user)
       pages = (@options[:pages] || 100).to_i
       _scan_songs(pages)
-    end
-
-    def scan_songs_and_favs
-      {
-        songs: scan_songs,
-        favs:  scan_favs,
-      }
     end
 
     def _scroll_to_bottom(pages=nil)
@@ -684,40 +708,52 @@ module SmuleAuto
       end
     end
 
-    def download_for_user(user, tdir='.')
+    def _scan_songs(user)
+      SmuleScanner.new(user, getOption).scan_songs
+    end
+
+    def _scan_favs(user)
+      SmuleScanner.new(user, getOption).scan_songs
+    end
+
+    def download_for_user(user, tdir='data')
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
-
-      result  = scan_songs_and_favs(user)
-      _download_list(result[:songs], tdir)
+      options = getOption
+      songs   = _scan_songs(user)
+      _download_list(songs, tdir)
 
       content = Content.new(user, tdir)
-      content.add_new_songs(result[:songs], false)
-      content.add_new_songs(result[:favs],  true)
+      content.add_new_songs(songs, false)
+      unless options[:quick]
+        content.add_new_songs(_scan_favs(user),  true)
+      end
       content.writeback
       true
     end
 
-    def collect_songs(user, tdir='.')
+    def collect_songs(user, tdir='data')
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
-      result  = scan_songs_and_favs(user)
+      options = getOption
       content = Content.new(user, tdir)
-      content.add_new_songs(result[:songs], false)
-      content.add_new_songs(result[:favs],  true)
+      content.add_new_songs(_scan_songs(user), false)
+      unless options[:quick]
+        content.add_new_songs(_scan_favs(user),  true)
+      end
       content.writeback
       true
     end
 
     # Not quite working yet .....
-    def download_collab(user, tdir, collab_url)
+    def download_collab(user, tdir, *collab_urls)
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
 
-      result = SmuleScanner.new(user, getOption).scan_collab_list([collab_url])
+      result = SmuleScanner.new(user, getOption).scan_collab_list(collab_urls)
       _download_list(result, tdir)
       content = Content.new(user, tdir)
       content.add_new_songs(result, false)
@@ -725,12 +761,14 @@ module SmuleAuto
       true
     end
 
-    def scan_songs_and_favs(user)
-      SmuleScanner.new(user, getOption).scan_songs_and_favs
-    end
-
     def scan_favs(user, tdir=nil)
       result = SmuleScanner.new(user, getOption).scan_favs
+      Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
+      result.to_yaml
+    end
+
+    def unfavs_old(user, count=10, tdir=nil)
+      result = SmuleScanner.new(user, getOption).unfavs_old(count.to_i)
       Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
       result.to_yaml
     end
@@ -746,12 +784,12 @@ module SmuleAuto
       true
     end
 
-    def show_content(user, tdir='.')
+    def show_content(user, tdir='data')
       Content.new(user, tdir).list
       true
     end
 
-    def play_favs(user, tdir='.', pduration="1.0")
+    def play_favs(user, tdir='data', pduration="1.0")
       options = getOption
       cselect = []
       content = Content.new(user, tdir)
@@ -763,7 +801,7 @@ module SmuleAuto
       SmuleScanner.new(user, getOption).play_set(cselect, pduration)
     end
 
-    def play_recents(user, tdir='.', pduration="1.0")
+    def play_recents(user, tdir='data', pduration="1.0")
       options = getOption
       cselect = []
       content = Content.new(user, tdir)
@@ -775,7 +813,7 @@ module SmuleAuto
       SmuleScanner.new(user, getOption).play_set(cselect, pduration)
     end
 
-    def play_singer(user, singer, tdir='.', pduration="1.0")
+    def play_singer(user, singer, tdir='data', pduration="1.0")
       options = getOption
       cselect = []
       content = Content.new(user, tdir)
@@ -790,7 +828,11 @@ module SmuleAuto
       end
     end
 
-    def add_mp3_comment(user, tdir='.')
+    def fix_favs(user, tdir='data')
+      Content.new(user, tdir).writeback
+    end
+
+    def add_mp3_comment(user, tdir='data')
       options        = getOption
       content        = Content.new(user, tdir)
       changed        = false
@@ -828,7 +870,7 @@ module SmuleAuto
 
     # Singer changes login all the times.  That would change control
     # data as well as storage folder.  This needs to run to track user
-    def move_singer(user, old_name, new_name, tdir='.')
+    def move_singer(user, old_name, new_name, tdir='data')
       changed = false
       content = Content.new(user, tdir)
       options = getOption
@@ -849,7 +891,28 @@ module SmuleAuto
       end
     end
 
-    def make_song_tags(user, tdir='.')
+    def show_singers(user, tdir='data')
+      options = getOption
+      content = Content.new(user, tdir)
+      ulist   = {}
+      content.each(options) do |k, v|
+        v[:record_by].each do |auser|
+          next if auser == user
+          ulist[auser] ||= 3650*24
+          ulist[auser] = [ulist[auser], v[:sincev]].min
+        end
+      end
+      ulist.to_a.select{|name, sincev|
+        (content.singers[name] || {})[:following]
+      }.sort_by {|name, sincev| sincev}.each {|name, sincev|
+        puts "%-20s %6.1d" % [name, sincev/24]
+      }
+      nos_list = content.following.keys - ulist.keys
+      puts "Not singing with: #{nos_list.join(' ')}"
+      true
+    end
+
+    def make_song_tags(user, tdir='data')
       content = Content.new(user, tdir)
       content.writeback
     end

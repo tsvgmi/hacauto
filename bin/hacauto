@@ -24,7 +24,7 @@ case $oper in
     while getopts :o:s: i; do
       case $i in
       s) offset=$OPTARG ;;
-      o) ofile=$OPTARG ;;
+      o) ofile=${OPTARG%.*}.mp3 ;;
       esac
     done
     let i=$OPTIND-1; shift $i

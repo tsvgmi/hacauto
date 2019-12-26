@@ -60,6 +60,7 @@ class SPage < SelPage
 
   def click_links(links, rselector, options={})
     limit = (options[:limit] || 1000).to_i
+    cwait = options[:click_wait].to_i
     unless options[:force]
       links = links.select {|r| !@clog.was_clicked?(@auser, r, rselector)}
     end
@@ -73,6 +74,10 @@ class SPage < SelPage
       @clicks += 1
       @clog.log_click(@auser, link, rselector)
       break if @clicks >= limit
+      if cwait
+        puts "... Wait #{cwait} ..."
+        sleep(cwait)
+      end
     end
   end
 end
@@ -1251,6 +1256,7 @@ if (__FILE__ == $0)
     ['--page',             '-P', 1],        # Start page
     ['--split',            '-s', 0],        # Start page
     ['--verbose',          '-v', 0],        # Start page
+    ['--click_wait',       '-w', 1],        # Start page
     ['--exclude_user',     '-x', 1],
     ['--top_exclude',      '-X', 1],
   )
