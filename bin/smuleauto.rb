@@ -708,26 +708,19 @@ module SmuleAuto
       end
     end
 
-    def _scan_songs(user)
-      SmuleScanner.new(user, getOption).scan_songs
-    end
-
-    def _scan_favs(user)
-      SmuleScanner.new(user, getOption).scan_songs
-    end
-
     def download_for_user(user, tdir='data')
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
       options = getOption
-      songs   = _scan_songs(user)
+      scanner = SmuleScanner.new(user, options)
+      songs   = scanner.scan_songs
       _download_list(songs, tdir)
 
       content = Content.new(user, tdir)
       content.add_new_songs(songs, false)
       unless options[:quick]
-        content.add_new_songs(_scan_favs(user),  true)
+        content.add_new_songs(scanner.scan_favs,  true)
       end
       content.writeback
       true
@@ -739,9 +732,10 @@ module SmuleAuto
       end
       options = getOption
       content = Content.new(user, tdir)
-      content.add_new_songs(_scan_songs(user), false)
+      scanner = SmuleScanner.new(user, options)
+      content.add_new_songs(scanner.scan_songs, false)
       unless options[:quick]
-        content.add_new_songs(_scan_favs(user),  true)
+        content.add_new_songs(scanner.scan_favs,  true)
       end
       content.writeback
       true
@@ -761,26 +755,32 @@ module SmuleAuto
       true
     end
 
-    def scan_favs(user, tdir=nil)
+    def scan_favs(user, tdir='data')
+      unless test(?d, tdir)
+        raise "Target dir #{tdir} not accessible to download music to"
+      end
       result = SmuleScanner.new(user, getOption).scan_favs
       Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
       result.to_yaml
     end
 
-    def unfavs_old(user, count=10, tdir=nil)
+    def unfavs_old(user, count=10, tdir='data')
+      unless test(?d, tdir)
+        raise "Target dir #{tdir} not accessible to download music to"
+      end
       result = SmuleScanner.new(user, getOption).unfavs_old(count.to_i)
       Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
       result.to_yaml
     end
 
-    def scan_follows(user, tdir=nil)
+    def scan_follows(user, tdir='data')
+      unless test(?d, tdir)
+        raise "Target dir #{tdir} not accessible to download music to"
+      end
       scanner    = SmuleScanner.new(user, getOption)
       followings = scanner.scan_followings
       followers  = scanner.scan_followers
-      
-      if tdir
-        Content.new(user, tdir).set_follows(followings, followers).writeback
-      end
+      Content.new(user, tdir).set_follows(followings, followers).writeback if tdir
       true
     end
 
