@@ -97,7 +97,7 @@ module SmuleAuto
       @user    = user
       @cdir    = cdir
       @cfile   = "#{cdir}/content-#{user}.yml"
-      @sfile   = "#{cdir}/singers.yml"
+      @sfile   = "#{cdir}/singers-#{user}.yml"
       @tagfile = "#{cdir}/songtags.yml"
       if test(?f, @cfile)
         @content = YAML.load_file(@cfile)
@@ -149,11 +149,11 @@ module SmuleAuto
       if test(?f, @tagfile)
         File.read(@tagfile).split("\n").each do |l|
           k, v = l.split(':::')
-          tagset[k.downcase] = (v || '').split(',')
+          tagset[k] = (v || '').split(',')
         end
       end
       @content.each do |sid, asong|
-        title = asong[:title].downcase
+        title = asong[:title]
         tagset[title] ||= []
       end
       tagset = tagset.to_a.sort_by{|k, v| k.downcase}.
@@ -379,6 +379,61 @@ module SmuleAuto
 
   end
 
+  class SmuleAPI
+    def initialize(options={})
+      @options = options
+    end
+
+    def get_songs(url, limit)
+      allset   = []
+      offset   = 0
+      catch(:done) do
+        while true
+          result = JSON.parse(`curl -s '#{url}?offset=#{offset}'`)
+          slist  = result['list']
+          Plog.dump_info("Retrieving from #{offset}")
+          slist.each do |info|
+            #Plog.dump_info(info:info)
+            record_by = [info.dig('owner', 'handle')]
+            info['other_performers'].each do |rinfo|
+              record_by << rinfo['handle']
+            end
+            stats   = info['stats']
+            created = info['created_at']
+            since   = ((Time.now - Time.parse(created))/60).to_i
+            rec     = {
+              title:       info['title'],
+              href:        info['web_url'],
+              record_by:   record_by,
+              listens:     stats['total_listens'],
+              loves:       stats['total_loves'],
+              gifts:       stats['total_gifts'],
+              since:       "#{since} min",
+              avatar:      info['cover_url'],
+              is_ensemble: info['child_count'].to_i > 0,
+              #collab_url:  collab_url,
+              sid:         info['key'],
+              created:     created,
+            }
+            allset << rec
+            throw :done if (allset.size >= limit)
+          end
+          offset = result['next_offset']
+          throw :done if offset < 0
+        end
+      end
+      allset
+    end
+
+    def get_performances(user, limit)
+      get_songs("https://www.smule.com/#{user}/performances/json", limit)
+    end
+
+    def get_favs(user, limit)
+      get_songs("https://www.smule.com/#{user}/favorites/json", limit)
+    end
+  end
+
   class SmuleScanner
     def initialize(user, options={})
       @user      = user
@@ -432,8 +487,8 @@ module SmuleAuto
       end
     end
 
-    def unfavs_old(count)
-      result    = scan_favs
+    def unfavs_old(count, result=nil)
+      result   ||= scan_favs
       new_size  = result.size - count
       set_unfavs(result[new_size..-1])
       result[0..new_size-1]
@@ -720,7 +775,8 @@ module SmuleAuto
       content = Content.new(user, tdir)
       content.add_new_songs(songs, false)
       unless options[:quick]
-        content.add_new_songs(scanner.scan_favs,  true)
+        favset = SmuleAPI.new.get_favs(user, 10_000)
+        content.add_new_songs(favset, true)
       end
       content.writeback
       true
@@ -732,10 +788,15 @@ module SmuleAuto
       end
       options = getOption
       content = Content.new(user, tdir)
-      scanner = SmuleScanner.new(user, options)
-      content.add_new_songs(scanner.scan_songs, false)
+      limit   = (options[:limit] || 10_000).to_i
+      sapi    = SmuleAPI.new
+      perfset = sapi.get_performances(user, limit)
+      content.add_new_songs(perfset, false)
+
+      # Favs must dump the whole thing
       unless options[:quick]
-        content.add_new_songs(scanner.scan_favs,  true)
+        favset = sapi.get_favs(user, 10_000)
+        content.add_new_songs(favset, true)
       end
       content.writeback
       true
@@ -759,16 +820,20 @@ module SmuleAuto
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
-      result = SmuleScanner.new(user, getOption).scan_favs
-      Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
-      result.to_yaml
+      options = getOption
+      content = Content.new(user, tdir)
+      limit   = (options[:limit] || 10_000).to_i
+      allset  = SmuleAPI.new.get_favs(user, limit)
+      content.add_new_songs(allset, true)
+      content.writeback
     end
 
-    def unfavs_old(user, count=10, tdir='data')
-      unless test(?d, tdir)
+    def unfavs_old(user, count=10, tdir=nil)
+      if tdir && !test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
-      result = SmuleScanner.new(user, getOption).unfavs_old(count.to_i)
+      favset = SmuleAPI.new.get_favs(user, 10_000)
+      result = SmuleScanner.new(user, getOption).unfavs_old(count.to_i, favset)
       Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
       result.to_yaml
     end
@@ -777,10 +842,19 @@ module SmuleAuto
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
-      scanner    = SmuleScanner.new(user, getOption)
-      followings = scanner.scan_followings
-      followers  = scanner.scan_followers
-      Content.new(user, tdir).set_follows(followings, followers).writeback if tdir
+      fset = []
+      %w(following followers).each do |agroup|
+        users = JSON.parse(`curl "https://www.smule.com/#{user}/#{agroup}/json"`)
+        users = users['list'].map{|r| 
+          Plog.dump_info(r:r)
+          {
+            name:   r['handle'],
+            avatar: r['pic_url'],
+          }
+        }
+        fset << users
+      end
+      Content.new(user, tdir).set_follows(fset[0], fset[1]).writeback
       true
     end
 
