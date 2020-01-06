@@ -86,7 +86,7 @@ module SmuleAuto
         File.open(ofile, 'wb') do |f|
           f.write(audio.body)
         end
-        Plog.info("Wrote #{ofile}.  Wait a bit to see if smule let me go")
+        Plog.info("Wrote #{ofile} from #{@link}.  Wait a bit")
         sleep(5+rand(5))
         true
       else
@@ -99,7 +99,7 @@ module SmuleAuto
       unless @song_info_url
         return nil
       end
-      sdoc  = Nokogiri::HTML(`curl -s '#{@song_info_url}'`)
+      sdoc  = Nokogiri::HTML(`curl '#{@song_info_url}'`)
       asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[0].
         sub(/^\s*Song: /, '')[0..-2]
       CGI.unescapeHTML(JSON.parse(asset).dig('lyrics')).
@@ -207,7 +207,7 @@ module SmuleAuto
         @singers[singer[:name]][:following] = true
       end
       followers.each do |singer|
-        @singers[singer[:name]] = singer
+        @singers[singer[:name]] ||= singer
         @singers[singer[:name]][:follower] = true
       end
       self
@@ -362,7 +362,7 @@ module SmuleAuto
 
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
-        system("set -x; curl -s -o #{lcfile} #{@info[:avatar]}")
+        system("set -x; curl -o #{lcfile} #{@info[:avatar]}")
         command += " --artwork #{lcfile}"
         command += " --title '#{title}'"
         command += " --artist '#{artist}'"
@@ -397,7 +397,7 @@ module SmuleAuto
       catch(:done) do
         while true
           #Plog.dump_info(path: "#{url}?offset=#{offset}")
-          result = JSON.parse(`curl -s '#{url}?offset=#{offset}'`)
+          result = JSON.parse(`curl '#{url}?offset=#{offset}'`)
           slist  = result['list']
           Plog.info("Retrieving from #{offset}")
           slist.each do |info|
@@ -768,28 +768,11 @@ module SmuleAuto
       end
     end
 
-    def download_for_user(user, tdir='data')
-      unless test(?d, tdir)
-        raise "Target dir #{tdir} not accessible to download music to"
-      end
-      options = getOption
-      scanner = SmuleScanner.new(user, options)
-      songs   = scanner.scan_songs
-      _download_list(songs, tdir)
-
-      content = Content.new(user, tdir)
-      content.add_new_songs(songs, false)
-      unless options[:quick]
-        favset = SmuleAPI.new.get_favs(user, 10_000)
-        content.add_new_songs(favset, true)
-      end
-      content.writeback
-      true
-    end
-
     def collect_collabs(user, tdir='data')
+      options   = getOption
       content   = Content.new(user, tdir)
-      last_date = (Time.now - 30*24*3600)
+      days      = (options[:days] || 30).to_i
+      last_date = (Time.now - days*24*3600)
       ensembles = []
       content.content.each do |sid, cinfo|
         cdate = cinfo[:created]
@@ -805,9 +788,10 @@ module SmuleAuto
       return unless ensembles.size > 0
       collab_urls = ensembles.sort_by{|r| r[:created]}.reverse.map{|r| r[:href]}
 
-      options = getOption
       result  = SmuleScanner.new(user, options).scan_collab_list(collab_urls)
-      _download_list(result, tdir)
+      if options[:download]
+        _download_list(result, tdir)
+      end
       content = Content.new(user, tdir)
       content.add_new_songs(result, false)
       content.writeback
@@ -825,9 +809,12 @@ module SmuleAuto
       perfset = sapi.get_performances(user, limit)
       content.add_new_songs(perfset, false)
 
+      if options[:download]
+        _download_list(perfset, tdir)
+      end
+
       # Favs must dump the whole thing
       unless options[:quick]
-        _download_list(perfset, tdir)
         content.add_new_songs(perfset, false)
         favset = sapi.get_favs(user, limit)
         content.add_new_songs(favset, true)
@@ -925,12 +912,14 @@ module SmuleAuto
 
     def fix_content(user, tdir='data')
       content = Content.new(user, tdir)
+      changed = false
       content.each do |sid, cinfo|
-        if cinfo[:created].is_a?(Time) || cinfo[:created].is_a?(Date)
-          cinfo[:created] = cinfo[:created].iso8601
+        if cinfo[:record_by].is_a?(String)
+          cinfo[:record_by] = cinfo[:record_by].split(',')
+          changed = true
         end
       end
-      content.writeback
+      content.writeback if changed
     end
 
     def fix_favs(user, tdir='data')
@@ -992,15 +981,15 @@ module SmuleAuto
     # Singer changes login all the times.  That would change control
     # data as well as storage folder.  This needs to run to track user
     def move_singer(user, old_name, new_name, tdir='data')
-      changed = false
       content = Content.new(user, tdir)
       options = getOption
       options.update(
         pbar:   "Move content from #{old_name}",
         filter: "record_by=#{old_name}",
       )
+      changed = false
       content.each(options) do |k, v|
-        new_record_by = v[:record_by].sub(old_name, new_name)
+        new_record_by = v[:record_by].map{|r| r == old_name ? new_name : r}
         if new_record_by != v[:record_by]
           v[:record_by] = new_record_by
           v[:ofile], v[:sfile] = _ofile(v, tdir)
@@ -1008,9 +997,7 @@ module SmuleAuto
           changed = true
         end
       end
-      if changed
-        content.writeback
-      end
+      content.writeback if changed
     end
 
     def show_singers(user, tdir='data')
@@ -1043,16 +1030,18 @@ end
 
 if (__FILE__ == $0)
   SmuleAuto.handleCli(
-    ['--auth',    '-a', 1],
-    ['--browser', '-b', 1],
-    ['--filter',  '-f', 1],
-    ['--limit',   '-l', 1],
-    ['--mysongs', '-m', 0],
-    ['--order',   '-o', 1],
-    ['--pages',   '-p', 1],
-    ['--quick',   '-q', 0],
-    ['--singers', '-s', 1],
-    ['--size',    '-S', 1],
-    ['--verbose', '-v', 0],
+    ['--auth',     '-a', 1],
+    ['--browser',  '-b', 1],
+    ['--download', '-d', 0],
+    ['--days',     '-D', 1],
+    ['--filter',   '-f', 1],
+    ['--limit',    '-l', 1],
+    ['--mysongs',  '-m', 0],
+    ['--order',    '-o', 1],
+    ['--pages',    '-p', 1],
+    ['--quick',    '-q', 0],
+    ['--singers',  '-s', 1],
+    ['--size',     '-S', 1],
+    ['--verbose',  '-v', 0],
   )
 end
