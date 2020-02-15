@@ -37,7 +37,8 @@ AccentMap = {
 }
 
 def to_search_str(str)
-  stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '').strip
+  stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '').
+    sub(/\s+[-=].*$/, '').sub(/"/, '').strip
   AccentMap.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
   end
@@ -82,12 +83,17 @@ module SmuleAuto
 
     def get_audio(ofile)
       if @link
-        audio = HTTP.follow.get(@link)
-        File.open(ofile, 'wb') do |f|
-          f.write(audio.body)
+        if false
+          # This trigger IP ban.
+          audio = HTTP.follow.get(@link)
+          File.open(ofile, 'wb') do |f|
+            f.write(audio.body)
+          end
+          Plog.info("Wrote #{ofile} from #{@link}.  Wait a bit")
+          sleep(5+rand(5))
+        else
+          Plog.info(audio_link:@link)
         end
-        Plog.info("Wrote #{ofile} from #{@link}.  Wait a bit")
-        sleep(5+rand(5))
         true
       else
         Plog.error("No audio file found previously")
@@ -99,12 +105,19 @@ module SmuleAuto
       unless @song_info_url
         return nil
       end
-      sdoc  = Nokogiri::HTML(`curl '#{@song_info_url}'`)
-      asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[0].
-        sub(/^\s*Song: /, '')[0..-2]
-      CGI.unescapeHTML(JSON.parse(asset).dig('lyrics')).
-                  gsub(/<br>/, "\n").
-                  gsub(/<p>/, "\n\n")
+
+      # Continue may get banned
+      if false
+        sdoc  = Nokogiri::HTML(`curl '#{@song_info_url}'`)
+        asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[0].
+          sub(/^\s*Song: /, '')[0..-2]
+        CGI.unescapeHTML(JSON.parse(asset).dig('lyrics')).
+                    gsub(/<br>/, "\n").
+                    gsub(/<p>/, "\n\n")
+      else
+        Plog.info(info_link:@song_info_url)
+        return nil
+      end
     end
   end
 
@@ -123,11 +136,11 @@ module SmuleAuto
     attr_reader :content, :singers
 
     def initialize(user, cdir='.')
-      @user    = user
-      @cdir    = cdir
-      @cfile   = "#{cdir}/content-#{user}.yml"
-      @sfile   = "#{cdir}/singers-#{user}.yml"
-      @tagfile = "#{cdir}/songtags.yml"
+      @user     = user
+      @cdir     = cdir
+      @cfile    = "#{cdir}/content-#{user}.yml"
+      @sfile    = "#{cdir}/singers-#{user}.yml"
+      @tag2file = "#{cdir}/songtags2.yml"
       if test(?f, @cfile)
         @content = YAML.load_file(@cfile)
       else
@@ -179,20 +192,25 @@ module SmuleAuto
       _write_with_backup(@cfile, @content)
       _write_with_backup(@sfile, @singers)
 
-      tagset  = {}
-      if test(?f, @tagfile)
-        File.read(@tagfile).split("\n").each do |l|
+      tag2set  = {}
+      if test(?f, @tag2file)
+        File.read(@tag2file).split("\n").each do |l|
           k, v = l.split(':::')
-          tagset[k] = (v || '').split(',')
+          tag2set[k] = (v || '').split(',')
         end
       end
+
       @content.each do |sid, asong|
         title = asong[:title]
-        tagset[title] ||= []
+        stitle = to_search_str(title)
+        if stitle && !stitle.empty?
+          tag2set[stitle] ||= []
+        end
       end
-      tagset = tagset.to_a.sort_by{|k, v| k.downcase}.
-        map {|k, v| "#{k}:::#{v.join(',')}"}
-      _write_with_backup(@tagfile, tagset, :text)
+
+      tag2set = tag2set.to_a.sort.
+        map {|k2, v| "#{k2}:::#{v.join(',')}"}
+      _write_with_backup(@tag2file, tag2set, :text)
       self
     end
 
@@ -239,6 +257,7 @@ module SmuleAuto
             record_by: r[:record_by],   # In case user change login
             isfav:     r[:isfav],
             orig_city: r[:orig_city],
+            media_url: r[:media_url],
           )
           if c[:isfav]
             c[:oldfav] = true
@@ -254,7 +273,7 @@ module SmuleAuto
       block = []
       @content.each do |href, r|
         title     = r[:title].scrub
-        record_by = r[:record_by].gsub(',', ', ')
+        record_by = r[:record_by].join(', ')
         stitle    = to_search_str(title)
         block << [title, record_by, stitle]
       end
@@ -396,10 +415,9 @@ module SmuleAuto
       offset   = 0
       catch(:done) do
         while true
-          #Plog.dump_info(path: "#{url}?offset=#{offset}")
-          result = JSON.parse(`curl '#{url}?offset=#{offset}'`)
+          Plog.dump_info(path:"#{url}?offset=#{offset}")
+          result = JSON.parse(`curl -s '#{url}?offset=#{offset}'`)
           slist  = result['list']
-          Plog.info("Retrieving from #{offset}")
           slist.each do |info|
             #Plog.dump_info(info:info)
             #puts info.to_yaml
@@ -408,8 +426,8 @@ module SmuleAuto
               record_by << rinfo['handle']
             end
             stats   = info['stats']
-            created = info['created_at']
-            since   = ((Time.now - Time.parse(created))/60).to_i
+            created = Time.parse(info['created_at'])
+            since   = ((Time.now - created)/60).to_i
             rec     = {
               title:       info['title'],
               href:        info['web_url'],
@@ -424,6 +442,7 @@ module SmuleAuto
               sid:         info['key'],
               created:     created,
               orig_city:   (info['orig_track_city'] || {}).values.join(', '),
+              media_url:   info['media_url'],
             }
             allset << rec
             throw :done if (allset.size >= limit)
@@ -785,7 +804,10 @@ module SmuleAuto
           ensembles << cinfo
         end
       end
-      return unless ensembles.size > 0
+      if ensembles.size <= 0
+        Plog.info("No collabs found in last #{days} days")
+        return
+      end
       collab_urls = ensembles.sort_by{|r| r[:created]}.reverse.map{|r| r[:href]}
 
       result  = SmuleScanner.new(user, options).scan_collab_list(collab_urls)
@@ -910,16 +932,33 @@ module SmuleAuto
       end
     end
 
-    def fix_content(user, tdir='data')
-      content = Content.new(user, tdir)
-      changed = false
+    def fix_content(user, fix_type, tdir='data')
+      content  = Content.new(user, tdir)
+      changed  = false
+      fix_type = fix_type.to_sym
       content.each do |sid, cinfo|
-        if cinfo[:record_by].is_a?(String)
-          cinfo[:record_by] = cinfo[:record_by].split(',')
-          changed = true
+        case fix_type
+        when :date
+          if cinfo[:created].is_a?(String)
+            cinfo[:created] = Time.parse(cinfo[:created])
+            changed = true
+          elsif cinfo[:created].is_a?(Date)
+            cinfo[:created] = cinfo[:created].to_time
+            changed = true
+          end
+        when :record_by
+          if cinfo[:record_by].is_a?(String)
+            cinfo[:record_by] = cinfo[:record_by].split(/,/)
+            changed = true
+          end
         end
       end
       content.writeback if changed
+    end
+
+    def fix_tags(user, tdir='data')
+      content = Content.new(user, tdir)
+      content.writeback
     end
 
     def fix_favs(user, tdir='data')
@@ -1005,7 +1044,7 @@ module SmuleAuto
       content = Content.new(user, tdir)
       ulist   = {}
       content.each(options) do |k, v|
-        v[:record_by].split(',').each do |auser|
+        v[:record_by].each do |auser|
           next if auser == user
           ulist[auser] ||= 3650*24
           ulist[auser] = [ulist[auser], v[:sincev]].min
