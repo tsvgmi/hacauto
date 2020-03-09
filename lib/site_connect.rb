@@ -90,7 +90,7 @@ class SDriver
     sleep(1)
   end
 
-  def click_and_wait(selector, wtime=3, index=0)
+  def click_and_wait(selector, wtime=2, index=0)
     begin
       Plog.info "Click on #{selector}"
       @driver.find_elements(:css, selector)[index].click
@@ -163,7 +163,7 @@ class SiteConnect
       if auth = options[:auth]
         identity, password = auth.split(':')
         sdriver.click_and_wait('#react-login-button', 2)          # Login
-        sdriver.click_and_wait('._cul1gj', 2, 1)        # Email
+        sdriver.click_and_wait('._cul1gj', 2, 0)        # Email
         sdriver.type('input[name="snp-username"]', identity + "\n")
         sleep 1
         sdriver.type('input[name="snp-password"]', password + "\n")
@@ -172,8 +172,8 @@ class SiteConnect
       sdriver
     end
 
-    def connect_smule_download(options)
-      sdriver = SDriver.new(options[:url], browser:options[:browser])
+    def connect_singsalon(options)
+      sdriver = SDriver.new('https://sing.salon', browser:options[:browser])
       if auth = options[:auth]
         identity, password = auth.split(':')
         sdriver.click_and_wait('#elUserSignIn')
@@ -201,10 +201,10 @@ class SiteConnect
       @driver = SiteConnect.connect_gmusic(config)
     when :smule
       @driver = SiteConnect.connect_smule(config)
-    when :smule_download
-      @driver = SiteConnect.connect_smule_download(config)
     when :hac
       @driver = SiteConnect.connect_hac(config)
+    when :singsalon
+      @driver = SiteConnect.connect_singsalon(config)
     else
       @driver = SiteConnect.connect_other(config)
     end

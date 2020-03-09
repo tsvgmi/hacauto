@@ -82,52 +82,6 @@ class SPage < SelPage
   end
 end
 
-# Connection functions
-class SiteConnect
-  def self.connect_hac(options)
-    Plog.info "Connect to HAC"
-    auth    = options[:auth] || 'thienv:kKtx75LUY9GA'
-    identity, password = auth.split(':')
-    hac_source = HacSource.new(options)
-    sdriver    = SDriver.new(hac_source.base_url, user:identity,
-                             browser:options[:browser])
-    Plog.info("Wait a bit for CDN verification")
-    sleep(10)
-    sdriver.click_and_wait('#login-link', 5)
-    sdriver.type('#identity', identity)
-    sdriver.type('#password', password)
-    sdriver.click_and_wait('#submit-btn')
-    sdriver
-  end
-
-  def self.connect_gmusic(options)
-    Plog.info "Connect to Google Music"
-    auth    = options[:auth]
-    identity, password = auth.split(':')
-    sdriver = SDriver.new('https://play.google.com/music', user:identity,
-                           browser:options[:browser])
-    sdriver.click_and_wait('paper-button[data-action="signin"]')
-    sdriver.type('#identifierId', identity + "\n")
-    sdriver.type('input[name="password"]', password + "\n")
-
-    STDERR.puts "Confirm authentication on cell phone and continue"
-    STDIN.gets
-    sdriver
-  end
-
-  def self.connect_zing(options)
-    Plog.info "Connect to Zing"
-    sdriver = SDriver.new('https://mp3.zing.vn', browser:options[:browser])
-    sdriver
-  end
-
-  def self.connect_nhacvn(options)
-    Plog.info "Connect to NhacVN"
-    sdriver = SDriver.new('https://nhac.vn', browser:options[:browser])
-    sdriver
-  end
-end
-
 class AutoFill
   include HtmlRes
 
@@ -527,6 +481,8 @@ class HACAuto
           @sdriver = SiteConnect.connect_zing(_getOptions)
         when :nhacvn
           @sdriver = SiteConnect.connect_nhacvn(_getOptions)
+        when :singsalon
+          @sdriver = SiteConnect.connect_singsalon(_getOptions)
         else
           @sdriver = SiteConnect.connect_hac(_getOptions)
         end

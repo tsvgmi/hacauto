@@ -81,6 +81,18 @@ module SmuleAuto
       end
     end
 
+    def get_audio_from_singsalon(ofile, ssconnect)
+      ssconnect.type('input.downloader-input', @olink)
+      ssconnect.click_and_wait('input.ipsButton[value~=Fetch]')
+      ssconnect.click_and_wait('a.ipsButton[download]')
+      m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
+        sort_by{|r| File.mtime(r)}.last
+      File.open(ofile, 'wb') do |f|
+        f.write(File.read(m4file))
+      end
+      Plog.info("Wrote #{ofile} from #{@link}")
+    end
+
     def get_audio(ofile)
       if @link
         if false
@@ -258,6 +270,8 @@ module SmuleAuto
             isfav:     r[:isfav],
             orig_city: r[:orig_city],
             media_url: r[:media_url],
+            sfile:     r[:sfile] || c[:sfile],
+            ofile:     r[:ofile] || c[:ofile],
           )
           if c[:isfav]
             c[:oldfav] = true
@@ -341,6 +355,27 @@ module SmuleAuto
       @info[key] = value
     end
     
+    def download_from_singsalon(ssconnect)
+      begin
+        if @options[:force] || !test(?f, @info[:sfile])
+          audio_handler = AudioHandler.new(@surl)
+          if audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
+            @lyric = audio_handler.get_lyric
+            update_mp4tag
+          end
+        end
+        unless test(?l, @info[:ofile])
+          unless test(?d, File.dirname(@info[:ofile]))
+            FileUtils.mkdir_p(File.dirname(@info[:ofile]), verbose:true)
+          end
+          FileUtils.symlink(@info[:sfile], @info[:ofile],
+                            verbose:true, force:true)
+        end
+      rescue => errmsg
+        Plog.dump_error(errmsg:errmsg)
+      end
+    end
+
     def download
       begin
         if @options[:force] || !test(?f, @info[:sfile])
@@ -766,10 +801,20 @@ module SmuleAuto
       unless flist = _prepare_download(flist, tdir)
         return
       end
+      FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
       bar = ProgressBar.create(title:"Downloading songs", total:flist.size)
-      flist.each do |afile|
-        SmuleSong.new(afile).download
-        bar.increment
+      if false
+        flist.each do |afile|
+          SmuleSong.new(afile).download
+          bar.increment
+        end
+      else
+        ssconnect = SiteConnect.new(:singsalon, getOption).driver
+        ssconnect.goto('/smule-downloader')
+        flist.each do |afile|
+          SmuleSong.new(afile).download_from_singsalon(ssconnect)
+          bar.increment
+        end
       end
     end
 
@@ -808,9 +853,8 @@ module SmuleAuto
         Plog.info("No collabs found in last #{days} days")
         return
       end
-      collab_urls = ensembles.sort_by{|r| r[:created]}.reverse.map{|r| r[:href]}
-
-      result  = SmuleScanner.new(user, options).scan_collab_list(collab_urls)
+      collab_urls = ensembles.sort_by{|r| r[:created].to_time}.reverse.map{|r| r[:href]}
+      result      = SmuleScanner.new(user, options).scan_collab_list(collab_urls)
       if options[:download]
         _download_list(result, tdir)
       end
