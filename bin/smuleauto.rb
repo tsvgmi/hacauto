@@ -45,6 +45,12 @@ def to_search_str(str)
   stitle
 end
 
+def curl(path, ofile=nil)
+  cmd = 'set -x; curl -sA "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"'
+  cmd += " -o #{ofile}" if ofile
+  `#{cmd} '#{path}'`
+end
+
 def time_since(since)
   case since
   when /(min|m)$/
@@ -87,10 +93,15 @@ module SmuleAuto
       ssconnect.click_and_wait('a.ipsButton[download]')
       m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
         sort_by{|r| File.mtime(r)}.last
+
+      Plog.info("Waiting for #{m4file}")
+      while (fsize = File.size(m4file)) < 1_000_000
+        sleep(1)
+      end
       File.open(ofile, 'wb') do |f|
         f.write(File.read(m4file))
       end
-      Plog.info("Wrote #{ofile} from #{@link}")
+      Plog.info("Wrote #{ofile}(#{File.size(ofile)}b) from #{@link}")
     end
 
     def get_audio(ofile)
@@ -119,8 +130,8 @@ module SmuleAuto
       end
 
       # Continue may get banned
-      if false
-        sdoc  = Nokogiri::HTML(`curl '#{@song_info_url}'`)
+      if true
+        sdoc  = Nokogiri::HTML(curl(@song_info_url))
         asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[0].
           sub(/^\s*Song: /, '')[0..-2]
         CGI.unescapeHTML(JSON.parse(asset).dig('lyrics')).
@@ -416,7 +427,7 @@ module SmuleAuto
 
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
-        system("set -x; curl -o #{lcfile} #{@info[:avatar]}")
+        curl(@info[:avatar], lcfile)
         command += " --artwork #{lcfile}"
         command += " --title '#{title}'"
         command += " --artist '#{artist}'"
@@ -451,7 +462,7 @@ module SmuleAuto
       catch(:done) do
         while true
           Plog.dump_info(path:"#{url}?offset=#{offset}")
-          result = JSON.parse(`curl -s '#{url}?offset=#{offset}'`)
+          result = JSON.parse(curl("#{url}?offset=#{offset}"))
           slist  = result['list']
           slist.each do |info|
             #Plog.dump_info(info:info)
@@ -766,7 +777,7 @@ module SmuleAuto
 
     def _prepare_download(flist, tdir)
       options = getOption
-      bar     = ProgressBar.create(title:"Preparing list", total:flist.size)
+      bar     = ProgressBar.create(title:"Preparing list #{flist.size}", total:flist.size)
       flist   = flist.select do |afile|
         afile[:ofile], afile[:sfile] = _ofile(afile, tdir)
         odir          = File.dirname(afile[:ofile])
@@ -802,7 +813,7 @@ module SmuleAuto
         return
       end
       FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
-      bar = ProgressBar.create(title:"Downloading songs", total:flist.size)
+      bar = ProgressBar.create(title:"Downloading songs #{flist.size}", total:flist.size)
       if false
         flist.each do |afile|
           SmuleSong.new(afile).download
@@ -839,12 +850,7 @@ module SmuleAuto
       last_date = (Time.now - days*24*3600)
       ensembles = []
       content.content.each do |sid, cinfo|
-        cdate = cinfo[:created]
-        if cdate.is_a?(Date)
-          cdate = cdate.to_time
-        elsif cdate.is_a?(String)
-          cdate = Time.parse(cdate)
-        end
+        cdate = created_value(cinfo[:created])
         if cinfo[:href] =~ /ensembles$/ && cdate > last_date
           ensembles << cinfo
         end
@@ -853,7 +859,7 @@ module SmuleAuto
         Plog.info("No collabs found in last #{days} days")
         return
       end
-      collab_urls = ensembles.sort_by{|r| r[:created].to_time}.reverse.map{|r| r[:href]}
+      collab_urls = ensembles.sort_by{|r| created_value(r[:created])}.reverse.map{|r| r[:href]}
       result      = SmuleScanner.new(user, options).scan_collab_list(collab_urls)
       if options[:download]
         _download_list(result, tdir)
@@ -917,7 +923,7 @@ module SmuleAuto
       end
       fset = []
       %w(following followers).each do |agroup|
-        users = JSON.parse(`curl "https://www.smule.com/#{user}/#{agroup}/json"`)
+        users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
         users = users['list'].map{|r| 
           Plog.dump_info(r:r)
           {
@@ -976,6 +982,15 @@ module SmuleAuto
       end
     end
 
+    def created_value(value)
+      if value.is_a?(String)
+        value = Time.parse(value)
+      elsif value.is_a?(Date)
+        value = value.to_time
+      end
+      value
+    end
+
     def fix_content(user, fix_type, tdir='data')
       content  = Content.new(user, tdir)
       changed  = false
@@ -983,13 +998,8 @@ module SmuleAuto
       content.each do |sid, cinfo|
         case fix_type
         when :date
-          if cinfo[:created].is_a?(String)
-            cinfo[:created] = Time.parse(cinfo[:created])
-            changed = true
-          elsif cinfo[:created].is_a?(Date)
-            cinfo[:created] = cinfo[:created].to_time
-            changed = true
-          end
+          cinfo[:created] = create_value(cinfo[:created])
+          changed = true
         when :record_by
           if cinfo[:record_by].is_a?(String)
             cinfo[:record_by] = cinfo[:record_by].split(/,/)
@@ -1009,13 +1019,7 @@ module SmuleAuto
       content = Content.new(user, tdir)
       cutoff  = Time.parse("2019-09-01")
       content.each do |sid, cinfo|
-        if cinfo[:created].class == Date
-          cdate = cinfo[:created].to_time
-        elsif cinfo[:created].class == String
-          cdate = Time.parse(cinfo[:created])
-        else
-          cdate = cinfo[:created]
-        end
+        cdate = created_value(cinfo[:created])
         if (cdate < cutoff) || !cinfo[:oldfav]
           next
         end
