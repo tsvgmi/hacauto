@@ -46,7 +46,7 @@ def to_search_str(str)
 end
 
 def curl(path, ofile=nil)
-  cmd = 'set -x; curl -sA "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"'
+  cmd = 'curl -sA "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"'
   cmd += " -o #{ofile}" if ofile
   `#{cmd} '#{path}'`
 end
@@ -91,8 +91,13 @@ module SmuleAuto
       ssconnect.type('input.downloader-input', @olink)
       ssconnect.click_and_wait('input.ipsButton[value~=Fetch]')
       ssconnect.click_and_wait('a.ipsButton[download]')
-      m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
-        sort_by{|r| File.mtime(r)}.last
+
+      while true
+        m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
+          sort_by{|r| File.mtime(r)}.last
+        break if m4file
+        sleep(1)
+      end
 
       Plog.info("Waiting for #{m4file}")
       while (fsize = File.size(m4file)) < 1_000_000
@@ -101,7 +106,7 @@ module SmuleAuto
       File.open(ofile, 'wb') do |f|
         f.write(File.read(m4file))
       end
-      Plog.info("Wrote #{ofile}(#{File.size(ofile)}b) from #{@link}")
+      Plog.info("Wrote #{ofile}(#{File.size(ofile)} b) from #{@link}")
     end
 
     def get_audio(ofile)
@@ -562,15 +567,15 @@ module SmuleAuto
       result[0..new_size-1]
     end
 
-    def play_set(cselect, pduration=1.0)
-      pduration = pduration.to_f
-      if pduration > 1.0
-        pduration = 1.0
-      end
+    def play_set(cselect)
       sort_by, order = (@options[:order] || "listens:a").split(':')
       order = 'a' unless order
 
-      cselect = cselect.sort_by {|r| r[sort_by.to_sym]}
+      if sort_by == 'random'
+        cselect = cselect.shuffle
+      else
+        cselect = cselect.sort_by {|r| r[sort_by.to_sym]}
+      end
       if order == 'd'
         cselect = cselect.reverse
       end
@@ -579,18 +584,30 @@ module SmuleAuto
       Plog.info("Playing #{cselect.size} songs")
       cselect.each do |sitem|
         @spage.goto(sitem[:href])
-        duration_s = @spage.page.css("._vln25l")[0]
-        if duration_s
+        @spage.click_and_wait('button._1oqc74f')
+        psecs    = 180
+        if duration_s = @spage.page.css("._vln25l")[0]
           duration = @spage.page.css("._vln25l")[0].text.split(':')
           secs     = duration[0].to_i * 60 + duration[1].to_i
-          psecs    = secs * pduration
-        else
-          psecs    = 210 * pduration
+          psecs    = [secs, 180].max
         end
         Plog.dump_info(title:sitem[:title], record:sitem[:record_by],
-                       listens:sitem[:listens], psecs:psecs)
+                       listens:sitem[:listens], psecs:psecs, duration:duration)
         sitem[:listens] += 1
-        sleep psecs
+
+        endt = Time.now + psecs
+        while true
+          if select([$stdin], nil, nil, 1)
+            ans = $stdin.gets.chomp
+            case ans
+            when /^x/i
+              return
+            when /^n/i
+              break
+            end
+          end
+          break if (Time.now >= endt)
+        end
       end
     end
     
@@ -925,7 +942,6 @@ module SmuleAuto
       %w(following followers).each do |agroup|
         users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
         users = users['list'].map{|r| 
-          Plog.dump_info(r:r)
           {
             name:       r['handle'],
             avatar:     r['pic_url'],
@@ -943,42 +959,42 @@ module SmuleAuto
       true
     end
 
-    def play_favs(user, tdir='data', pduration="1.0")
+    def play_favs(user, tdir='data')
       options = getOption
       cselect = []
       content = Content.new(user, tdir)
-      at_exit { content.writeback }
+      #at_exit { content.writeback }
       options[:pbar] = "Collect favs"
       content.each(options) do |k, v|
         cselect << v if v[:isfav]
       end
-      SmuleScanner.new(user, getOption).play_set(cselect, pduration)
+      SmuleScanner.new(user, getOption).play_set(cselect)
     end
 
-    def play_recents(user, tdir='data', pduration="1.0")
+    def play_recents(user, tdir='data')
       options = getOption
       cselect = []
       content = Content.new(user, tdir)
-      at_exit { content.writeback }
+      #at_exit { content.writeback }
       options[:pbar] = "Collect recents"
       content.each(options) do |k, v|
         cselect << v if (v[:sincev] < 24*7)
       end
-      SmuleScanner.new(user, getOption).play_set(cselect, pduration)
+      SmuleScanner.new(user, getOption).play_set(cselect)
     end
 
-    def play_singer(user, singer, tdir='data', pduration="1.0")
+    def play_singer(user, singer, tdir='data')
       options = getOption
       cselect = []
       content = Content.new(user, tdir)
       options[:pbar] = "Collect records by #{singer}"
       content.each(options) do |k, v|
-        cselect << v if (v[:record_by].grep(/#{singer}/i).size > 0)
+        cselect << v if v[:record_by].include?(singer)
       end
       Plog.info("Select #{cselect.size} songs")
       if cselect.size > 0
-        at_exit { content.writeback; exit 0 }
-        SmuleScanner.new(user, getOption).play_set(cselect, pduration)
+        #at_exit { content.writeback; exit 0 }
+        SmuleScanner.new(user, getOption).play_set(cselect)
       end
     end
 
