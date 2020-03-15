@@ -37,7 +37,7 @@ AccentMap = {
 }
 
 def to_search_str(str)
-  stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '').
+  stitle = clean_emoji(str).downcase.sub/\s*\(.*$/, '').
     sub(/\s+[-=].*$/, '').sub(/"/, '').strip
   AccentMap.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
@@ -804,6 +804,7 @@ module SmuleAuto
     end
   end
 
+  # Playing song on smule web site
   class Player
     def initialize(user, tdir='data', options={})
       @options = options
@@ -815,27 +816,15 @@ module SmuleAuto
     end
 
     def play_singer(singer)
-      cselect = []
-      @content.each(@options) do |k, v|
-        cselect << v if v[:record_by].include?(singer)
-      end
-      _play_set(cselect)
+      _play_song_set {|v| v[:record_by].include?(singer)}
     end
 
     def play_recents(days=7)
-      cselect = []
-      @content.each(@options) do |k, v|
-        cselect << v if (v[:sincev] < 24*days.to_i)
-      end
-      _play_set(cselect)
+      _play_song_set {|v| v[:sincev] < 24*days.to_i}
     end
 
     def play_favs
-      cselect = []
-      @content.each(@options) do |k, v|
-        cselect << v if (v[:isfav] || v[:oldfav])
-      end
-      _play_set(cselect)
+      _play_song_set {||v| v[:isfav] || v[:oldfav]}
     end
 
     def _order_set(cselect)
@@ -853,7 +842,13 @@ module SmuleAuto
       cselect
     end
 
-    def _play_set(cselect)
+    def _play_song_set
+      cselect = []
+      @content.each(@options) do |k, v|
+        if yield v
+          cselect << v
+        end
+      end
       cselect = _order_set(cselect)
       if cselect.size > 0
         Scanner.new(@user, @options).play_set(cselect) do |command|
