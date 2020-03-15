@@ -78,9 +78,10 @@ class SDriver
   attr_reader :driver, :auser
 
   def initialize(base_url, options={})
-    @url    = base_url
-    @auser  = options[:user]
-    browser = (options[:browser] || 'firefox').to_sym
+    @url     = base_url
+    @options = options
+    @auser   = options[:user]
+    browser  = (options[:browser] || 'firefox').to_sym
     Plog.info("Goto #{@url} using #{browser}")
 
     #capabilities = Selenium::WebDriver::Remote::W3C::Capabilities.firefox(accept_insecure_certs: true)
@@ -92,7 +93,7 @@ class SDriver
 
   def click_and_wait(selector, wtime=2, index=0)
     begin
-      Plog.info "Click on #{selector}"
+      Plog.info "Click on #{selector}" if @options[:verbose]
       @driver.find_elements(:css, selector)[index].click
       sleep(wtime) if wtime > 0
     rescue => errmsg
@@ -106,7 +107,7 @@ class SDriver
 
   def type(selector, data, options={})
     if data
-      Plog.info "Enter on #{selector} - #{data[0..19]}"
+      Plog.info "Enter on #{selector} - #{data[0..19]}" if @options[:verbose]
       elem = @driver.find_element(:css, selector)
       if options[:clear]
         elem.send_keys(''*120)
@@ -119,7 +120,7 @@ class SDriver
     if path !~ /^https?:/io
       path = "#{@url}/#{path.sub(%r{^/}, '')}"
     end
-    Plog.info "Goto #{path}"
+    Plog.info "Goto #{path}" if @options[:verbose]
     @driver.navigate.to(path)
   end
 
