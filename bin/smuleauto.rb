@@ -37,7 +37,7 @@ AccentMap = {
 }
 
 def to_search_str(str)
-  stitle = clean_emoji(str).downcase.sub/\s*\(.*$/, '').
+  stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '').
     sub(/\s+[-=].*$/, '').sub(/"/, '').strip
   AccentMap.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
@@ -66,6 +66,15 @@ def time_since(since)
   else
     0
   end
+end
+
+def created_value(value)
+  if value.is_a?(String)
+    value = Time.parse(value)
+  elsif value.is_a?(Date)
+    value = value.to_time
+  end
+  value
 end
 
 module SmuleAuto
@@ -192,7 +201,8 @@ module SmuleAuto
     end
 
     def _write_with_backup(mfile, content, format=:yaml)
-      bakfile = File.join(ENV['PWD'], 'data', File.basename(mfile))
+      #bakfile = File.join(ENV['PWD'], 'data', File.basename(mfile))
+      bakfile = File.join('/Volumes/Voice/SMULE', File.basename(mfile))
       [mfile, bakfile].each do |afile|
         b2file = afile + ".bak"
         if test(?f, afile)
@@ -213,12 +223,15 @@ module SmuleAuto
     def writeback
       require 'time'
 
+      @content = @content.select do |sid, asong|
+        !asong[:deleted]
+      end
       @content.each do |sid, asong|
         stitle = to_search_str(asong[:title])
         asong[:stitle] ||= stitle
       end
       _write_with_backup(@cfile, @content)
-      _write_with_backup(@sfile, @singers)
+      _write_with_backup(@sfile, @singers) if @schanged
 
       tag2set  = {}
       if test(?f, @tag2file)
@@ -228,17 +241,23 @@ module SmuleAuto
         end
       end
 
+      newsong = false
       @content.each do |sid, asong|
         title = asong[:title]
         stitle = to_search_str(title)
         if stitle && !stitle.empty?
-          tag2set[stitle] ||= []
+          unless tag2set[stitle]
+            tag2set[stitle] = []
+            newsong = true
+          end
         end
       end
 
-      tag2set = tag2set.to_a.sort.
-        map {|k2, v| "#{k2}:::#{v.join(',')}"}
-      _write_with_backup(@tag2file, tag2set, :text)
+      if newsong
+        tag2set = tag2set.to_a.sort.
+          map {|k2, v| "#{k2}:::#{v.join(',')}"}
+        _write_with_backup(@tag2file, tag2set, :text)
+      end
       self
     end
 
@@ -256,6 +275,7 @@ module SmuleAuto
         @singers[singer[:name]] ||= singer
         @singers[singer[:name]][:follower] = true
       end
+      @schanged = true
       self
     end
 
@@ -303,7 +323,7 @@ module SmuleAuto
       block = []
       @content.each do |href, r|
         title     = r[:title].scrub
-        record_by = r[:record_by].join(', ')
+        record_by = r[:record_by]
         stitle    = to_search_str(title)
         block << [title, record_by, stitle]
       end
@@ -372,20 +392,30 @@ module SmuleAuto
     end
 
     def play(spage)
-      spage.goto(@info[:href])
+      href = @info[:href].sub(/\/ensembles$/, '')
+      spage.goto(href)
       spage.click_and_wait('button._1oqc74f')
-      if plays = spage.page.css("div._13gdiri")[0]
-        if (plays = plays.text.to_i) > 0
-          Plog.dump_info(plays:plays)
-          @info[:listens] = plays
+      if spage.page.css("div.error-gone").size > 0
+        Plog.info("#{@info[:title]} is gone")
+        @info[:deleted] = true
+        return 0
+      end
+      count_set = spage.page.css("div._13gdiri")
+      if count_set.size > 0
+        if (value = count_set[0].text.to_i) > 0
+          @info[:listens] = value
+        end
+        if (value = count_set[1].text.to_i) > 0
+          @info[:loves] = value
         end
       end
       psecs = 180
       if duration_s = spage.page.css("._vln25l")[0]
-        duration = spage.page.css("._vln25l")[0].text.split(':')
+        duration = duration_s.text.split(':')
         secs     = duration[0].to_i * 60 + duration[1].to_i
         psecs    = [secs, 180].max
       end
+      Plog.dump_info(plays:@info[:listens], psecs:psecs)
       @info[:listens] += 1
       @info[:psecs] = psecs
     end
@@ -442,7 +472,7 @@ module SmuleAuto
         href    = 'https://www.smule.com' + @info[:href]
         date    = cdate.strftime("%Y-%m-%d")
         album   = cdate.strftime("Smule-%Y.%m")
-        artist  = @info[:record_by].join(', ')
+        artist  = @info[:record_by].gsub(',', ', ')
         comment = "#{date} - #{href}"
         year    = cdate.year
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
@@ -500,7 +530,7 @@ module SmuleAuto
             rec     = {
               title:       info['title'],
               href:        info['web_url'],
-              record_by:   record_by,
+              record_by:   record_by.join(','),
               listens:     stats['total_listens'],
               loves:       stats['total_loves'],
               gifts:       stats['total_gifts'],
@@ -555,7 +585,7 @@ module SmuleAuto
         sitems.each do |sitem|
           next unless sinfo = _scan_a_collab_song(sitem)
           if s_singers.size > 0
-            record_by = sinfo[:record_by]
+            record_by = sinfo[:record_by].split(',')
             if (s_singers & record_by) != record_by
               Plog.dump_info(msg:'Skip download for singers',
                              s_singers:s_singers, record_by:record_by)
@@ -586,31 +616,80 @@ module SmuleAuto
     end
 
     def _list_set(sitem, cselect, start, limit)
-      puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d" %
+      bar = '*' * 10
+      puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s" %
         [cselect.size, sitem[:title], sitem[:record_by],
-         sitem[:listens], sitem[:psecs].to_i]
+         sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
+         sitem[:created].strftime("%Y-%m-%d")]
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
-        puts "[%3d/%3d] %-40.40s %-20.20s %3d" %
-          [i, cselect.size, witem[:title], witem[:record_by], witem[:listens]]
+        puts "[%3d/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s" %
+          [i, cselect.size, witem[:title], witem[:record_by],
+           witem[:listens], witem[:loves],
+           bar[1..witem[:stars].to_i],
+           witem[:created].strftime("%Y-%m-%d")]
       end
+    end
+
+    def set_play_prompt(prompt)
+      @prompt = prompt
     end
 
     def play_set(cselect)
       Plog.info("Playing #{cselect.size} songs")
+      pcount = 0
       while sitem = cselect.shift
+        next if (sitem[:stars] && sitem[:stars] <= 1)
+        next if (sitem[:href] =~ /\/ensembles$/)
+        next unless yield(:filter, sitem) == :play
         _list_set(sitem, cselect, 0, 3)
-        SmuleSong.new(sitem).play(@spage)
+        if SmuleSong.new(sitem).play(@spage) <= 0
+          next
+        end
         endt     = Time.now + sitem[:psecs]
         prompted = false
+
+        pcount  += 1
+        if (pcount % 10) == 0
+          yield('w', sitem)
+        end
+
         while true
           unless prompted
-            print "lnswx> "
+            print @prompt
             prompted = true
           end
           if select([$stdin], nil, nil, 1)
-            action, data = yield($stdin.gets.chomp)
+            ans = $stdin.gets.chomp
+            case ans
+            when /^\./i
+              cselect.unshift(sitem)
+              break
+            when /^i/i
+              puts sitem.to_json
+              next
+            when /^R/
+              begin
+                eval "load '#{__FILE__}'", TOPLEVEL_BINDING
+              rescue => errmsg
+                Plog.error errmsg
+              end
+              next
+            when /^s/i
+              order = $'.strip
+              Plog.info("Resort based on #{order}")
+              case order
+              when 'random'
+                cselect = cselect.shuffle
+              when 'play'
+                cselect = cselect.sort_by{|v| v[:listens]}
+              when 'love'
+                cselect = cselect.sort_by{|v| v[:loves]}.reverse
+              end
+              next
+            end
+            action, data = yield(ans, sitem)
             case action
             when :exit
               return
@@ -623,18 +702,20 @@ module SmuleAuto
             when :addset
               Plog.info("Adding #{data.size} song to playlist")
               cselect.concat(data)
-              prompted = false
+            when :repset
+              Plog.info("Replacing #{data.size} song to playlist")
+              cselect = data
             when :list
               offset = data
               _list_set(sitem, cselect, offset, 20)
-              prompted = false
             end
+            prompted = false
           end
           break if (Time.now >= endt)
         end
       end
     end
-    
+
     def scan_followers
       @spage.goto(@user)
       @spage.click_and_wait('._16qibwx:nth-child(4)')
@@ -767,7 +848,7 @@ module SmuleAuto
       {
         title:       title,
         href:        plink['href'],
-        record_by:   _record_by_map(record_by),
+        record_by:   _record_by_map(record_by).join(','),
         listens:     sitem.css('._1wii2p1')[0].text.to_i,
         loves:       sitem.css('._1wii2p1')[1].text.to_i,
         since:       since,
@@ -792,7 +873,7 @@ module SmuleAuto
       {
         title:       title,
         href:        plink['href'],
-        record_by:   _record_by_map(record_by),
+        record_by:   _record_by_map(record_by).join(','),
         listens:     sitem.css('.stat-listens').first.text.to_i,
         loves:       sitem.css('.stat-loves').first.text.to_i,
         since:       sitem.css('.stat-timeago').first.text.strip,
@@ -820,7 +901,8 @@ module SmuleAuto
     end
 
     def play_recents(days=7)
-      _play_song_set {|v| v[:sincev] < 24*days.to_i}
+      ldate = Time.now - days*24*3600
+      _play_song_set {|v| created_value(v[:created]) >= ldate}
     end
 
     def play_favs
@@ -842,6 +924,23 @@ module SmuleAuto
       cselect
     end
 
+    def _filter_song(filter, sitem)
+      state = :play
+      filter.each do |k, v|
+        case k
+        when '*'
+          state = :skip unless sitem[:stars].to_i == v.to_i
+        when '>'
+          state = :skip unless sitem[:stars].to_i >= v.to_i
+        when 's'
+          state = :skip unless sitem[:record_by].include?(v)
+        when 't'
+          state = :skip unless sitem[:stitle].include?(v)
+        end
+      end
+      state
+    end
+
     def _play_song_set
       cselect = []
       @content.each(@options) do |k, v|
@@ -851,25 +950,59 @@ module SmuleAuto
       end
       cselect = _order_set(cselect)
       if cselect.size > 0
-        Scanner.new(@user, @options).play_set(cselect) do |command|
+        @options[:no_auth] = true
+        scanner = Scanner.new(@user, @options)
+        filter  = {}
+        scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>")
+        scanner.play_set(cselect) do |command, sitem|
           case command
-          when /^x/i
-            :exit
-          when /^n/i
-            [:next, $'.to_i]
-          when /^w/i
-            @content.writeback
-            [:next, 0]
-          when /^s/i
-            singer = $'.strip
-            newset = []
-            @content.each(@options) do |k, v|
-              newset << v if v[:record_by].include?(singer)
-            end
-            [:addset, _order_set(newset)]
+          when :filter
+            _filter_song(filter, sitem)
+          when /^f/i
+            filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
+            scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>")
+            :nothing
           when /^l/i
             offset = $'.to_i
             [:list, offset]
+          when /^n/i
+            [:next, $'.to_i]
+          when /^(\+|=)\s*(s|\*)/i
+            param       = $'.strip.downcase
+            oper, ftype = $1, $2
+            newset      = []
+            @content.each(@options) do |k, v|
+              case ftype
+              when 's'
+                newset << v if v[:record_by].downcase.include?(param)
+              when '*'
+                newset << v if v[:stars].to_i >= param.to_i
+              end
+            end
+            [oper == '+' ? :addset : :repset, _order_set(newset)[0..299]]
+          when /^-\s*(s|\*)/i
+            param = $'.strip.downcase
+            ftype = $1
+            newset = cselect.reject {|v|
+              case ftype
+              when 's'
+                v[:record_by].downcase.include?(param)
+              when '*'
+                v[:stars].to_i >= param.to_i
+              else
+                false
+              end
+            }
+            [:repset, _order_set(newset)[0..299]]
+          when /^\*/
+            sitem[:stars] = $'.strip.to_i
+            puts sitem.to_json
+            :nothing
+          when /^w/i
+            @content.writeback
+            :nothing
+          when /^x/i
+            :exit
           else
             :nothing
           end
@@ -881,7 +1014,7 @@ module SmuleAuto
   class << self
     def _ofile(afile, tdir)
       #Plog.dump_info(afile:afile, tdir:tdir)
-      odir  = tdir + "/#{afile[:record_by].sort.join('-')}"
+      odir  = tdir + "/#{afile[:record_by].split(',').sort.join('-')}"
       title = afile[:title].strip.gsub(/[\/\"]/, '-')
       ofile = File.join(odir,
                         title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
@@ -1069,32 +1202,28 @@ module SmuleAuto
       Player.new(user, tdir, getOption).play_singer(singer)
     end
 
-    def created_value(value)
-      if value.is_a?(String)
-        value = Time.parse(value)
-      elsif value.is_a?(Date)
-        value = value.to_time
-      end
-      value
-    end
-
     def fix_content(user, fix_type, tdir='data')
       content  = Content.new(user, tdir)
-      changed  = false
+      ccount   = 0
       fix_type = fix_type.to_sym
       content.each do |sid, cinfo|
         case fix_type
         when :date
-          cinfo[:created] = create_value(cinfo[:created])
-          changed = true
+          unless cinfo[:created].is_a?(Time)
+            cinfo[:created] = created_value(cinfo[:created])
+            ccount += 1
+          end
         when :record_by
-          if cinfo[:record_by].is_a?(String)
-            cinfo[:record_by] = cinfo[:record_by].split(/,/)
-            changed = true
+          if cinfo[:record_by].is_a?(Array)
+            cinfo[:record_by] = cinfo[:record_by].join(',')
+            ccount += 1
           end
         end
       end
-      content.writeback if changed
+      if ccount > 0
+        Plog.info("#{ccount} records fixed")
+        content.writeback
+      end
     end
 
     def fix_tags(user, tdir='data')
@@ -1163,7 +1292,7 @@ module SmuleAuto
       )
       changed = false
       content.each(options) do |k, v|
-        new_record_by = v[:record_by].map{|r| r == old_name ? new_name : r}
+        new_record_by = v[:record_by].gsub(old_name, new_name)
         if new_record_by != v[:record_by]
           v[:record_by] = new_record_by
           v[:ofile], v[:sfile] = _ofile(v, tdir)

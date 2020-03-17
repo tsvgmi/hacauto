@@ -161,7 +161,7 @@ class SiteConnect
 
     def connect_smule(options)
       sdriver = SDriver.new(options[:url], browser:options[:browser])
-      if auth = options[:auth]
+      if !options[:no_auth] && auth = options[:auth]
         identity, password = auth.split(':')
         sdriver.click_and_wait('#react-login-button', 2)          # Login
         sdriver.click_and_wait('._cul1gj', 2, 0)        # Email
@@ -175,7 +175,7 @@ class SiteConnect
 
     def connect_singsalon(options)
       sdriver = SDriver.new('https://sing.salon', browser:options[:browser])
-      if auth = options[:auth]
+      if !options[:no_auth] && auth = options[:auth]
         identity, password = auth.split(':')
         sdriver.click_and_wait('#elUserSignIn')
         sdriver.type('input[name="auth"]', identity + "\n")
