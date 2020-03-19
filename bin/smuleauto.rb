@@ -203,7 +203,7 @@ module SmuleAuto
     def _write_with_backup(mfile, content, format=:yaml)
       #bakfile = File.join(ENV['PWD'], 'data', File.basename(mfile))
       bakfile = File.join('/Volumes/Voice/SMULE', File.basename(mfile))
-      [mfile, bakfile].each do |afile|
+      [mfile, bakfile].uniq.each do |afile|
         b2file = afile + ".bak"
         if test(?f, afile)
           FileUtils.move(afile, b2file, verbose:true)
@@ -393,13 +393,18 @@ module SmuleAuto
 
     def play(spage)
       href = @info[:href].sub(/\/ensembles$/, '')
+
+      # This will start playing
       spage.goto(href)
-      spage.click_and_wait('button._1oqc74f')
-      if spage.page.css("div.error-gone").size > 0
-        Plog.info("#{@info[:title]} is gone")
-        @info[:deleted] = true
-        return 0
+      %w(div.error-gone div.page-error).each do |acss|
+        if spage.page.css(acss).size > 0
+          Plog.info("#{@info[:title]} is gone")
+          @info[:deleted] = true
+          return 0
+        end
       end
+      spage.click_and_wait('button._1oqc74f')
+
       count_set = spage.page.css("div._13gdiri")
       if count_set.size > 0
         if (value = count_set[0].text.to_i) > 0
@@ -409,12 +414,21 @@ module SmuleAuto
           @info[:loves] = value
         end
       end
-      psecs = 180
-      if duration_s = spage.page.css("._vln25l")[0]
-        duration = duration_s.text.split(':')
-        secs     = duration[0].to_i * 60 + duration[1].to_i
-        psecs    = [secs, 180].max
+
+      # The play time won't be known until the source is loaded
+      duration_s = nil
+      while true
+        duration_s = spage.page.css("._vln25l")[0]
+        if duration_s && duration_s.text != "00:00"
+          break
+        end
+        sleep 2
+        print "."
+        spage.refresh
       end
+      duration = duration_s.text.split(':')
+      psecs    = duration[0].to_i * 60 + duration[1].to_i
+
       Plog.dump_info(plays:@info[:listens], psecs:psecs)
       @info[:listens] += 1
       @info[:psecs] = psecs
@@ -632,8 +646,28 @@ module SmuleAuto
       end
     end
 
-    def set_play_prompt(prompt)
-      @prompt = prompt
+    def set_play_prompt(prompt, helpscr)
+      @prompt  = prompt
+      @helpscr = helpscr
+    end
+
+    def sort_selection(cselect, order)
+      Plog.info("Resort based on #{order}")
+      case order
+      when 'random'
+        cselect.shuffle
+      when 'play'
+        cselect.sort_by{|v| v[:listens]}
+      when 'love'
+        cselect.sort_by{|v| v[:loves]}.reverse
+      when 'star'
+        cselect.sort_by{|v| v[:stars].to_i}.reverse
+      when 'date'
+        cselect.sort_by{|v| v[:created]}.reverse
+      else
+        Plog.error "Unknown sort mode: #{order}.  Known are random|play|love|star|date"
+        cselect
+      end
     end
 
     def play_set(cselect)
@@ -644,10 +678,10 @@ module SmuleAuto
         next if (sitem[:href] =~ /\/ensembles$/)
         next unless yield(:filter, sitem) == :play
         _list_set(sitem, cselect, 0, 3)
-        if SmuleSong.new(sitem).play(@spage) <= 0
+        if (psecs = SmuleSong.new(sitem).play(@spage)) <= 0
           next
         end
-        endt     = Time.now + sitem[:psecs]
+        endt     = Time.now + psecs
         prompted = false
 
         pcount  += 1
@@ -663,11 +697,16 @@ module SmuleAuto
           if select([$stdin], nil, nil, 1)
             ans = $stdin.gets.chomp
             case ans
+            when /^\?/i
+              puts @helpscr
+              prompted = false
+              next
             when /^\./i
               cselect.unshift(sitem)
               break
             when /^i/i
               puts sitem.to_json
+              prompted = false
               next
             when /^R/
               begin
@@ -675,20 +714,15 @@ module SmuleAuto
               rescue => errmsg
                 Plog.error errmsg
               end
+              prompted = false
               next
             when /^s/i
               order = $'.strip
-              Plog.info("Resort based on #{order}")
-              case order
-              when 'random'
-                cselect = cselect.shuffle
-              when 'play'
-                cselect = cselect.sort_by{|v| v[:listens]}
-              when 'love'
-                cselect = cselect.sort_by{|v| v[:loves]}.reverse
-              end
+              cselect = sort_selection(cselect, order)
+              prompted = false
               next
             end
+
             action, data = yield(ans, sitem)
             case action
             when :exit
@@ -941,6 +975,22 @@ module SmuleAuto
       state
     end
 
+    HelpScreen = <<EOH
+f *=0       Filter only songs with 0 star (no rating)
+f >=4       Filter only songs with 4+ stars
+l [offset]  List next songs
+n [count]   Goto next (1) song
+.           Replay current song
+s order     Sort order: random, play, love, star, date
++ s pattern Add singer matching pattern from db to playlist
++ * number  Add song with stars from db to playlist
+= s pattern Replace current list with singer matching pattern from db
+= * number  Replace current list with stars matching number from db
+- s pattern Remove singer pattern from current list
+- * number  Remove song with stars matching number from current llist
+w           Write database
+x           Exit
+EOH
     def _play_song_set
       cselect = []
       @content.each(@options) do |k, v|
@@ -953,14 +1003,14 @@ module SmuleAuto
         @options[:no_auth] = true
         scanner = Scanner.new(@user, @options)
         filter  = {}
-        scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>")
+        scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>", HelpScreen)
         scanner.play_set(cselect) do |command, sitem|
           case command
           when :filter
             _filter_song(filter, sitem)
           when /^f/i
             filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
-            scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>")
+            scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>", HelpScreen)
             :nothing
           when /^l/i
             offset = $'.to_i
@@ -998,6 +1048,9 @@ module SmuleAuto
             sitem[:stars] = $'.strip.to_i
             puts sitem.to_json
             :nothing
+          when /^t/
+            tag = $'.strip
+            :nothing
           when /^w/i
             @content.writeback
             :nothing
@@ -1012,8 +1065,9 @@ module SmuleAuto
   end
 
   class << self
-    def _ofile(afile, tdir)
+    def _ofile(afile)
       #Plog.dump_info(afile:afile, tdir:tdir)
+      tdir  = '/Volumes/Voice/SMULE'
       odir  = tdir + "/#{afile[:record_by].split(',').sort.join('-')}"
       title = afile[:title].strip.gsub(/[\/\"]/, '-')
       ofile = File.join(odir,
@@ -1027,7 +1081,7 @@ module SmuleAuto
       options = getOption
       bar     = ProgressBar.create(title:"Preparing list #{flist.size}", total:flist.size)
       flist   = flist.select do |afile|
-        afile[:ofile], afile[:sfile] = _ofile(afile, tdir)
+        afile[:ofile], afile[:sfile] = _ofile(afile)
         odir          = File.dirname(afile[:ofile])
         FileUtils.mkdir_p(odir, verbose:true) unless test(?d, odir)
         begin
@@ -1257,7 +1311,7 @@ module SmuleAuto
             next
           end
         end
-        v[:ofile], v[:sfile] = _ofile(v, tdir)
+        v[:ofile], v[:sfile] = _ofile(v)
         if !test(?f, v[:sfile]) || (File.size(v[:sfile]) < 1_000_000) ||
             !test(?l, v[:ofile])
           SmuleSong.new(v, force:true).download
@@ -1295,7 +1349,7 @@ module SmuleAuto
         new_record_by = v[:record_by].gsub(old_name, new_name)
         if new_record_by != v[:record_by]
           v[:record_by] = new_record_by
-          v[:ofile], v[:sfile] = _ofile(v, tdir)
+          v[:ofile], v[:sfile] = _ofile(v)
           SmuleSong.new(v).download
           changed = true
         end
@@ -1333,18 +1387,19 @@ end
 
 if (__FILE__ == $0)
   SmuleAuto.handleCli(
-    ['--auth',     '-a', 1],
-    ['--browser',  '-b', 1],
-    ['--download', '-d', 0],
-    ['--days',     '-D', 1],
-    ['--filter',   '-f', 1],
-    ['--limit',    '-l', 1],
-    ['--mysongs',  '-m', 0],
-    ['--order',    '-o', 1],
-    ['--pages',    '-p', 1],
-    ['--quick',    '-q', 0],
-    ['--singers',  '-s', 1],
-    ['--size',     '-S', 1],
-    ['--verbose',  '-v', 0],
+    ['--auth',      '-a', 1],
+    ['--browser',   '-b', 1],
+    ['--download',  '-d', 0],
+    ['--days',      '-D', 1],
+    ['--filter',    '-f', 1],
+    ['--limit',     '-l', 1],
+    ['--mysongs',   '-m', 0],
+    ['--order',     '-o', 1],
+    ['--store_dir', '-O', 1],
+    ['--pages',     '-p', 1],
+    ['--quick',     '-q', 0],
+    ['--singers',   '-s', 1],
+    ['--size',      '-S', 1],
+    ['--verbose',   '-v', 0],
   )
 end
