@@ -647,20 +647,20 @@ module SmuleAuto
 
     def _list_set(sitem, cselect, start, limit, tags={})
       bar = '*' * 10
+      tags   = (tags[sitem[:stitle]] || []).join(', ')
       puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
         [cselect.size, sitem[:title], sitem[:record_by],
          sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
-         sitem[:created].strftime("%Y-%m-%d"),
-         tags[sitem[:stitle]].join(', ')]
+         sitem[:created].strftime("%Y-%m-%d"), tags]
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
+        tags   = (tags[witem[:stitle]] || []).join(', ')
         puts "[%3d/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
           [i, cselect.size, witem[:title], witem[:record_by],
            witem[:listens], witem[:loves],
            bar[1..witem[:stars].to_i],
-           witem[:created].strftime("%Y-%m-%d"),
-           tags[witem[:stitle]].join(', ')]
+           witem[:created].strftime("%Y-%m-%d"), tags]
       end
     end
 
