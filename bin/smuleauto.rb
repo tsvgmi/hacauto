@@ -34,6 +34,8 @@ AccentMap = {
   /[ÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢ]/ => 'O',
   /[úùủũụưứừửữự]/       => 'u',
   /[ÚÙỦŨỤƯỨỪỬỮỰ]/       => 'U',
+  /[ýỳỷỹỵ]/             => 'y',
+  /[ÝỲỶỸỴ]/             => 'Y',
 }
 
 def to_search_str(str)
@@ -170,7 +172,7 @@ module SmuleAuto
   end
 
   class Content
-    attr_reader :content, :singers
+    attr_reader :content, :singers, :tags
 
     def initialize(user, cdir='.')
       @user     = user
@@ -190,6 +192,17 @@ module SmuleAuto
       end
 
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
+      _load_tags
+    end
+
+    def _load_tags
+      @tags = {}
+      if test(?f, @tag2file)
+        File.read(@tag2file).split("\n").each do |l|
+          k, v = l.split(':::')
+          @tags[k] = (v || '').split(',')
+        end
+      end
     end
 
     def following
@@ -200,17 +213,19 @@ module SmuleAuto
       @singers.select{|k, v| v[:follower]}
     end
 
-    def _write_with_backup(mfile, content, format=:yaml)
-      #bakfile = File.join(ENV['PWD'], 'data', File.basename(mfile))
-      bakfile = File.join('/Volumes/Voice/SMULE', File.basename(mfile))
-      [mfile, bakfile].uniq.each do |afile|
+    def _write_with_backup(mfile, content, options={})
+      wset = [mfile]
+      if options[:with_backup]
+        wset << File.join('/Volumes/Voice/SMULE', File.basename(mfile))
+      end
+      wset.uniq.each do |afile|
         b2file = afile + ".bak"
         if test(?f, afile)
           FileUtils.move(afile, b2file, verbose:true)
         end
         File.open(afile, 'w') do |fod|
           Plog.info("Writing #{content.size} entries to #{afile}")
-          case format
+          case options[:format]
           when :text
             fod.puts content
           else
@@ -220,7 +235,7 @@ module SmuleAuto
       end
     end
 
-    def writeback
+    def writeback(with_backup=true)
       require 'time'
 
       @content = @content.select do |sid, asong|
@@ -230,35 +245,36 @@ module SmuleAuto
         stitle = to_search_str(asong[:title])
         asong[:stitle] ||= stitle
       end
-      _write_with_backup(@cfile, @content)
-      _write_with_backup(@sfile, @singers) if @schanged
-
-      tag2set  = {}
-      if test(?f, @tag2file)
-        File.read(@tag2file).split("\n").each do |l|
-          k, v = l.split(':::')
-          tag2set[k] = (v || '').split(',')
-        end
-      end
+      woption = {format: :yaml, backup: with_backup}
+      _write_with_backup(@cfile, @content, woption)
+      _write_with_backup(@sfile, @singers, woption) if @schanged
 
       newsong = false
       @content.each do |sid, asong|
         title = asong[:title]
         stitle = to_search_str(title)
         if stitle && !stitle.empty?
-          unless tag2set[stitle]
-            tag2set[stitle] = []
+          unless @tags[stitle]
+            @tags[stitle] = []
             newsong = true
           end
         end
       end
 
-      if newsong
-        tag2set = tag2set.to_a.sort.
+      if newsong || @newtag
+        wtag = @tags.to_a.sort.
           map {|k2, v| "#{k2}:::#{v.join(',')}"}
-        _write_with_backup(@tag2file, tag2set, :text)
+        woption = {format: :text, backup: with_backup}
+        _write_with_backup(@tag2file, wtag, woption)
+        @newtag = false
       end
       self
+    end
+
+    def add_tag(song, tag)
+      key = song[:stitle]
+      @tags[key] = ((@tags[key] || []) + [tag]).uniq
+      @newtag    = true
     end
 
     def set_follows(followings, followers)
@@ -629,20 +645,22 @@ module SmuleAuto
       result[0..new_size-1]
     end
 
-    def _list_set(sitem, cselect, start, limit)
+    def _list_set(sitem, cselect, start, limit, tags={})
       bar = '*' * 10
-      puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s" %
+      puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
         [cselect.size, sitem[:title], sitem[:record_by],
          sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
-         sitem[:created].strftime("%Y-%m-%d")]
+         sitem[:created].strftime("%Y-%m-%d"),
+         tags[sitem[:stitle]].join(', ')]
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
-        puts "[%3d/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s" %
+        puts "[%3d/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
           [i, cselect.size, witem[:title], witem[:record_by],
            witem[:listens], witem[:loves],
            bar[1..witem[:stars].to_i],
-           witem[:created].strftime("%Y-%m-%d")]
+           witem[:created].strftime("%Y-%m-%d"),
+           tags[witem[:stitle]].join(', ')]
       end
     end
 
@@ -670,14 +688,14 @@ module SmuleAuto
       end
     end
 
-    def play_set(cselect)
+    def play_set(cselect, tags)
       Plog.info("Playing #{cselect.size} songs")
       pcount = 0
       while sitem = cselect.shift
         next if (sitem[:stars] && sitem[:stars] <= 1)
         next if (sitem[:href] =~ /\/ensembles$/)
         next unless yield(:filter, sitem) == :play
-        _list_set(sitem, cselect, 0, 3)
+        _list_set(sitem, cselect, 0, 3, tags)
         if (psecs = SmuleSong.new(sitem).play(@spage)) <= 0
           next
         end
@@ -741,7 +759,7 @@ module SmuleAuto
               cselect = data
             when :list
               offset = data
-              _list_set(sitem, cselect, offset, 20)
+              _list_set(sitem, cselect, offset, 20, tags)
             end
             prompted = false
           end
@@ -1004,7 +1022,7 @@ EOH
         scanner = Scanner.new(@user, @options)
         filter  = {}
         scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>", HelpScreen)
-        scanner.play_set(cselect) do |command, sitem|
+        scanner.play_set(cselect, @content.tags) do |command, sitem|
           case command
           when :filter
             _filter_song(filter, sitem)
@@ -1050,9 +1068,11 @@ EOH
             :nothing
           when /^t/
             tag = $'.strip
+            puts "Adding tag #{tag} to #{sitem[:title]}"
+            @content.add_tag(sitem, tag)
             :nothing
           when /^w/i
-            @content.writeback
+            @content.writeback(false)
             :nothing
           when /^x/i
             :exit
@@ -1066,7 +1086,6 @@ EOH
 
   class << self
     def _ofile(afile)
-      #Plog.dump_info(afile:afile, tdir:tdir)
       tdir  = '/Volumes/Voice/SMULE'
       odir  = tdir + "/#{afile[:record_by].split(',').sort.join('-')}"
       title = afile[:title].strip.gsub(/[\/\"]/, '-')
@@ -1145,9 +1164,8 @@ EOH
       end
     end
 
-    def collect_collabs(user, tdir='data')
+    def _collect_collabs(user, content)
       options   = getOption
-      content   = Content.new(user, tdir)
       days      = (options[:days] || 30).to_i
       last_date = (Time.now - days*24*3600)
       ensembles = []
@@ -1159,17 +1177,38 @@ EOH
       end
       if ensembles.size <= 0
         Plog.info("No collabs found in last #{days} days")
-        return
+        return []
       end
       collab_urls = ensembles.sort_by{|r| created_value(r[:created])}.reverse.map{|r| r[:href]}
       result      = Scanner.new(user, options).scan_collab_list(collab_urls)
-      if options[:download]
-        _download_list(result, tdir)
-      end
-      content = Content.new(user, tdir)
       content.add_new_songs(result, false)
+      result
+    end
+
+    def collect_collabs(user, tdir='data')
+      options = getOption
+      content = Content.new(user, tdir)
+      collabs = _collect_collabs(user, content)
+      if collabs.size <= 0
+        return true
+      end
+      _download_list(collabs, tdir) if options[:download]
       content.writeback
       true
+    end
+
+    def _collect_songs(user, content)
+      options = getOption
+      limit   = (options[:limit] || 10_000).to_i
+      sapi    = API.new
+      perfset = sapi.get_performances(user, limit)
+      content.add_new_songs(perfset, false)
+      unless options[:quick]
+        content.add_new_songs(perfset, false)
+        favset = sapi.get_favs(user, 500)
+        content.add_new_songs(favset, true)
+      end
+      perfset
     end
 
     def collect_songs(user, tdir='data')
@@ -1178,20 +1217,30 @@ EOH
       end
       options = getOption
       content = Content.new(user, tdir)
-      limit   = (options[:limit] || 10_000).to_i
-      sapi    = API.new
-      perfset = sapi.get_performances(user, limit)
-      content.add_new_songs(perfset, false)
-
-      if options[:download]
-        _download_list(perfset, tdir)
+      perfset =  _collect_songs(user, content)
+      if perfset.size <= 0
+        return true
       end
+      _download_list(perfset, tdir) if options[:download]
 
       # Favs must dump the whole thing
-      unless options[:quick]
-        content.add_new_songs(perfset, false)
-        favset = sapi.get_favs(user, limit)
-        content.add_new_songs(favset, true)
+      content.writeback
+      true
+    end
+
+    def collect_songs_and_collabs(user, tdir='data')
+      unless test(?d, tdir)
+        raise "Target dir #{tdir} not accessible to download music to"
+      end
+      options = getOption
+      content = Content.new(user, tdir)
+      newsongs = _collect_songs(user, content)
+      collabs  = _collect_collabs(user, content)
+      if (newsongs.size) <= 0 && (collabs.size <= 0)
+        return true
+      end
+      if options[:download]
+        _download_list(newsongs + collabs, tdir)
       end
       content.writeback
       true
