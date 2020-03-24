@@ -236,8 +236,6 @@ module SmuleAuto
     end
 
     def writeback(backup=true)
-      require 'time'
-
       @content = @content.select do |sid, asong|
         !asong[:deleted]
       end
