@@ -215,7 +215,7 @@ module SmuleAuto
 
     def _write_with_backup(mfile, content, options={})
       wset = [mfile]
-      if options[:with_backup]
+      if options[:backup]
         wset << File.join('/Volumes/Voice/SMULE', File.basename(mfile))
       end
       wset.uniq.each do |afile|
@@ -235,7 +235,7 @@ module SmuleAuto
       end
     end
 
-    def writeback(with_backup=true)
+    def writeback(backup=true)
       require 'time'
 
       @content = @content.select do |sid, asong|
@@ -245,7 +245,7 @@ module SmuleAuto
         stitle = to_search_str(asong[:title])
         asong[:stitle] ||= stitle
       end
-      woption = {format: :yaml, backup: with_backup}
+      woption = {format: :yaml, backup: backup}
       _write_with_backup(@cfile, @content, woption)
       _write_with_backup(@sfile, @singers, woption) if @schanged
 
@@ -264,7 +264,7 @@ module SmuleAuto
       if newsong || @newtag
         wtag = @tags.to_a.sort.
           map {|k2, v| "#{k2}:::#{v.join(',')}"}
-        woption = {format: :text, backup: with_backup}
+        woption = {format: :text, backup: backup}
         _write_with_backup(@tag2file, wtag, woption)
         @newtag = false
       end
@@ -646,21 +646,21 @@ module SmuleAuto
     end
 
     def _list_set(sitem, cselect, start, limit, tags={})
-      bar = '*' * 10
-      tags   = (tags[sitem[:stitle]] || []).join(', ')
+      bar   = '*' * 10
+      ptags = (tags[sitem[:stitle]] || []).join(', ')
       puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
         [cselect.size, sitem[:title], sitem[:record_by],
          sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
-         sitem[:created].strftime("%Y-%m-%d"), tags]
+         sitem[:created].strftime("%Y-%m-%d"), ptags]
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
-        tags   = (tags[witem[:stitle]] || []).join(', ')
+        ptags  = (tags[witem[:stitle]] || []).join(', ')
         puts "[%3d/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
           [i, cselect.size, witem[:title], witem[:record_by],
            witem[:listens], witem[:loves],
            bar[1..witem[:stars].to_i],
-           witem[:created].strftime("%Y-%m-%d"), tags]
+           witem[:created].strftime("%Y-%m-%d"), ptags]
       end
     end
 
@@ -682,6 +682,8 @@ module SmuleAuto
         cselect.sort_by{|v| v[:stars].to_i}.reverse
       when 'date'
         cselect.sort_by{|v| v[:created]}.reverse
+      when 'title'
+        cselect.sort_by{|v| v[:stitle]}
       else
         Plog.error "Unknown sort mode: #{order}.  Known are random|play|love|star|date"
         cselect
@@ -693,7 +695,9 @@ module SmuleAuto
       pcount = 0
       while sitem = cselect.shift
         next if (sitem[:stars] && sitem[:stars] <= 1)
-        next if (sitem[:href] =~ /\/ensembles$/)
+        unless @options[:myopen]
+          next if (sitem[:href] =~ /\/ensembles$/)
+        end
         next unless yield(:filter, sitem) == :play
         _list_set(sitem, cselect, 0, 3, tags)
         if (psecs = SmuleSong.new(sitem).play(@spage)) <= 0
@@ -713,8 +717,10 @@ module SmuleAuto
             prompted = true
           end
           if select([$stdin], nil, nil, 1)
-            ans = $stdin.gets.chomp
-            case ans
+            unless ans = $stdin.gets
+              return
+            end
+            case ans = ans.chomp
             when /^\?/i
               puts @helpscr
               prompted = false
@@ -946,6 +952,10 @@ module SmuleAuto
         @content.writeback
         exit 0
       }
+    end
+
+    def play_open(singer)
+      _play_song_set {|v| v[:href] =~ /ensembles$/}
     end
 
     def play_singer(singer)
@@ -1205,7 +1215,7 @@ EOH
       content.add_new_songs(perfset, false)
       unless options[:quick]
         content.add_new_songs(perfset, false)
-        favset = sapi.get_favs(user, 500)
+        favset = sapi.get_favs(user, limit)
         content.add_new_songs(favset, true)
       end
       perfset
@@ -1303,6 +1313,10 @@ EOH
 
     def play_singer(user, singer, tdir='data')
       Player.new(user, tdir, getOption).play_singer(singer)
+    end
+
+    def play_open(user, open, tdir='data')
+      Player.new(user, tdir, getOption).play_open(open)
     end
 
     def fix_content(user, fix_type, tdir='data')
@@ -1443,6 +1457,7 @@ if (__FILE__ == $0)
     ['--filter',    '-f', 1],
     ['--limit',     '-l', 1],
     ['--mysongs',   '-m', 0],
+    ['--myopen',    '-M', 0],
     ['--order',     '-o', 1],
     ['--store_dir', '-O', 1],
     ['--pages',     '-p', 1],
