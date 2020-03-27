@@ -11,6 +11,7 @@ require 'http'
 require 'ruby-progressbar'
 require 'core'
 require 'site_connect'
+require 'smule_player'
 
 def clean_emoji(str='')
   str=str.force_encoding('utf-8').encode
@@ -537,9 +538,11 @@ module SmuleAuto
       @options = options
     end
 
-    def get_songs(url, limit)
-      allset   = []
-      offset   = 0
+    def get_songs(url, options)
+      allset    = []
+      offset    = 0
+      limit     = options[:limit]
+      first_day = Time.now - (options[:days] || 7).to_i*24*3600
       catch(:done) do
         while true
           Plog.dump_info(path:"#{url}?offset=#{offset}")
@@ -572,6 +575,10 @@ module SmuleAuto
               media_url:   info['media_url'],
             }
             allset << rec
+            if created <= first_day
+              Plog.info("Created less than #{first_day}")
+              throw :done
+            end
             throw :done if (allset.size >= limit)
           end
           offset = result['next_offset']
@@ -581,16 +588,18 @@ module SmuleAuto
       allset
     end
 
-    def get_performances(user, limit)
-      get_songs("https://www.smule.com/#{user}/performances/json", limit)
+    def get_performances(user, options)
+      get_songs("https://www.smule.com/#{user}/performances/json", options)
     end
 
-    def get_favs(user, limit)
-      get_songs("https://www.smule.com/#{user}/favorites/json", limit)
+    def get_favs(user, options)
+      get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
   end
 
   class Scanner
+    attr_reader :spage
+
     def initialize(user, options={})
       @user      = user
       @options   = options
@@ -641,135 +650,6 @@ module SmuleAuto
       new_size  = result.size - count
       set_unfavs(result[new_size..-1])
       result[0..new_size-1]
-    end
-
-    def _list_set(sitem, cselect, start, limit, tags={})
-      bar   = '*' * 10
-      ptags = (tags[sitem[:stitle]] || []).join(', ')
-      puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
-        [cselect.size, sitem[:title], sitem[:record_by],
-         sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
-         sitem[:created].strftime("%Y-%m-%d"), ptags]
-      start.upto(start+limit-1) do |i|
-        witem  = cselect[i]
-        next unless witem
-        ptags  = (tags[witem[:stitle]] || []).join(', ')
-        puts "[%3d/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
-          [i, cselect.size, witem[:title], witem[:record_by],
-           witem[:listens], witem[:loves],
-           bar[1..witem[:stars].to_i],
-           witem[:created].strftime("%Y-%m-%d"), ptags]
-      end
-    end
-
-    def set_play_prompt(prompt, helpscr)
-      @prompt  = prompt
-      @helpscr = helpscr
-    end
-
-    def sort_selection(cselect, order)
-      Plog.info("Resort based on #{order}")
-      case order
-      when 'random'
-        cselect.shuffle
-      when 'play'
-        cselect.sort_by{|v| v[:listens]}
-      when 'love'
-        cselect.sort_by{|v| v[:loves]}.reverse
-      when 'star'
-        cselect.sort_by{|v| v[:stars].to_i}.reverse
-      when 'date'
-        cselect.sort_by{|v| v[:created]}.reverse
-      when 'title'
-        cselect.sort_by{|v| v[:stitle]}
-      else
-        Plog.error "Unknown sort mode: #{order}.  Known are random|play|love|star|date"
-        cselect
-      end
-    end
-
-    def play_set(cselect, tags)
-      Plog.info("Playing #{cselect.size} songs")
-      pcount = 0
-      while sitem = cselect.shift
-        next if (sitem[:stars] && sitem[:stars] <= 1)
-        unless @options[:myopen]
-          next if (sitem[:href] =~ /\/ensembles$/)
-        end
-        next unless yield(:filter, sitem) == :play
-        _list_set(sitem, cselect, 0, 3, tags)
-        if (psecs = SmuleSong.new(sitem).play(@spage)) <= 0
-          next
-        end
-        endt     = Time.now + psecs
-        prompted = false
-
-        pcount  += 1
-        if (pcount % 10) == 0
-          yield('w', sitem)
-        end
-
-        while true
-          unless prompted
-            print @prompt
-            prompted = true
-          end
-          if select([$stdin], nil, nil, 1)
-            unless ans = $stdin.gets
-              return
-            end
-            case ans = ans.chomp
-            when /^\?/i
-              puts @helpscr
-              prompted = false
-              next
-            when /^\./i
-              cselect.unshift(sitem)
-              break
-            when /^i/i
-              puts sitem.to_json
-              prompted = false
-              next
-            when /^R/
-              begin
-                eval "load '#{__FILE__}'", TOPLEVEL_BINDING
-              rescue => errmsg
-                Plog.error errmsg
-              end
-              prompted = false
-              next
-            when /^s/i
-              order = $'.strip
-              cselect = sort_selection(cselect, order)
-              prompted = false
-              next
-            end
-
-            action, data = yield(ans, sitem)
-            case action
-            when :exit
-              return
-            when :next
-              if data > 0
-                Plog.info("Skip #{data} songs")
-                cselect.shift(data)
-              end
-              break
-            when :addset
-              Plog.info("Adding #{data.size} song to playlist")
-              cselect.concat(data)
-            when :repset
-              Plog.info("Replacing #{data.size} song to playlist")
-              cselect = data
-            when :list
-              offset = data
-              _list_set(sitem, cselect, offset, 20, tags)
-            end
-            prompted = false
-          end
-          break if (Time.now >= endt)
-        end
-      end
     end
 
     def scan_followers
@@ -957,7 +837,8 @@ module SmuleAuto
     end
 
     def play_singer(singer)
-      _play_song_set {|v| v[:record_by].include?(singer)}
+      singer = singer.downcase
+      _play_song_set {|v| v[:record_by].downcase.include?(singer)}
     end
 
     def play_recents(days=7)
@@ -969,54 +850,6 @@ module SmuleAuto
       _play_song_set {||v| v[:isfav] || v[:oldfav]}
     end
 
-    def _order_set(cselect)
-      sort_by, order = (@options[:order] || "listens:a").split(':')
-      order = 'a' unless order
-
-      if sort_by == 'random'
-        cselect = cselect.shuffle
-      else
-        cselect = cselect.sort_by {|r| r[sort_by.to_sym]}
-      end
-      if order == 'd'
-        cselect = cselect.reverse
-      end
-      cselect
-    end
-
-    def _filter_song(filter, sitem)
-      state = :play
-      filter.each do |k, v|
-        case k
-        when '*'
-          state = :skip unless sitem[:stars].to_i == v.to_i
-        when '>'
-          state = :skip unless sitem[:stars].to_i >= v.to_i
-        when 's'
-          state = :skip unless sitem[:record_by].include?(v)
-        when 't'
-          state = :skip unless sitem[:stitle].include?(v)
-        end
-      end
-      state
-    end
-
-    HelpScreen = <<EOH
-f *=0       Filter only songs with 0 star (no rating)
-f >=4       Filter only songs with 4+ stars
-l [offset]  List next songs
-n [count]   Goto next (1) song
-.           Replay current song
-s order     Sort order: random, play, love, star, date
-+ s pattern Add singer matching pattern from db to playlist
-+ * number  Add song with stars from db to playlist
-= s pattern Replace current list with singer matching pattern from db
-= * number  Replace current list with stars matching number from db
-- s pattern Remove singer pattern from current list
-- * number  Remove song with stars matching number from current llist
-w           Write database
-x           Exit
-EOH
     def _play_song_set
       cselect = []
       @content.each(@options) do |k, v|
@@ -1024,70 +857,9 @@ EOH
           cselect << v
         end
       end
-      cselect = _order_set(cselect)
+      p cselect
       if cselect.size > 0
-        @options[:no_auth] = true
-        scanner = Scanner.new(@user, @options)
-        filter  = {}
-        scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>", HelpScreen)
-        scanner.play_set(cselect, @content.tags) do |command, sitem|
-          case command
-          when :filter
-            _filter_song(filter, sitem)
-          when /^f/i
-            filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
-            scanner.set_play_prompt("lnswx*+= (#{filter.inspect})>", HelpScreen)
-            :nothing
-          when /^l/i
-            offset = $'.to_i
-            [:list, offset]
-          when /^n/i
-            [:next, $'.to_i]
-          when /^(\+|=)\s*(s|\*)/i
-            param       = $'.strip.downcase
-            oper, ftype = $1, $2
-            newset      = []
-            @content.each(@options) do |k, v|
-              case ftype
-              when 's'
-                newset << v if v[:record_by].downcase.include?(param)
-              when '*'
-                newset << v if v[:stars].to_i >= param.to_i
-              end
-            end
-            [oper == '+' ? :addset : :repset, _order_set(newset)[0..299]]
-          when /^-\s*(s|\*)/i
-            param = $'.strip.downcase
-            ftype = $1
-            newset = cselect.reject {|v|
-              case ftype
-              when 's'
-                v[:record_by].downcase.include?(param)
-              when '*'
-                v[:stars].to_i >= param.to_i
-              else
-                false
-              end
-            }
-            [:repset, _order_set(newset)[0..299]]
-          when /^\*/
-            sitem[:stars] = $'.strip.to_i
-            puts sitem.to_json
-            :nothing
-          when /^t/
-            tag = $'.strip
-            puts "Adding tag #{tag} to #{sitem[:title]}"
-            @content.add_tag(sitem, tag)
-            :nothing
-          when /^w/i
-            @content.writeback(false)
-            :nothing
-          when /^x/i
-            :exit
-          else
-            :nothing
-          end
-        end
+        SmulePlayer.new(@user, @content, cselect, @options).play_song_set
       end
     end
   end
@@ -1208,12 +980,13 @@ EOH
     def _collect_songs(user, content)
       options = getOption
       limit   = (options[:limit] || 10_000).to_i
+      days    = (options[:days] || 7).to_i
       sapi    = API.new
-      perfset = sapi.get_performances(user, limit)
+      perfset = sapi.get_performances(user, limit:limit, days:days)
       content.add_new_songs(perfset, false)
       unless options[:quick]
         content.add_new_songs(perfset, false)
-        favset = sapi.get_favs(user, limit)
+        favset = sapi.get_favs(user, limit:limit, days:365)
         content.add_new_songs(favset, true)
       end
       perfset
@@ -1456,6 +1229,7 @@ if (__FILE__ == $0)
     ['--limit',     '-l', 1],
     ['--mysongs',   '-m', 0],
     ['--myopen',    '-M', 0],
+    ['--no_auth',   '-n', 0],
     ['--order',     '-o', 1],
     ['--store_dir', '-O', 1],
     ['--pages',     '-p', 1],
