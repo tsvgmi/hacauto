@@ -857,7 +857,6 @@ module SmuleAuto
           cselect << v
         end
       end
-      p cselect
       if cselect.size > 0
         SmulePlayer.new(@user, @content, cselect, @options).play_song_set
       end
@@ -984,11 +983,9 @@ module SmuleAuto
       sapi    = API.new
       perfset = sapi.get_performances(user, limit:limit, days:days)
       content.add_new_songs(perfset, false)
-      unless options[:quick]
-        content.add_new_songs(perfset, false)
-        favset = sapi.get_favs(user, limit:limit, days:365)
-        content.add_new_songs(favset, true)
-      end
+      content.add_new_songs(perfset, false)
+      favset = sapi.get_favs(user, limit:limit, days:365)
+      content.add_new_songs(favset, true)
       perfset
     end
 
@@ -1221,21 +1218,21 @@ end
 
 if (__FILE__ == $0)
   SmuleAuto.handleCli(
-    ['--auth',      '-a', 1],
-    ['--browser',   '-b', 1],
-    ['--download',  '-d', 0],
-    ['--days',      '-D', 1],
-    ['--filter',    '-f', 1],
-    ['--limit',     '-l', 1],
-    ['--mysongs',   '-m', 0],
-    ['--myopen',    '-M', 0],
-    ['--no_auth',   '-n', 0],
-    ['--order',     '-o', 1],
-    ['--store_dir', '-O', 1],
-    ['--pages',     '-p', 1],
-    ['--quick',     '-q', 0],
-    ['--singers',   '-s', 1],
-    ['--size',      '-S', 1],
-    ['--verbose',   '-v', 0],
+    ['--auth',        '-a', 1],
+    ['--browser',     '-b', 1],
+    ['--download',    '-d', 0],
+    ['--days',        '-D', 1],
+    ['--filter',      '-f', 1],
+    ['--limit',       '-l', 1],
+    ['--play_length', '-L', 1],
+    ['--mysongs',     '-m', 0],
+    ['--myopen',      '-M', 0],
+    ['--no_auth',     '-n', 0],
+    ['--order',       '-o', 1],
+    ['--store_dir',   '-O', 1],
+    ['--pages',       '-p', 1],
+    ['--singers',     '-s', 1],
+    ['--size',        '-S', 1],
+    ['--verbose',     '-v', 0],
   )
 end

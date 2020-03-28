@@ -82,6 +82,33 @@ module SmuleAuto
       state
     end
 
+    def play_asong(sitem)
+      if (sitem[:stars] && sitem[:stars] <= 1)
+        return 0
+      end
+      unless @options[:myopen]
+        if (sitem[:href] =~ /\/ensembles$/)
+          return 0
+        end
+      end
+      unless _filter_song(sitem) == :play
+        return 0
+      end
+
+      _list_set(sitem, @clist, 0, 3, @content.tags)
+      if (psecs = SmuleSong.new(sitem).play(@scanner.spage)) <= 0
+        return 0
+      end
+      if plength = @options[:play_length] 
+        plength = plength.to_i
+      end
+      @pcount  += 1
+      if (@pcount % 10) == 0
+        @content.writeback(false)
+      end
+      plength || psecs
+    end
+
     HelpScreen = <<EOH
 f *=0       Filter only songs with 0 star (no rating)
 f >=4       Filter only songs with 4+ stars
@@ -103,82 +130,18 @@ w           Write database
 x           Exit
 EOH
     def play_song_set
-      order   = (@options[:order] || "listens:a")
-      @clist  = SmulePlayer.sort_selection(@clist, order)
+      @order  = (@options[:order] || "listens:a")
       @filter = {}
-      if @clist.size > 0
-        _setprompt
-        self._play_set(@content.tags) do |command, sitem|
-          case command
-          when /^f/i
-            @filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
-            _setprompt
-            :nothing
-          when /^l/i
-            offset = $'.to_i
-            [:list, offset]
-          when /^n/i
-            [:next, $'.to_i]
-          when /^(\+|=)\s*(\S)/i
-            param       = $'.strip.downcase
-            oper, ftype = $1, $2
-            newset      = _select_set(ftype, param)
-            [oper == '+' ? :addset : :repset, SmulePlayer.sort_selection(newset, order)[0..299]]
-          when /^-\s*(s|\*)/i
-            param = $'.strip.downcase
-            ftype = $1
-            newset = @clist.reject {|v|
-              case ftype
-              when 's'
-                v[:record_by].downcase.include?(param)
-              when '*'
-                v[:stars].to_i >= param.to_i
-              else
-                false
-              end
-            }
-            [:repset, SmulePlayer.sort_selection(newset, order)[0..299]]
-          when /^\*/
-            sitem[:stars] = $'.strip.to_i
-            puts sitem.to_json
-            :nothing
-          when /^t/
-            tag = $'.strip
-            puts "Adding tag #{tag} to #{sitem[:title]}"
-            @content.add_tag(sitem, tag)
-            :nothing
-          when /^w/i
-            @content.writeback(false)
-            :nothing
-          when /^x/i
-            :exit
-          else
-            :nothing
-          end
-        end
-      end
-    end
-
-    def _play_set(tags)
-      pcount = 0
+      @pcount = 0
+      @clist  = sort_selection(@clist)
+      _setprompt
       while true
         if sitem = @clist.shift
-          next if (sitem[:stars] && sitem[:stars] <= 1)
-          unless @options[:myopen]
-            next if (sitem[:href] =~ /\/ensembles$/)
-          end
-          next unless _filter_song(sitem) == :play
-          _list_set(sitem, @clist, 0, 3, tags)
-          if (psecs = SmuleSong.new(sitem).play(@scanner.spage)) <= 0
+          if (duration = play_asong(sitem)) <= 0
             next
           end
-          endt     = Time.now + psecs
+          endt = Time.now + duration
           prompted = false
-
-          pcount  += 1
-          if (pcount % 10) == 0
-            yield('w', sitem)
-          end
         end
 
         while true
@@ -191,53 +154,72 @@ EOH
               return
             end
             case ans = ans.chomp
-            when /^\?/i
+            when /^\?/i                           # Help
               puts HelpScreen
-              prompted = false
-              next
-            when /^\./i
+            when /^\./i                           # Replay current
               @clist.unshift(sitem) if sitem
               break
-            when /^i/i
-              puts sitem.to_json if sitem
-              prompted = false
-              next
-            when /^R/
-              begin
-                eval "load '#{__FILE__}'", TOPLEVEL_BINDING
-              rescue => errmsg
-                Plog.error errmsg
+            when /^(\+|=)\s*(\S)/i                # Add/replace list
+              param       = $'.strip.downcase
+              oper, ftype = $1, $2
+              newset      = _select_set(ftype, param)
+              if oper == '+'
+                @clist.concat(newset)
+              else
+                @clist = newset
               end
-              prompted = false
-              next
-            when /^s/i
-              order = $'.strip
-              @clist = self.class.sort_selection(@clist, order)
-              prompted = false
-              next
-            end
-
-            action, data = yield(ans, sitem)
-            case action
-            when :exit
-              return
-            when :next
-              if data > 0
+            when /^-\s*(s|\*)/i                   # Remove from list
+              param = $'.strip.downcase
+              ftype = $1
+              newset = @clist.reject {|v|
+                case ftype
+                when 's'
+                  v[:record_by].downcase.include?(param)
+                when '*'
+                  v[:stars].to_i >= param.to_i
+                else
+                  false
+                end
+              }
+              @clist = sort_selection(newset)[0..299]
+            when /^\*/                            # Set stars
+              sitem[:stars] = $'.strip.to_i
+              puts sitem.to_json
+            when /^f/i                            # Set filter
+              @filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
+              _setprompt
+            when /^i/i                            # Song Info
+              puts sitem.to_json if sitem
+            when /^l/i                            # List playlist
+              if sitem
+                offset = $'.to_i
+                _list_set(sitem, @clist, offset, 20, @content.tags)
+              end
+            when /^n/i                            # Next n songs
+              if (data = $'.to_i) > 0
                 Plog.info("Skip #{data} songs")
                 @clist.shift(data)
               end
               break
-            when :addset
-              Plog.info("Adding #{data.size} song to playlist")
-              @clist.concat(data)
-            when :repset
-              Plog.info("Replacing #{data.size} song to playlist")
-              @clist = data
-            when :list
-              if sitem
-                offset = data
-                _list_set(sitem, @clist, offset, 20, tags)
+            when /^R/                             # Reload script
+              begin
+                [__FILE__, "lib/smule_player.rb"]. each do |script|
+                  eval "load '#{script}'", TOPLEVEL_BINDING
+                end
+              rescue => errmsg
+                Plog.error errmsg
               end
+            when /^s/i                            # Sort current list
+              order = $'.strip
+              @clist = sort_selection(@clist)
+            when /^t/                             # Set tag
+              tag = $'.strip
+              puts "Adding tag #{tag} to #{sitem[:title]}"
+              @content.add_tag(sitem, tag)
+            when /^w/i                            # Write content out
+              @content.writeback(false)
+            when /^x/i                            # Quit
+              return
             end
             prompted = false
           end
@@ -246,9 +228,9 @@ EOH
       end
     end
 
-    def self.sort_selection(cselect, order)
-      Plog.info("Resort based on #{order}")
-      cselect = case order
+    def sort_selection(cselect)
+      Plog.info("Resort based on #{@order}")
+      cselect = case @order
       when /^random/
         cselect.shuffle
       when /^play/
@@ -262,10 +244,10 @@ EOH
       when /^title/
         cselect.sort_by{|v| v[:stitle]}
       else
-        Plog.error "Unknown sort mode: #{order}.  Known are random|play|love|star|date"
+        Plog.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
         cselect
       end
-      if order =~ /\.d$/
+      if @order =~ /\.d$/
         cselect = cselect.reverse
       end
       cselect
