@@ -419,7 +419,6 @@ module SmuleAuto
         end
       end
       spage.click_and_wait('button._1oqc74f')
-
       count_set = spage.page.css("div._13gdiri")
       if count_set.size > 0
         if (value = count_set[0].text.to_i) > 0
@@ -454,27 +453,6 @@ module SmuleAuto
         if @options[:force] || !test(?f, @info[:sfile])
           audio_handler = AudioHandler.new(@surl)
           if audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
-            @lyric = audio_handler.get_lyric
-            update_mp4tag
-          end
-        end
-        unless test(?l, @info[:ofile])
-          unless test(?d, File.dirname(@info[:ofile]))
-            FileUtils.mkdir_p(File.dirname(@info[:ofile]), verbose:true)
-          end
-          FileUtils.symlink(@info[:sfile], @info[:ofile],
-                            verbose:true, force:true)
-        end
-      rescue => errmsg
-        Plog.dump_error(errmsg:errmsg)
-      end
-    end
-
-    def download
-      begin
-        if @options[:force] || !test(?f, @info[:sfile])
-          audio_handler = AudioHandler.new(@surl)
-          if audio_handler.get_audio(@info[:sfile])
             @lyric = audio_handler.get_lyric
             update_mp4tag
           end
@@ -821,48 +799,6 @@ module SmuleAuto
     end
   end
 
-  # Playing song on smule web site
-  class Player
-    def initialize(user, tdir='data', options={})
-      @options = options
-      @content = Content.new(user, tdir)
-      at_exit {
-        @content.writeback
-        exit 0
-      }
-    end
-
-    def play_open(singer)
-      _play_song_set {|v| v[:href] =~ /ensembles$/}
-    end
-
-    def play_singer(singer)
-      singer = singer.downcase
-      _play_song_set {|v| v[:record_by].downcase.include?(singer)}
-    end
-
-    def play_recents(days=7)
-      ldate = Time.now - days*24*3600
-      _play_song_set {|v| created_value(v[:created]) >= ldate}
-    end
-
-    def play_favs
-      _play_song_set {||v| v[:isfav] || v[:oldfav]}
-    end
-
-    def _play_song_set
-      cselect = []
-      @content.each(@options) do |k, v|
-        if yield v
-          cselect << v
-        end
-      end
-      if cselect.size > 0
-        SmulePlayer.new(@user, @content, cselect, @options).play_song_set
-      end
-    end
-  end
-
   class << self
     def _ofile(afile)
       tdir  = '/Volumes/Voice/SMULE'
@@ -914,18 +850,11 @@ module SmuleAuto
       end
       FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
       bar = ProgressBar.create(title:"Downloading songs #{flist.size}", total:flist.size)
-      if false
-        flist.each do |afile|
-          SmuleSong.new(afile).download
-          bar.increment
-        end
-      else
-        ssconnect = SiteConnect.new(:singsalon, getOption).driver
-        ssconnect.goto('/smule-downloader')
-        flist.each do |afile|
-          SmuleSong.new(afile).download_from_singsalon(ssconnect)
-          bar.increment
-        end
+      ssconnect = SiteConnect.new(:singsalon, getOption).driver
+      ssconnect.goto('/smule-downloader')
+      flist.each do |afile|
+        SmuleSong.new(afile).download_from_singsalon(ssconnect)
+        bar.increment
       end
     end
 
@@ -1071,20 +1000,8 @@ module SmuleAuto
       true
     end
 
-    def play_favs(user, tdir='data')
-      Player.new(user, tdir, getOption).play_favs
-    end
-
-    def play_recents(user, tdir='data', days=7)
-      Player.new(user, tdir, getOption).play_recents(days)
-    end
-
-    def play_singer(user, singer, tdir='data')
-      Player.new(user, tdir, getOption).play_singer(singer)
-    end
-
-    def play_open(user, open, tdir='data')
-      Player.new(user, tdir, getOption).play_open(open)
+    def play(user, tdir='data')
+      SmulePlayer.new(user, tdir, getOption).play_all
     end
 
     def fix_content(user, fix_type, tdir='data')
@@ -1145,7 +1062,7 @@ module SmuleAuto
         v[:ofile], v[:sfile] = _ofile(v)
         if !test(?f, v[:sfile]) || (File.size(v[:sfile]) < 1_000_000) ||
             !test(?l, v[:ofile])
-          SmuleSong.new(v, force:true).download
+          SmuleSong.new(v, force:true).download_from_singsalon
         else
           SmuleSong.new(v, force:true).update_mp4tag
         end
@@ -1181,7 +1098,7 @@ module SmuleAuto
         if new_record_by != v[:record_by]
           v[:record_by] = new_record_by
           v[:ofile], v[:sfile] = _ofile(v)
-          SmuleSong.new(v).download
+          SmuleSong.new(v).download_from_singsalon
           changed = true
         end
       end

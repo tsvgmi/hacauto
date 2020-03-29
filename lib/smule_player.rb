@@ -8,23 +8,55 @@
 #++
 
 module SmuleAuto
+  StateFile = "splayer.state"
+
   class SmulePlayer
-    def initialize(user, content, clist, options={})
+    def initialize(user, tdir, options={})
       @options = options
-      @content = content
-      @clist   = clist
+      @content = Content.new(user, tdir)
+      if test(?f, StateFile)
+        config  = YAML.load_file(StateFile)
+        @clist  = config[:clist]
+        @filter = config[:filter]
+        @order  = config[:order]
+      end
+      @clist  ||= {}
+      @filter ||= {}
+      @order  ||= 'play'
+      @played_set = []
       @options[:no_auth] = true
       @scanner = Scanner.new(user, @options)
+      at_exit {
+        _save_state
+        exit 0
+      }
       Plog.info("Playing #{@clist.size} songs")
     end
+    
+    def _save_state(backup=false)
+      @content.writeback(backup)
+      open(StateFile, "w") do |fod|
+        data = {
+          filter: @filter,
+          order:  @order,
+          clist:  @clist,
+        }
+        fod.puts(data.to_yaml)
+        Plog.info("Updating #{StateFile}")
+      end
+    end
 
-    def _list_set(sitem, cselect, start, limit, tags={})
-      bar   = '*' * 10
-      ptags = (tags[sitem[:stitle]] || []).join(', ')
-      puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
-        [cselect.size, sitem[:title], sitem[:record_by],
-         sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
-         sitem[:created].strftime("%Y-%m-%d"), ptags]
+    def _list_set(sitem, cselect, start, limit)
+      bar  = '*' * 10
+      tags = @content.tags
+      #Plog.dump_info(sitem:sitem, size:cselect.size, start:start, limit:limit)
+      if sitem
+        ptags = (tags[sitem[:stitle]] || []).join(', ')
+        puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
+          [cselect.size, sitem[:title], sitem[:record_by],
+           sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
+           sitem[:created].strftime("%Y-%m-%d"), ptags]
+      end
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
@@ -47,6 +79,8 @@ module SmuleAuto
       end
       @content.each(@options) do |k, v|
         case ftype
+        when 'f'
+          newset << v if (v[:isfav] || v[:oldfav])
         when 's'
           newset << v if v[:record_by].downcase.include?(value)
         when 't'
@@ -79,6 +113,9 @@ module SmuleAuto
           state = :skip unless sitem[:stitle].include?(v)
         end
       end
+      if state == :skip
+        Plog.info("Skipping #{sitem[:title]}")
+      end
       state
     end
 
@@ -95,53 +132,70 @@ module SmuleAuto
         return 0
       end
 
-      _list_set(sitem, @clist, 0, 3, @content.tags)
+      _list_set(sitem, @clist, 0, 5)
       if (psecs = SmuleSong.new(sitem).play(@scanner.spage)) <= 0
         return 0
       end
       if plength = @options[:play_length] 
         plength = plength.to_i
       end
-      @pcount  += 1
-      if (@pcount % 10) == 0
-        @content.writeback(false)
+      if plength = @options[:play_length] 
+        [plength.to_i, psecs].min
+      else
+        pspecs
       end
-      plength || psecs
     end
 
     HelpScreen = <<EOH
+Command:
 f *=0       Filter only songs with 0 star (no rating)
 f >=4       Filter only songs with 4+ stars
 l [offset]  List next songs
+p [offset]  List played songs
 n [count]   Goto next (1) song
 .           Replay current song
 s order     Sort order: random[.d], play[.d], love[.d], star[.d], date[.d], title[.d]
-+ s pattern Add singer matching pattern from db to playlist
-+ t pattern Add song title matching string
-+ r days    Add recent songs from last days
-+ * number  Add song with stars from db to playlist
-= s pattern Replace current list with singer matching pattern from db
-= t pattern Replace song title matching string
-= r days    Replace recent songs from last days
-= * number  Replace current list with stars matching number from db
-- s pattern Remove singer pattern from current list
-- * number  Remove song with stars matching number from current llist
+
++ filter_type pattern Add songs matching filter (see down)
+= filter_type pattern Replace songs matching filter (see down)
+- filter_type pattern Remove songs matching filter (see down)
+/ filter_type pattern Search and list matching songs
+
 w           Write database
 x           Exit
+
+Filter type:
+s Singer
+t Title
+r Latest days [7]
+f Favorites (old+new)
+* Stars
 EOH
-    def play_song_set
-      @order  = (@options[:order] || "listens:a")
-      @filter = {}
-      @pcount = 0
-      @clist  = sort_selection(@clist)
+    def play_all
+      pcount  = 0
       _setprompt
       while true
+        # Replay the same list again if exhausted
+        if @clist.size <= 0
+          @clist = @played_set.uniq
+        end
         if sitem = @clist.shift
           if (duration = play_asong(sitem)) <= 0
             next
           end
-          endt = Time.now + duration
+          @played_set << sitem
+          # Turn off autoplay
+          if pcount == 0
+            @scanner.spage.click_and_wait("div._1jmbcz6h")
+          end
+          pcount  += 1
+          if (pcount % 10) == 0
+            _save_state(false)
+          end
+          endt     = Time.now + duration
           prompted = false
+        else
+          endt = Time.now + 1
         end
 
         while true
@@ -159,14 +213,17 @@ EOH
             when /^\./i                           # Replay current
               @clist.unshift(sitem) if sitem
               break
-            when /^(\+|=)\s*(\S)/i                # Add/replace list
+            when /^([\+=\/])\s*(\S)/i                # Add/replace list
               param       = $'.strip.downcase
               oper, ftype = $1, $2
               newset      = _select_set(ftype, param)
-              if oper == '+'
-                @clist.concat(newset)
-              else
-                @clist = newset
+              case oper
+              when '+'
+                @clist.concat(sort_selection(newset))
+              when '='
+                @clist = sort_selection(newset)
+              when '/'
+                _list_set(sitem, newset, 0, newset.size)
               end
             when /^-\s*(s|\*)/i                   # Remove from list
               param = $'.strip.downcase
@@ -181,26 +238,26 @@ EOH
                   false
                 end
               }
-              @clist = sort_selection(newset)[0..299]
+              @clist = sort_selection(newset)
             when /^\*/                            # Set stars
               sitem[:stars] = $'.strip.to_i
-              puts sitem.to_json
+              _list_set(sitem, [], 0, 0)
             when /^f/i                            # Set filter
               @filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
               _setprompt
             when /^i/i                            # Song Info
-              puts sitem.to_json if sitem
+              puts sitem.to_yaml if sitem
             when /^l/i                            # List playlist
-              if sitem
-                offset = $'.to_i
-                _list_set(sitem, @clist, offset, 20, @content.tags)
-              end
+              offset = $'.to_i
+              _list_set(sitem, @clist, offset, 10)
             when /^n/i                            # Next n songs
-              if (data = $'.to_i) > 0
-                Plog.info("Skip #{data} songs")
-                @clist.shift(data)
-              end
+              data = $'.to_i
+              Plog.info("Skip #{data} songs")
+              @clist.shift(data)
               break
+            when /^p/i                            # List playlist
+              offset = $'.to_i
+              _list_set(nil, @played_set.reverse, offset, 10)
             when /^R/                             # Reload script
               begin
                 [__FILE__, "lib/smule_player.rb"]. each do |script|
@@ -210,14 +267,14 @@ EOH
                 Plog.error errmsg
               end
             when /^s/i                            # Sort current list
-              order = $'.strip
+              @order = $'.strip
               @clist = sort_selection(@clist)
             when /^t/                             # Set tag
               tag = $'.strip
-              puts "Adding tag #{tag} to #{sitem[:title]}"
               @content.add_tag(sitem, tag)
+              _list_set(sitem, [], 0, 0)
             when /^w/i                            # Write content out
-              @content.writeback(false)
+              _save_state(false)
             when /^x/i                            # Quit
               return
             end
@@ -250,6 +307,7 @@ EOH
       if @order =~ /\.d$/
         cselect = cselect.reverse
       end
+      Plog.info("Sorted #{cselect.size} entries")
       cselect
     end
   end
