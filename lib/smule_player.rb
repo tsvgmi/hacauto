@@ -27,7 +27,7 @@ module SmuleAuto
       @options[:no_auth] = true
       @scanner = Scanner.new(user, @options)
       at_exit {
-        _save_state
+        _save_state(true)
         exit 0
       }
       Plog.info("Playing #{@clist.size} songs")
@@ -177,7 +177,7 @@ EOH
       while true
         # Replay the same list again if exhausted
         if @clist.size <= 0
-          @clist = @played_set.uniq
+          @clist = @played_set.uniq.select{|s| _filter_song(s) != :skip}
         end
         if sitem = @clist.shift
           if (duration = play_asong(sitem)) <= 0
@@ -246,7 +246,12 @@ EOH
               @filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
               _setprompt
             when /^i/i                            # Song Info
-              puts sitem.to_yaml if sitem
+              puts({
+                filter: @filter,
+                order:  @order,
+                count:  @clist.size,
+                song:   sitem,
+              }.to_yaml)
             when /^l/i                            # List playlist
               offset = $'.to_i
               _list_set(sitem, @clist, offset, 10)

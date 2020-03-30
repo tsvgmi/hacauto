@@ -519,7 +519,7 @@ module SmuleAuto
     def get_songs(url, options)
       allset    = []
       offset    = 0
-      limit     = options[:limit]
+      limit     = (options[:limit] || 10_000).to_i
       first_day = Time.now - (options[:days] || 7).to_i*24*3600
       catch(:done) do
         while true
@@ -570,7 +570,8 @@ module SmuleAuto
       get_songs("https://www.smule.com/#{user}/performances/json", options)
     end
 
-    def get_favs(user, options)
+    def get_favs(user)
+      options = {limit:10_000, days:365*10}
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
   end
@@ -893,7 +894,26 @@ module SmuleAuto
       result
     end
 
+    def _tdir_check(tdir)
+      unless test(?d, tdir)
+        raise "Target dir #{tdir} not accessible to download music to"
+      end
+    end
+
+    def _collect_songs(user, content)
+      options = getOption
+      limit   = (options[:limit] || 10_000).to_i
+      days    = (options[:days] || 7).to_i
+      sapi    = API.new
+      perfset = sapi.get_performances(user, limit:limit, days:days)
+      content.add_new_songs(perfset, false)
+      favset = sapi.get_favs(user)
+      content.add_new_songs(favset, true)
+      perfset
+    end
+
     def collect_collabs(user, tdir='data')
+      _tdir_check(tdir)
       options = getOption
       content = Content.new(user, tdir)
       collabs = _collect_collabs(user, content)
@@ -905,23 +925,8 @@ module SmuleAuto
       true
     end
 
-    def _collect_songs(user, content)
-      options = getOption
-      limit   = (options[:limit] || 10_000).to_i
-      days    = (options[:days] || 7).to_i
-      sapi    = API.new
-      perfset = sapi.get_performances(user, limit:limit, days:days)
-      content.add_new_songs(perfset, false)
-      content.add_new_songs(perfset, false)
-      favset = sapi.get_favs(user, limit:limit, days:365)
-      content.add_new_songs(favset, true)
-      perfset
-    end
-
     def collect_songs(user, tdir='data')
-      unless test(?d, tdir)
-        raise "Target dir #{tdir} not accessible to download music to"
-      end
+      _tdir_check(tdir)
       options = getOption
       content = Content.new(user, tdir)
       perfset =  _collect_songs(user, content)
@@ -936,9 +941,7 @@ module SmuleAuto
     end
 
     def collect_songs_and_collabs(user, tdir='data')
-      unless test(?d, tdir)
-        raise "Target dir #{tdir} not accessible to download music to"
-      end
+      _tdir_check(tdir)
       options = getOption
       content = Content.new(user, tdir)
       newsongs = _collect_songs(user, content)
@@ -954,13 +957,10 @@ module SmuleAuto
     end
 
     def scan_favs(user, tdir='data')
-      unless test(?d, tdir)
-        raise "Target dir #{tdir} not accessible to download music to"
-      end
+      _tdir_check(tdir)
       options = getOption
       content = Content.new(user, tdir)
-      limit   = (options[:limit] || 10_000).to_i
-      allset  = API.new.get_favs(user, limit)
+      allset  = API.new.get_favs(user)
       content.add_new_songs(allset, true)
       content.writeback
     end
@@ -969,16 +969,15 @@ module SmuleAuto
       if tdir && !test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
       end
-      favset = API.new.get_favs(user, 10_000)
-      result = Scanner.new(user, getOption).unfavs_old(count.to_i, favset)
+      options = getOption
+      favset  = API.new.get_favs(user)
+      result  = Scanner.new(user, options).unfavs_old(count.to_i, favset)
       Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
       result.to_yaml
     end
 
     def scan_follows(user, tdir='data')
-      unless test(?d, tdir)
-        raise "Target dir #{tdir} not accessible to download music to"
-      end
+      _tdir_check(tdir)
       fset = []
       %w(following followers).each do |agroup|
         users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
@@ -995,16 +994,13 @@ module SmuleAuto
       true
     end
 
-    def show_content(user, tdir='data')
-      Content.new(user, tdir).list
-      true
-    end
-
     def play(user, tdir='data')
+      _tdir_check(tdir)
       SmulePlayer.new(user, tdir, getOption).play_all
     end
 
     def fix_content(user, fix_type, tdir='data')
+      _tdir_check(tdir)
       content  = Content.new(user, tdir)
       ccount   = 0
       fix_type = fix_type.to_sym
@@ -1028,12 +1024,8 @@ module SmuleAuto
       end
     end
 
-    def fix_tags(user, tdir='data')
-      content = Content.new(user, tdir)
-      content.writeback
-    end
-
     def fix_favs(user, tdir='data')
+      _tdir_check(tdir)
       content = Content.new(user, tdir)
       cutoff  = Time.parse("2019-09-01")
       content.each do |sid, cinfo|
@@ -1048,6 +1040,7 @@ module SmuleAuto
     end
 
     def add_mp3_comment(user, tdir='data')
+      _tdir_check(tdir)
       options        = getOption
       content        = Content.new(user, tdir)
       changed        = false
@@ -1086,6 +1079,7 @@ module SmuleAuto
     # Singer changes login all the times.  That would change control
     # data as well as storage folder.  This needs to run to track user
     def move_singer(user, old_name, new_name, tdir='data')
+      _tdir_check(tdir)
       content = Content.new(user, tdir)
       options = getOption
       options.update(
@@ -1103,32 +1097,6 @@ module SmuleAuto
         end
       end
       content.writeback if changed
-    end
-
-    def show_singers(user, tdir='data')
-      options = getOption
-      content = Content.new(user, tdir)
-      ulist   = {}
-      content.each(options) do |k, v|
-        v[:record_by].each do |auser|
-          next if auser == user
-          ulist[auser] ||= 3650*24
-          ulist[auser] = [ulist[auser], v[:sincev]].min
-        end
-      end
-      ulist.to_a.select{|name, sincev|
-        (content.singers[name] || {})[:following]
-      }.sort_by {|name, sincev| sincev}.each {|name, sincev|
-        puts "%-20s %6.1d" % [name, sincev/24]
-      }
-      nos_list = content.following.keys - ulist.keys
-      puts "Not singing with: #{nos_list.join(' ')}"
-      true
-    end
-
-    def make_song_tags(user, tdir='data')
-      content = Content.new(user, tdir)
-      content.writeback
     end
   end
 end

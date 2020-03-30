@@ -243,11 +243,12 @@ class TabGuitarSource < MusicSource
 
   def lyric_info(url)
     require 'json'
-
     Plog.info("Extract lyrics from #{url}")
-    blob  = get_page_curl(url, raw:true).split("\n").grep(/window.UGAPP.store.page/)[0]
-    blob  = JSON.parse(blob.sub(/^[^{]*/o, '').sub(/;\s*$/o, ''))['data']
-    lyric = merge_chord_lines(blob.dig('tab_view', 'wiki_tab', 'content'))
+    page   = get_page_curl(url)
+    jscode = JSON.parse(page.css('div.js-store')[0]['data-content'])
+    blob   = jscode.dig(*%w(store page data))
+    lyric  = merge_chord_lines(blob.dig(*%w(tab_view wiki_tab content)).
+                               gsub(/\[\/?tab\]/, ''))
     {
       lyric:  lyric,
       title:  blob.dig('tab', 'song_name'),
