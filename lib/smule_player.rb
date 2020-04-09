@@ -70,18 +70,6 @@ module SmuleAuto
       end
     end
 
-    Cmap = {
-      'f' => :favs,
-      'r' => :recent,
-      's' => :record_by,
-      '*' => :star,
-      't' => :title,
-    }
-
-    def _select_set(ftype, value)
-      @content.select_set(Cmap[ftype], value)
-    end
-
     def _setprompt
       @prompt = "lnswx*+= (#{@filter.inspect})>"
     end
@@ -134,13 +122,18 @@ module SmuleAuto
     end
 
     def browser_op(sitem, data)
-      #Plog.dump_info(sitem:sitem, data:data)
       begin
         case data
         when /^l/i
           @scanner.spage.click_and_wait("div._1v7cqsk")
         when /^t/i
-          text = ' ' + $'.strip + ' '
+          tag = $'.strip
+          msg = @scanner.spage.page.css('div._1ck56r8').text
+          if msg =~ /#{tag}/
+            Plog.info "Message already containing #{tag}"
+            return
+          end
+          text = ' ' + tag
           @scanner.spage.click_and_wait("button._13ryz2x")   # ...
           @scanner.spage.click_and_wait("a._117spsl", 2, 1)  # Edit
           @scanner.spage.type("textarea#message", text)  # Enter tag
@@ -181,6 +174,7 @@ EOH
     def play_all
       pcount  = 0
       _setprompt
+      prompt = TTY::Prompt.new
       while true
         # Replay the same list again if exhausted
         if @clist.size <= 0
@@ -206,77 +200,81 @@ EOH
         end
 
         while true
-          unless prompted
-            print @prompt
-            prompted = true
-          end
-          if select([$stdin], nil, nil, 1)
-            unless ans = $stdin.gets
-              return
-            end
-            case ans = ans.chomp
-            when /^\?/i                           # Help
+          wait_time = endt - Time.now
+          #Plog.info("Waiting #{wait_time}")
+          if key = prompt.keypress("#{@prompt} (#{wait_time})",
+              timeout:wait_time)
+            case key
+            when '?'
               puts HelpScreen
-            when /^\./i                           # Replay current
+            when '.'
               @clist.unshift(sitem) if sitem
               break
-            when /^([\+=\/])\s*(\S)/i                # Add/replace list
-              param       = $'.strip.downcase
-              oper, ftype = $1, $2
-              newset      = _select_set(ftype, param)
-              case oper
-              when '+'
-                @clist.concat(sort_selection(newset))
-              when '='
-                @clist = sort_selection(newset)
-              when '/'
-                _list_set(sitem, newset, 0, newset.size)
-              end
-            when /^-\s*(s|\*)/i                   # Remove from list
-              param = $'.strip.downcase
-              ftype = $1
-              newset = @clist.reject {|v|
-                case ftype
-                when 's'
-                  v[:record_by].downcase.include?(param)
-                when '*'
-                  v[:stars].to_i >= param.to_i
-                else
-                  false
+            when /^[\+=\/]/i                # Add/replace list
+              choices = %w(favs recent record_by star title)
+              ftype   = prompt.enum_select('Filter type?', choices)
+              param   = (ftype == 'favs') ? '' : prompt.ask('Value?')
+              if param
+                newset  = @content.select_set(ftype.to_sym, param)
+                case key
+                when '+'
+                  @clist.concat(sort_selection(newset))
+                when '='
+                  @clist = sort_selection(newset)
+                when '/'
+                  _list_set(sitem, newset, 0, newset.size)
                 end
-              }
-              @clist = sort_selection(newset)
-            when /^\*/                            # Set stars
-              sitem[:stars] = $'.strip.to_i
+              end
+            when '-'                   # Remove from list
+              choices = %w(singer star)
+              ftype   = prompt.enum_select('Filter type?', choices)
+              if param = prompt.ask('Value?')
+                newset  = @clist.reject {|v|
+                  case ftype
+                  when 'singer'
+                    v[:record_by].downcase.include?(param)
+                  when 'star'
+                    v[:stars].to_i >= param.to_i
+                  else
+                    false
+                  end
+                }
+                @clist = sort_selection(newset)
+              end
+            when '*'                            # Set stars
+              sitem[:stars] = prompt.keypress('Value?').to_i
               _list_set(sitem, [], 0, 0)
-            when /^b/i
-              browser_op(sitem, $'.strip)
-            when /^C/i                            # Reload content
+            when 'b'
+              if param = prompt.ask('Value?')
+                browser_op(sitem, param)
+              end
+            when 'C'
               @content.refresh
               @clist      = []
               @played_set = []
-            when /^f/i                            # Set filter
-              @filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
+            when 'f'                            # Set filter
+              param = prompt.ask('Value?', default:'')
+              @filter = Hash[param.split.map{|fs| fs.split('=')}]
               _setprompt
-            when /^i/i                            # Song Info
+            when 'i'                            # Song Info
               puts({
                 filter: @filter,
                 order:  @order,
                 count:  @clist.size,
                 song:   sitem,
               }.to_yaml)
-            when /^l/i                            # List playlist
-              offset = $'.to_i
+            when /l/i                            # List playlist
+              offset = (key == 'L') ? prompt.ask('Offset?').to_i : 0
               _list_set(sitem, @clist, offset, 10)
-            when /^n/i                            # Next n songs
-              data = $'.to_i
-              Plog.info("Skip #{data} songs")
-              @clist.shift(data)
+            when /n/i                            # Next n songs
+              offset = (key == 'N') ? prompt.ask('Offset?').to_i : 0
+              Plog.info("Skip #{offset} songs")
+              @clist.shift(offset)
               break
-            when /^p/i                            # List playlist
-              offset = $'.to_i
-              _list_set(nil, @played_set.reverse, offset, 10)
-            when /^R/                             # Reload script
+            when /p/i                           # List history
+              offset = (key == 'P') ? prompt.ask('Offset?').to_i : 0
+              _list_set(nil, @played_set.reverse, offset.to_i, 10)
+            when 'R'                             # Reload script
               begin
                 [__FILE__, "lib/smule_player.rb"]. each do |script|
                   eval "load '#{script}'", TOPLEVEL_BINDING
@@ -284,20 +282,23 @@ EOH
               rescue => errmsg
                 Plog.error errmsg
               end
-            when /^s/i                            # Sort current list
-              @order = $'.strip
-              @clist = sort_selection(@clist)
-            when /^t/                             # Set tag
-              tag = $'.strip
-              @content.add_tag(sitem, tag)
-              _list_set(sitem, [], 0, 0)
-            when /^w/i                            # Write content out
+            when 's'                            # Sort current list
+              choices = %w(random play love star date title)
+              @order  = prompt.enum_select('Order?', choices)
+              @clist  = sort_selection(@clist)
+            when 't'                             # Set tag
+              if tag = prompt.ask('Value ?')
+                @content.add_tag(sitem, tag)
+                _list_set(sitem, [], 0, 0)
+              end
+            when 'w'                            # Write content out
               _save_state(false)
-            when /^x/i                            # Quit
+            when 'x'                            # Quit
               return
             end
             prompted = false
           end
+          #Plog.dump(now:Time.now, endt:endt)
           break if (Time.now >= endt)
         end
       end

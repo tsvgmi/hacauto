@@ -593,7 +593,7 @@
   :play_path: 
   :parent: 
   :orig_city: Da Nang, Vietnam
-  :listens: 18
+  :listens: 19
   :loves: 2
   :gifts: 
   :psecs: 308
@@ -643,7 +643,7 @@
   :play_path: 
   :parent: 
   :orig_city: Lynnwood, United States
-  :listens: 21
+  :listens: 22
   :loves: 4
   :gifts: 
   :psecs: 238
@@ -670,7 +670,7 @@
   :play_path: 
   :parent: 
   :orig_city: Lynnwood, United States
-  :listens: 24
+  :listens: 25
   :loves: 4
   :gifts: 
   :psecs: 201
@@ -1049,7 +1049,7 @@
   :play_path: 
   :parent: 
   :orig_city: North Liberty, United States
-  :listens: 34
+  :listens: 35
   :loves: 2
   :gifts: 
   :psecs: 264
@@ -2256,11 +2256,11 @@
   :play_path: 
   :parent: 
   :orig_city: ''
-  :listens: 27
+  :listens: 28
   :loves: 4
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 151
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/LongHH-THV_13/City Of Stars.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1067084131_2858274370.m4a"
   :since: 512633 min
@@ -2281,10 +2281,10 @@
   :play_path: 
   :parent: 
   :orig_city: ''
-  :listens: 19
+  :listens: 21
   :loves: 3
   :gifts: 
-  :psecs: 
+  :psecs: 282
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/LongHH-THV_13/Cơn mưa băng giá.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1067084131_2876615458.m4a"
@@ -2410,7 +2410,7 @@
   :play_path: 
   :parent: 
   :orig_city: San Francisco, United States
-  :listens: 27
+  :listens: 28
   :loves: 3
   :gifts: 
   :psecs: 219
@@ -2939,10 +2939,10 @@
   :play_path: 
   :parent: 
   :orig_city: Villejuif, France
-  :listens: 21
+  :listens: 22
   :loves: 4
   :gifts: 
-  :psecs: 
+  :psecs: 308
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-Xuankhanhkarine/Đêm Lao Xao Guitar beat.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1094073847_2787671483.m4a"
@@ -2964,10 +2964,10 @@
   :play_path: 
   :parent: 
   :orig_city: Villejuif, France
-  :listens: 18
+  :listens: 19
   :loves: 2
   :gifts: 
-  :psecs: 
+  :psecs: 242
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-Xuankhanhkarine/Anh cứ đi đi.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1094073847_2787698315.m4a"
@@ -3614,10 +3614,10 @@
   :play_path: 
   :parent: 
   :orig_city: North Liberty, United States
-  :listens: 15
+  :listens: 16
   :loves: 2
   :gifts: 
-  :psecs: 
+  :psecs: 255
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-judyneon/Ngàn Thu Áo Tím \U0001F98B.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1097180843_3201579420.m4a"
@@ -3942,10 +3942,10 @@
   :play_path: 
   :parent: 
   :orig_city: ''
-  :listens: 26
+  :listens: 27
   :loves: 2
   :gifts: 
-  :psecs: 
+  :psecs: 253
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-VThy60/Ô Mê Ly.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1123025354_3192961643.m4a"
@@ -4194,7 +4194,7 @@
   :play_path: 
   :parent: 
   :orig_city: ''
-  :listens: 29
+  :listens: 30
   :loves: 2
   :gifts: 
   :psecs: 320
@@ -4344,7 +4344,7 @@
   :play_path: 
   :parent: 
   :orig_city: ''
-  :listens: 26
+  :listens: 27
   :loves: 3
   :gifts: 
   :psecs: 295
@@ -4494,10 +4494,10 @@
   :play_path: 
   :parent: 
   :orig_city: ''
-  :listens: 27
+  :listens: 28
   :loves: 3
   :gifts: 
-  :psecs: 275
+  :psecs: 0
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/Mina_________-THV_13/hanh phuc noi nao.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1139384209_2936935210.m4a"
@@ -5086,10 +5086,10 @@
   :play_path: 
   :parent: 
   :orig_city: Del Rio, United States
-  :listens: 19
+  :listens: 20
   :loves: 2
   :gifts: 
-  :psecs: 
+  :psecs: 266
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-_LS_John_Nguyen/Bài tình ca cho em.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1145697106_2713580120.m4a"
@@ -6197,11 +6197,11 @@
   :play_path: 
   :parent: 
   :orig_city: North Liberty, United States
-  :listens: 18
+  :listens: 19
   :loves: 2
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 318
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-anhhaigsr/Vội Vàng - Phạm Hoài Nam.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1163424162_2776469162.m4a"
   :since: 471704 min
@@ -6222,10 +6222,10 @@
   :play_path: 
   :parent: 
   :orig_city: North Liberty, United States
-  :listens: 13
+  :listens: 14
   :loves: 3
   :gifts: 
-  :psecs: 
+  :psecs: 259
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-anhhaigsr/Dấu Mưa.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1163424162_2835934649.m4a"
@@ -6247,10 +6247,10 @@
   :play_path: 
   :parent: 
   :orig_city: North Liberty, United States
-  :listens: 11
+  :listens: 13
   :loves: 3
   :gifts: 
-  :psecs: 
+  :psecs: 218
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-anhhaigsr/Hard To Say I-m Sorry (Guitar Version).m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1163424162_2837588383.m4a"
@@ -23453,10 +23453,10 @@
   :play_path: 
   :parent: 
   :orig_city: 
-  :listens: 18
+  :listens: 20
   :loves: 4
   :gifts: 
-  :psecs: 
+  :psecs: 318
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-ngoihatdobuon/Trái tim bên lề.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2797148347.m4a"
@@ -24214,31 +24214,6 @@
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2803785604.m4a"
   :since: 5 mo
   :sincev: 3600.0
-  :created: 2019-02-16
-  :updated_at: 2019-06-18
-'1932318299_2803798048':
-  :id: 4309
-  :sid: '1932318299_2803798048'
-  :title: Something
-  :stitle: something
-  :avatar: https://c-sf.smule.com/sf/s23/arr/2b/e7/bb92cf9e-4c55-4ed3-a075-4b8043704aef.jpg
-  :href: "/recording/the-beatles-something/1932318299_2803798048"
-  :record_by: THV_13,MaryRosecanto
-  :is_ensemble: 0
-  :oldfav: 1
-  :collab_url: 
-  :play_path: 
-  :parent: 
-  :orig_city: 
-  :listens: 20
-  :loves: 4
-  :gifts: 
-  :psecs: 
-  :stars: 
-  :ofile: "/Volumes/Voice/SMULE/MaryRosecanto-THV_13/Something.m4a"
-  :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2803798048.m4a"
-  :since: 9 mo
-  :sincev: 6480.0
   :created: 2019-02-16
   :updated_at: 2019-06-18
 '1932318299_2804097345':
@@ -26422,11 +26397,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 11
+  :listens: 12
   :loves: 2
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 306
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-THV_13/Hòn Vọng Phu 2.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2841473972.m4a"
   :since: 422882 min
@@ -26472,11 +26447,11 @@
   :play_path: 
   :parent: 
   :orig_city: 
-  :listens: 14
+  :listens: 16
   :loves: 2
   :gifts: 
   :psecs: 505
-  :stars: 
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-THV_13/Hòn Vọng Phu 3.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2841529065.m4a"
   :since: 9 mo
@@ -27422,11 +27397,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 28
+  :listens: 30
   :loves: 3
   :gifts: 
   :psecs: 339
-  :stars: 
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/JT_________-THV_13/DẠ KHÚC CHO TÌNH NHÂN.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2858119370.m4a"
   :since: 416312 min
@@ -27772,11 +27747,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 15
+  :listens: 16
   :loves: 2
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 273
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-leanhthienkim/TIẾNG MƯA ĐÊM.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2861635707.m4a"
   :since: 510077 min
@@ -27922,10 +27897,10 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 28
+  :listens: 29
   :loves: 3
   :gifts: 
-  :psecs: 
+  :psecs: 273
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/NTTN_-THV_13/TIẾNG MƯA ĐÊM.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2864078573.m4a"
@@ -28347,10 +28322,10 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 14
+  :listens: 15
   :loves: 4
   :gifts: 
-  :psecs: 
+  :psecs: 248
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-_KieuTrangT_/Những Lời Mê Hoặc.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2870852147.m4a"
@@ -28851,11 +28826,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 16
+  :listens: 17
   :loves: 2
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 287
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-__Catthy__/Trong Nỗi Nhớ Muộn Màng.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2884333449.m4a"
   :since: 492028 min
@@ -29355,11 +29330,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 23
+  :listens: 24
   :loves: 5
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 307
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-_KieuTrangT_/Em ơi Hà Nội phố.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2895737987.m4a"
   :since: 512586 min
@@ -29457,11 +29432,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 32
+  :listens: 33
   :loves: 4
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 313
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-TraMyBui1976/Có Những Tàn Phai ( beat chuan
     ).m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2896414916.m4a"
@@ -29612,11 +29587,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 13
+  :listens: 15
   :loves: 4
   :gifts: 
   :psecs: 307
-  :stars: 
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/HienNguyen1906-THV_13/Em ơi Hà Nội phố.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2897442330.m4a"
   :since: 511072 min
@@ -29767,11 +29742,11 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 25
+  :listens: 26
   :loves: 5
   :gifts: 
-  :psecs: 0
-  :stars: 
+  :psecs: 313
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/Mina_________-THV_13/Có Những Tàn Phai ( beat chuan
     ).m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_2899540665.m4a"
@@ -33184,7 +33159,7 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 88
+  :listens: 89
   :loves: 9
   :gifts: 
   :psecs: 267
@@ -38151,7 +38126,7 @@
   :play_path: 
   :parent: "/recording/s%C3%A1ng-t%C3%A1c-ng%C3%B4-th%E1%BB%A5y-mi%C3%AAn-ca-s%C4%A9-quang-dung-ft-ngoc-anh-n%E1%BB%97i-%C4%91au-mu%E1%BB%99n-m%C3%A0ng-li%C3%AAn-kh%C3%BAc/1932318299_3014665941/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 33
+  :listens: 34
   :loves: 7
   :gifts: 
   :psecs: 384
@@ -42704,10 +42679,10 @@
   :play_path: 
   :parent: "/recording/t%C3%A1c-gi%E1%BA%A3-ho%C3%A0ng-thi-th%C6%A1-nh%E1%BB%AFng-ng%C3%A0y-th%C6%A1-m%E1%BB%99ng/1932318299_3088962669/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 37
+  :listens: 38
   :loves: 4
   :gifts: 
-  :psecs: 
+  :psecs: 339
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/LienMHoang-THV_13/Những Ngày Thơ Mộng.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_3091699635.m4a"
@@ -42756,7 +42731,7 @@
   :play_path: 
   :parent: "/recording/ph%C6%B0%C6%A1ng-linh-ft-h%C3%A0-anh-tu%E1%BA%A5n-c%C6%A1n-m%C6%B0a-t%C3%ACnh-y%C3%AAu/1932318299_3088921101/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 22
+  :listens: 24
   :loves: 2
   :gifts: 
   :psecs: 294
@@ -43194,10 +43169,10 @@
   :play_path: 
   :parent: "/recording/song-ca-ngotngao_mantra-li%C3%AAn-kh%C3%BAc-bi%E1%BB%83n-nh%E1%BB%9B-xin-c%C3%B2n-g%E1%BB%8Di-t%C3%AAn-nhau/1932318299_3094324203/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 22
+  :listens: 23
   :loves: 2
   :gifts: 
-  :psecs: 
+  :psecs: 370
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/LienMHoang-THV_13/LIÊN KHÚC BIỂN NHỚ - XIN CÒN GỌI
     TÊN NHAU.m4a"
@@ -46118,11 +46093,11 @@
   :play_path: 
   :parent: "/recording/t%E1%BB%AB-c%C3%B4ng-ph%E1%BB%A5ng-b%C3%A2y-gi%E1%BB%9D-th%C3%A1ng-m%E1%BA%A5y/1932318299_3116385716/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 33
+  :listens: 35
   :loves: 2
   :gifts: 
   :psecs: 300
-  :stars: 
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/DrStrangeFnM-THV_13/Bây Giờ Tháng Mấy.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_3127037092.m4a"
   :since: 320331 min
@@ -46907,7 +46882,7 @@
   :play_path: 
   :parent: "/recording/l%C3%AA-hi%E1%BA%BFu-h%C3%A3y-y%C3%AAu-th%E1%BA%ADt-l%C3%B2ng/1932318299_3179682009/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 27
+  :listens: 28
   :loves: 2
   :gifts: 
   :psecs: 295
@@ -48456,7 +48431,7 @@
   :play_path: 
   :parent: "/recording/ngo-thuy-mien-gi%E1%BB%8Dt-n%C6%B0%E1%BB%9Bc-m%E1%BA%AFt-ng%C3%A0/1932318299_3202772586/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 26
+  :listens: 27
   :loves: 2
   :gifts: 
   :psecs: 305
@@ -48562,7 +48537,7 @@
   :play_path: 
   :parent: "/recording/ngo-thuy-mien-gi%E1%BB%8Dt-n%C6%B0%E1%BB%9Bc-m%E1%BA%AFt-ng%C3%A0/1932318299_3202772586/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 28
+  :listens: 29
   :loves: 2
   :gifts: 
   :psecs: 305
@@ -51966,11 +51941,11 @@
   :play_path: 
   :parent: "/recording/enrico-macias-la-femme-de-mon-ami/1932318299_3247727057/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 46
+  :listens: 47
   :loves: 3
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 197
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/LienMHoang-THV_13/la femme de mon ami.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_3251774982.m4a"
   :since: 216147 min
@@ -53636,7 +53611,7 @@
   :loves: 5
   :gifts: 
   :psecs: 384
-  :stars: 
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/THV_13-THV_13/LK Phố Vẫn Xưa - Lời Tình Buồn.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_3274191504.m4a"
   :since: 196473 min
@@ -67410,7 +67385,7 @@
   :play_path: 
   :parent: 
   :orig_city: Ahun, France
-  :listens: 23
+  :listens: 24
   :loves: 4
   :gifts: 
   :psecs: 321
@@ -71920,7 +71895,7 @@
   :play_path: 
   :parent: 
   :orig_city: San Francisco, United States
-  :listens: 40
+  :listens: 41
   :loves: 3
   :gifts: 
   :psecs: 332
@@ -76000,7 +75975,7 @@
   :play_path: 
   :parent: 
   :orig_city: Dublin, United States
-  :listens: 27
+  :listens: 28
   :loves: 2
   :gifts: 
   :psecs: 308
@@ -78090,10 +78065,10 @@
   :play_path: 
   :parent: 
   :orig_city: San Francisco, United States
-  :listens: 13
+  :listens: 14
   :loves: 2
   :gifts: 
-  :psecs: 
+  :psecs: 267
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-leanhthienkim/Để Cho Em Khóc.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/960791395_2869686497.m4a"
@@ -79759,10 +79734,10 @@
   :play_path: 
   :parent: "/recording/ph%E1%BA%A1m-%C4%91%C3%ACnh-ch%C6%B0%C6%A1ng-m%C6%B0a-s%C3%A0i-g%C3%B2n-m%C6%B0a-h%C3%A0-n%E1%BB%99i/1932318299_3285128359/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 28
+  :listens: 29
   :loves: 5
   :gifts: 
-  :psecs: 
+  :psecs: 277
   :stars: 
   :ofile: "/Volumes/Voice/SMULE/THV_13-yencanary2019/Mưa Sài Gòn Mưa Hà Nội.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_3285437226.m4a"
@@ -80243,7 +80218,7 @@
   :play_path: 
   :parent: "/recording/ph%E1%BA%A1m-duy-ti%E1%BA%BFng-%C4%91%C3%A0n-t%C3%B4i/1932318299_3284041482/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 19
+  :listens: 21
   :loves: 2
   :gifts: 
   :psecs: 328
@@ -84332,7 +84307,7 @@
   :play_path: 
   :parent: "/recording/ph%E1%BA%A1m-duy-%C3%A1o-anh-s%E1%BB%A9t-ch%E1%BB%89-%C4%91%C6%B0%E1%BB%9Dng-t%C3%A0/1932318299_3296371750/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 13
+  :listens: 14
   :loves: 4
   :gifts: 
   :psecs: 481
@@ -86138,7 +86113,7 @@
   :play_path: 
   :parent: 
   :orig_city: Pleasanton, United States
-  :listens: 32
+  :listens: 34
   :loves: 2
   :gifts: 
   :psecs: 399
@@ -99460,11 +99435,11 @@
   :play_path: 
   :parent: 
   :orig_city: ''
-  :listens: 33
+  :listens: 34
   :loves: 2
   :gifts: 4
   :psecs: 328
-  :stars: 
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/Mina_________-THV_13/LK Phút Giao Mùa - Ngày Đầu Một
     Năm.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/2195950371_3383241915.m4a"
@@ -101496,7 +101471,7 @@
   :play_path: 
   :parent: "/recording/b%E1%BA%B1ng-ki%E1%BB%81u-bu%E1%BB%93n-%C6%A1i-ch%C3%A0o-mi/1932318299_3397989849/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 29
+  :listens: 31
   :loves: 4
   :gifts: 
   :psecs: 318
@@ -103757,11 +103732,11 @@
   :play_path: 
   :parent: "/recording/thu-hi%E1%BB%81n-%C4%91%C3%B4i-m%E1%BA%AFt-ng%C6%B0%E1%BB%9Di-s%C6%A1n-t%C3%A2y/1932318299_3412437175/ensembles"
   :orig_city: Pleasanton, United States
-  :listens: 20
+  :listens: 21
   :loves: 2
   :gifts: 
-  :psecs: 
-  :stars: 
+  :psecs: 342
+  :stars: 5
   :ofile: "/Volumes/Voice/SMULE/ChiHoang55-THV_13/Đôi Mắt Người Sơn Tây.m4a"
   :sfile: "/Volumes/Voice/SMULE/STORE/1932318299_3412607419.m4a"
   :since: 65627 min

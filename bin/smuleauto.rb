@@ -12,6 +12,7 @@ require 'ruby-progressbar'
 require 'core'
 require 'site_connect'
 require 'smule_player'
+require 'tty-spinner'
 
 def clean_emoji(str='')
   str=str.force_encoding('utf-8').encode
@@ -461,12 +462,16 @@ module SmuleAuto
     def play(spage)
       href = @info[:href].sub(/\/ensembles$/, '')
 
+      spinner = TTY::Spinner.new("[:spinner] Loading ...",
+                                    format: :pulse_2)
+      spinner.auto_spin
       # This will start playing
       spage.goto(href)
       %w(div.error-gone div.page-error).each do |acss|
         if spage.page.css(acss).size > 0
           Plog.info("#{@info[:title]} is gone")
           @info[:deleted] = true
+          spinner.stop('Done!')
           return 0
         end
       end
@@ -489,9 +494,9 @@ module SmuleAuto
           break
         end
         sleep 2
-        print "."
         spage.refresh
       end
+      spinner.stop('Done!')
       unless duration_s
         Plog.error("Cannot get song info")
         return 0

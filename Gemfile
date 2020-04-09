@@ -11,6 +11,7 @@ gem "http"
 gem "ruby-progressbar"
 gem "activesupport"
 gem "tty-prompt"
+gem "tty-spinner"
 
 group "music" do
   gem "taglib-ruby"
