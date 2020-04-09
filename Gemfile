@@ -10,6 +10,7 @@ gem "sqlite3"
 gem "http"
 gem "ruby-progressbar"
 gem "activesupport"
+gem "tty-prompt"
 
 group "music" do
   gem "taglib-ruby"

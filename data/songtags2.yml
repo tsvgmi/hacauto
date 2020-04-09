@@ -260,6 +260,7 @@ chen dang:::
 cherish:::
 chi chung do thoi:::nhac-xua
 chi co anh trong tim ®:::
+chi co em:::
 chi con:::
 chi con lai tinh yeu:::
 chi con minh anh:::
@@ -294,6 +295,7 @@ chieu nghe bien khoc:::
 chieu thuong do thi:::
 chieu tim:::nhac-xua
 chieu tim 🦋:::
+chieu tren pha tam giang:::
 chieu ve tren song:::nhac-xua
 chieu xuan:::xuan
 chiquitita:::
@@ -363,13 +365,14 @@ co lang gieng:::nhac-xua
 co le:::
 co le vi:::
 co luc:::
+co mot dong song da qua doi:::
 co nguoi:::
 co nho dem nao:::
 co nho dem nao ®:::
 co nhu khong co:::
 co nhung chuyen tinh khong la tram nam:::
 co nhung khi mot minh:::
-co nhung niem rieng:::
+co nhung niem rieng:::nhac-xua
 co nhung tan phai:::
 co phai em mua thu ha noi:::
 co tam ngay nay:::dan-ca,nhac-xua
@@ -412,6 +415,7 @@ con thuong rau dang moc sau he:::
 con thuyen khong ben:::
 con tim buon:::
 con tim dai kho:::
+con tim mu loa:::
 con tim tan vo:::
 con tim tan võ:::
 con tim that tha:::
@@ -437,6 +441,7 @@ da khuc cho tinh nhan:::
 da khuc cho tinh nhan ®:::
 da khuc qt:::nhac-xua
 da khuc qt":::
+da khuc serenade:::
 dam cuoi dau xuan:::xuan
 dan sao hau giang:::dan-ca
 dan trong dem vang.:::rhumba
@@ -478,6 +483,7 @@ dem nam mo pho:::
 dem nay ai dua em ve:::
 dem nay em thay co don:::
 dem nay em thay co don ®:::
+dem nghe tieng mua 🥛:::
 dem noel:::christmas
 dem nong chay {bailamos} ®:::
 dem say tinh ai:::
@@ -679,6 +685,7 @@ giac mong vien du:::nhac-xua
 gian thien ly da xa:::
 gian thien lý da xa:::
 giang ngoc:::nhac-xua
+giau anh vao noi nho:::
 giet nguoi trong mong ®:::
 gimme your love tonight:::
 gimme! gimme! gimme!:::abba
@@ -717,6 +724,7 @@ ha noi mua vang nhung con mua:::
 ha noi mua vang nhung con mua ®:::
 ha noi ngay tro ve:::
 ha trang:::trinh
+hai ky niem mot chuyen di ®:::
 hai kỷ niem mot chuyen di ®:::
 hai mua mua:::
 hai mua noel:::christmas
@@ -848,6 +856,7 @@ i do i do i do i do i do:::abba
 i don't know how to love him:::
 i dont like to sleep alone:::
 i dreamed a dream:::musical
+i have a dream:::
 i have you:::
 i just called to say i love you:::
 i just fall in love:::
@@ -944,6 +953,7 @@ khi nguoi xa toi:::
 khi nguoi yeu toi khoc:::nhac-xua
 khi nguoi yeu toi khoc ®:::nhac-xua
 khi vang em:::
+khi xua ta be:::
 khi xua ta be...tone nu...:::
 khi {say goodbye} ®:::
 khoang cach:::rhumba
@@ -951,6 +961,7 @@ khoanh khac:::
 khoi suong mong manh:::
 khoi tinh truong chi:::nhac-xua
 khong:::
+khong can noi yeu em:::
 khong con mua thu:::nhac-xua
 khong con no nhau:::
 khong phai em:::
@@ -964,6 +975,7 @@ khuc tinh doi gian:::
 khuc tinh nong remix tone nu:::
 kiep da trang:::nhac-xua
 kiep dam me:::nhac-xua
+kiep dam me _tone nũ:::
 kiep nao co yeu nhau:::
 kiep nao co yeu nhau ®:::nhac-xua
 kiep rong buon:::
@@ -1044,6 +1056,7 @@ lk : yeu em dai lau:::
 lk anh cho em mua xuan yeu thuongx'm:::
 lk anh con yeu em & khuc thuy du:::nhac-xua
 lk bai ca sao & nu tam xuan:::nhac-xua
+lk bai ca sao & nu tam xuan [tone nam]:::
 lk diem xua:::
 lk doan chuan, tu linh:::nhac-xua
 lk doan khuc cuoi cho em & em ve nao co hay:::
@@ -1057,6 +1070,7 @@ lk mua thu cho em:::
 lk muoi nam yeu em:::
 lk neu mot ngay:::
 lk nhac phap:::
+lk nua hon thuong dau & nguoi di qua doi toi:::
 lk phién dá sàu _bài tình ca cho em:::nhac-xua
 lk pho van xua:::
 lk phut giao mua:::
@@ -1068,6 +1082,7 @@ lk tinh em ngon nen:::
 lk toi muon:::nhac-xua
 lk tu khuc mua dong & tieng gio xon xao:::bebop
 lk tuoi xa nguoi:::nhac-xua
+lk vu thanh an:::nhac-xua
 lk xuan yeu thuong:::xuan
 lk. canh thiep dau xuan & anh cho em mua xuan:::xuan,nhac-xua
 lk. con gi nua dau & kiep nao co yeu nhau:::
@@ -1121,6 +1136,10 @@ loving you:::
 luan vu ngay mua:::valse
 luc moi yeu:::
 lui:::french
+ly cai mon:::
+ly cay bong:::
+ly ngua o:::
+ly qua keu:::
 ly ruou mung:::xuan,nhac-xua
 lý cai mon:::
 lý cay bong:::
@@ -1304,6 +1323,7 @@ nao biet nao hay:::chacha
 nasaan ang pangako:::
 ne laisse pas ma vie sans toi:::french
 ne laisses pas ma vie sans toi-dung xa em:::
+ne me quitte pas:::
 need you now:::
 needed:::
 neu anh di:::
@@ -1311,9 +1331,11 @@ neu biet xa em:::
 neu co buong tay:::
 neu co yeu toi:::nhac-xua
 neu doi khong co anh:::
+neu dung dang do:::
 neu em duoc lua chon:::
 neu em la nguoi tinh:::
 neu khong co em ben doi:::
+neu khong co em ben doi ®:::
 neu luc ay:::
 neu mot mai em se qua doi:::nhac-xua
 neu mot ngay:::nhac-xua
@@ -1415,6 +1437,7 @@ nhung kiep hoa xuan:::xuan,tango
 nhung loi doi gian:::
 nhung loi doi gian ®:::
 nhung loi me hoac:::bossa,bebop
+nhung loi me hoac _tone nũ:::
 nhung mua hoa bo lai:::
 nhung ngay dep troi:::
 nhung ngay tho mong:::nhac-xua,boston
@@ -1428,6 +1451,7 @@ niem khuc cuoi ®:::nhac-xua
 niem thuong nho:::
 no more:::rhumba
 nobody does it better:::
+noi anh sang quay ve:::
 noi ay binh yen:::
 noi buon:::
 noi buon con lai:::
@@ -1503,6 +1527,7 @@ petit papa noel:::frencha,christmas
 pha le tim:::
 phai chi em biet:::
 phai dau cuoc tinh:::
+phai quen anh thoi:::
 phien da sau:::
 pho buon:::tango
 pho khong mua:::
@@ -1524,6 +1549,7 @@ poupee de porcelaine:::french
 pour en arriver la:::french
 pour ton mariage:::french
 pour toutes ces raisons je t'aime:::
+presidente, el:::
 promise me:::
 proud mary:::
 put your head on my:::
@@ -1560,6 +1586,7 @@ right here waiting for you:::
 rivers of babylon:::
 roi bo:::
 roi day anh se dua em ve nha ®:::
+roi em se:::
 roi mai day:::
 roi mai toi dua em:::nhac-xua
 roi mai toi dua em <song ca>:::
@@ -1571,7 +1598,7 @@ roule s'enroule:::
 ru em bang tieng song ®:::
 ru em tung ngon xuan nong:::
 ru ta ngam ngui:::
-ru tinh:::
+ru tinh:::trinh,nhac-xua
 rung chua thay la ®:::rhumba
 rung la thap   bien man  lk:::
 rung xua da khep:::
@@ -1633,6 +1660,7 @@ sometimes:::
 sometimes love just ain't enough:::
 sometimes when we touch:::
 sometimes when we touch +2:::
+somewhere:::
 somewhere over the rainbow:::
 song nuoc biec:::
 song sot tro ve:::
@@ -1667,6 +1695,7 @@ ta da thay gi trong dem nay:::
 ta da tung yeu:::
 ta da tung yeu karaoke:::
 ta da tung yeu ®:::
+ta hay yeu nhau:::
 ta phu nhau roi:::
 ta thay gi  dem nay:::
 ta thay gi dem nay:::
@@ -1680,7 +1709,9 @@ take me home, country roads:::
 take my breath away:::
 tam biet hue:::
 tam diep khuc:::
+tam gui:::
 tam su cung nguoi la:::
+tam su gui ve dau:::
 tan cung noi nho:::
 tan tac:::
 tan tac {remix} ®:::
@@ -1707,6 +1738,7 @@ thang cuoi:::
 thang sau troi mua:::
 thang tu la loi noi doi cua em:::
 thang tu la loi noi doi cua em- official.:::
+thang tu ve:::
 thanh pho mua bay:::
 thank you for loving me:::
 that's what friends are for:::
@@ -1801,6 +1833,7 @@ tinh ca:::nhac-xua
 tinh ca hong:::
 tinh ca mua xuan st ton that lap:::
 tinh ca muon thuo:::
+tinh ca tay bac:::
 tinh chet theo mua dong:::
 tinh co:::
 tinh co nhu khong:::
@@ -1883,6 +1916,7 @@ toc may:::
 toc may _tone nũ:::
 today tomorrow and forever:::
 toi ban duong to:::nhac-xua
+toi dang lang nghe:::
 toi di giua hoang hon:::
 toi di tim lai mot mua xuan:::
 toi jamais:::french
@@ -1904,6 +1938,7 @@ top of the world:::
 touch by touch:::new-wave
 touch me when we're dancing:::
 tous les garçons et les filles:::french
+tra lai anh- nhu quynh:::
 tra lai anh- nhu quỳnh:::
 tra lai cho em:::
 tra lai em:::
@@ -2082,6 +2117,7 @@ xin lam nguoi hat rong:::
 xin loi:::
 xin loi anh:::
 xin mot ngay mai co nhau:::
+xin mot ngay mai co nhau- tquynh ft t.hoa_:::
 xin mot ngay mai co nhau- tquỳnh ft t.hoa_:::
 xin thoi gian ngung troi:::
 xin thoi gian ngung troi ®:::

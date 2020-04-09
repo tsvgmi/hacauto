@@ -7,6 +7,8 @@
 #---------------------------------------------------------------------------
 #++
 
+require 'tty-prompt'
+
 module SmuleAuto
   StateFile = "splayer.state"
 
@@ -16,7 +18,7 @@ module SmuleAuto
       @content = Content.new(user, tdir)
       if test(?f, StateFile)
         config  = YAML.load_file(StateFile)
-        @clist  = config[:clist]
+        @clist  = @content.select_sids(config[:sids])
         @filter = config[:filter]
         @order  = config[:order]
       end
@@ -24,7 +26,6 @@ module SmuleAuto
       @filter ||= {}
       @order  ||= 'play'
       @played_set = []
-      @options[:no_auth] = true
       @scanner = Scanner.new(user, @options)
       at_exit {
         _save_state(true)
@@ -35,13 +36,13 @@ module SmuleAuto
     
     def _save_state(backup=false)
       @content.writeback(backup)
+      data = {
+        filter: @filter,
+        order:  @order,
+        sids:   @clist.map{|r| r[:sid]},
+      }.to_yaml
       open(StateFile, "w") do |fod|
-        data = {
-          filter: @filter,
-          order:  @order,
-          clist:  @clist,
-        }
-        fod.puts(data.to_yaml)
+        fod.puts(data)
         Plog.info("Updating #{StateFile}")
       end
     end
@@ -69,30 +70,16 @@ module SmuleAuto
       end
     end
 
-    def _select_set(ftype, value)
-      newset = []
+    Cmap = {
+      'f' => :favs,
+      'r' => :recent,
+      's' => :record_by,
+      '*' => :star,
+      't' => :title,
+    }
 
-      if ftype == 'r'
-        days = value.to_i
-        days = 7 if days <= 0
-        ldate  = Time.now - days*24*3600
-      end
-      @content.each(@options) do |k, v|
-        case ftype
-        when 'f'
-          newset << v if (v[:isfav] || v[:oldfav])
-        when 's'
-          newset << v if v[:record_by].downcase.include?(value)
-        when 't'
-          newset << v if v[:stitle].include?(value)
-        when 'r'
-          newset << v if created_value(v[:created]) >= ldate
-        when '*'
-          newset << v if v[:stars].to_i >= value.to_i
-        end
-      end
-      Plog.info("Selecting #{newset.size} songs")
-      newset
+    def _select_set(ftype, value)
+      @content.select_set(Cmap[ftype], value)
     end
 
     def _setprompt
@@ -142,12 +129,32 @@ module SmuleAuto
       if plength = @options[:play_length] 
         [plength.to_i, psecs].min
       else
-        pspecs
+        psecs
+      end
+    end
+
+    def browser_op(sitem, data)
+      #Plog.dump_info(sitem:sitem, data:data)
+      begin
+        case data
+        when /^l/i
+          @scanner.spage.click_and_wait("div._1v7cqsk")
+        when /^t/i
+          text = ' ' + $'.strip + ' '
+          @scanner.spage.click_and_wait("button._13ryz2x")   # ...
+          @scanner.spage.click_and_wait("a._117spsl", 2, 1)  # Edit
+          @scanner.spage.type("textarea#message", text)  # Enter tag
+          @scanner.spage.click_and_wait("input#recording-save")
+          @scanner.spage.click_and_wait('button._1oqc74f')
+        end
+      rescue => errmsg
+        Plog.error(errmsg)
       end
     end
 
     HelpScreen = <<EOH
 Command:
+C           Reload content (if external app update it)
 f *=0       Filter only songs with 0 star (no rating)
 f >=4       Filter only songs with 4+ stars
 l [offset]  List next songs
@@ -242,6 +249,12 @@ EOH
             when /^\*/                            # Set stars
               sitem[:stars] = $'.strip.to_i
               _list_set(sitem, [], 0, 0)
+            when /^b/i
+              browser_op(sitem, $'.strip)
+            when /^C/i                            # Reload content
+              @content.refresh
+              @clist      = []
+              @played_set = []
             when /^f/i                            # Set filter
               @filter = Hash[$'.strip.split.map{|fs| fs.split('=')}]
               _setprompt
@@ -302,7 +315,7 @@ EOH
       when /^star/
         cselect.sort_by{|v| v[:stars].to_i}.reverse
       when /^date/
-        cselect.sort_by{|v| v[:created]}.reverse
+        cselect.sort_by{|v| created_value(v[:created])}.reverse
       when /^title/
         cselect.sort_by{|v| v[:stitle]}
       else
@@ -317,3 +330,4 @@ EOH
     end
   end
 end
+

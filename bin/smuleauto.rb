@@ -80,6 +80,19 @@ def created_value(value)
   value
 end
 
+# Account to move songs to.  i.e. user close old account and open
+# new one and we want to associate with new account
+Alternate = {
+  '__MinaTrinh__' => 'Mina_________',
+}
+
+def _record_by_map(record_by)
+  record_by.map do |ri|
+    Alternate[ri] || ri
+  end
+end
+
+
 module SmuleAuto
   extendCli __FILE__
 
@@ -181,29 +194,63 @@ module SmuleAuto
       @cfile    = "#{cdir}/content-#{user}.yml"
       @sfile    = "#{cdir}/singers-#{user}.yml"
       @tag2file = "#{cdir}/songtags2.yml"
+      @loaded   = Time.at(0)
+      refresh
+    end
+
+    def select_sids(sids)
+      @content.select{|k, v| sids.include?(k)}.values
+    end
+
+    def select_set(ftype, value)
+      newset = []
+
+      if ftype == :recent
+        days = value.to_i
+        days = 7 if days <= 0
+        ldate  = Time.now - days*24*3600
+      end
+      @content.each do |k, v|
+        case ftype
+        when :favs
+          newset << v if (v[:isfav] || v[:oldfav])
+        when :record_by
+          newset << v if v[:record_by].downcase.include?(value)
+        when :title
+          newset << v if v[:stitle].include?(value)
+        when :recent
+          newset << v if created_value(v[:created]) >= ldate
+        when :star
+          newset << v if v[:stars].to_i >= value.to_i
+        end
+      end
+      Plog.info("Selecting #{newset.size} songs")
+      newset
+    end
+
+    def refresh
+      if File.mtime(@cfile) <= @loaded
+        Plog.info("File #{@cfile} was not changed. Skip")
+        return
+      end
       if test(?f, @cfile)
         @content = YAML.load_file(@cfile)
       else
         Plog.warn("#{@cfile} does not exist")
         @content = {}
       end
-
       @content.each do |k, r|
         r[:sincev] = time_since(r[:since]) / 3600.0
       end
-
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
-      _load_tags
-    end
-
-    def _load_tags
-      @tags = {}
+      @tags    = {}
       if test(?f, @tag2file)
         File.read(@tag2file).split("\n").each do |l|
           k, v = l.split(':::')
           @tags[k] = (v || '').split(',')
         end
       end
+      @loaded = Time.now
     end
 
     def following
@@ -237,6 +284,10 @@ module SmuleAuto
     end
 
     def writeback(backup=true)
+      if File.mtime(@cfile) > @loaded
+        Plog.error("File #{@cfile} was updated after load - #{@loaded}")
+      end
+
       @content = @content.select do |sid, asong|
         !asong[:deleted]
       end
@@ -247,6 +298,7 @@ module SmuleAuto
       woption = {format: :yaml, backup: backup}
       _write_with_backup(@cfile, @content, woption)
       _write_with_backup(@sfile, @singers, woption) if @schanged
+      @loaded   = Time.now
 
       newsong = false
       @content.each do |sid, asong|
@@ -431,7 +483,7 @@ module SmuleAuto
 
       # The play time won't be known until the source is loaded
       duration_s = nil
-      while true
+      1.upto(15) do
         duration_s = spage.page.css("._vln25l")[0]
         if duration_s && duration_s.text != "00:00"
           break
@@ -440,21 +492,31 @@ module SmuleAuto
         print "."
         spage.refresh
       end
+      unless duration_s
+        Plog.error("Cannot get song info")
+        return 0
+      end
       duration = duration_s.text.split(':')
       psecs    = duration[0].to_i * 60 + duration[1].to_i
 
-      Plog.dump_info(plays:@info[:listens], psecs:psecs)
+      msg = spage.page.css('div._1ck56r8').text
+      Plog.dump_info(plays:@info[:listens], psecs:psecs, msg:msg)
+
       @info[:listens] += 1
       @info[:psecs] = psecs
     end
     
-    def download_from_singsalon(ssconnect)
+    def download_from_singsalon(ssconnect=nil)
       begin
         if @options[:force] || !test(?f, @info[:sfile])
-          audio_handler = AudioHandler.new(@surl)
-          if audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
-            @lyric = audio_handler.get_lyric
-            update_mp4tag
+          if ssconnect
+            audio_handler = AudioHandler.new(@surl)
+            if audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
+              @lyric = audio_handler.get_lyric
+              update_mp4tag
+            end
+          else
+            Plog.error("Need to download song, but there is no connection")
           end
         end
         unless test(?l, @info[:ofile])
@@ -539,7 +601,7 @@ module SmuleAuto
             rec     = {
               title:       info['title'],
               href:        info['web_url'],
-              record_by:   record_by.join(','),
+              record_by:   _record_by_map(record_by).join(','),
               listens:     stats['total_listens'],
               loves:       stats['total_loves'],
               gifts:       stats['total_gifts'],
@@ -718,18 +780,6 @@ module SmuleAuto
       end
       Plog.info("Found #{result.size} songs")
       result
-    end
-
-    # Account to move songs to.  i.e. user close old account and open
-    # new one and we want to associate with new account
-    Alternate = {
-      '__MinaTrinh__' => 'Mina_________',
-    }
-
-    def _record_by_map(record_by)
-      record_by.map do |ri|
-        Alternate[ri] || ri
-      end
     end
 
     def _scan_a_main_song(sitem)

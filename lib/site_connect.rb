@@ -86,7 +86,30 @@ class SDriver
 
     #capabilities = Selenium::WebDriver::Remote::W3C::Capabilities.firefox(accept_insecure_certs: true)
     capabilities = Selenium::WebDriver::Remote::Capabilities.firefox(accept_insecure_certs: true)
-    @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities)
+
+    if true
+      foptions = Selenium::WebDriver::Firefox::Options.new(
+        prefs: {
+          "browser.download.folderList"            => 1,
+          "browser.download.dir"                   => Dir.pwd,
+          "browser.download.lastDir"               => Dir.pwd,
+          "browser.download.defaultFolder"         => Dir.pwd,
+          "browser.download.useDownloadDir"        => true,
+          "browser.helperApps.neverAsk.saveToDisk" => "audio/m4a",
+        }
+      )
+      @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
+                                        options:foptions)
+    else
+      profile = Selenium::WebDriver::Firefox::Profile.new
+      profile["browser.download.folderList"]               = 2
+      profile["browser.download.manager.showWhenStarting"] = false
+      profile["browser.download.dir"]                      = Dir.pwd
+      profile["browser.helperApps.alwaysAsk.force"]        = false
+      profile["browser.helperApps.neverAsk.saveToDisk"]    = "audio/m4a"
+      @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
+                                        profile:profile)
+    end
     @driver.navigate.to(@url)
     sleep(1)
   end
