@@ -69,6 +69,10 @@ class SelPage
     refresh
   end
 
+  def css(spec)
+    @page.css(spec)
+  end
+
   def method_missing(method, *argv)
     @sdriver.send(method.to_s, *argv)
   end

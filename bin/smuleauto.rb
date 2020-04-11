@@ -211,14 +211,15 @@ module SmuleAuto
         days = 7 if days <= 0
         ldate  = Time.now - days*24*3600
       end
+      Plog.dump_info(ftype:ftype, value:value)
       @content.each do |k, v|
         case ftype
         when :favs
           newset << v if (v[:isfav] || v[:oldfav])
         when :record_by
-          newset << v if v[:record_by].downcase.include?(value)
+          newset << v if v[:record_by].downcase.include?(value.downcase)
         when :title
-          newset << v if v[:stitle].include?(value)
+          newset << v if v[:stitle].include?(value.downcase)
         when :recent
           newset << v if created_value(v[:created]) >= ldate
         when :star
@@ -359,7 +360,6 @@ module SmuleAuto
         end
       end
 
-      first_bad_date = Time.parse('2019-07-01')
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
@@ -468,7 +468,7 @@ module SmuleAuto
       # This will start playing
       spage.goto(href)
       %w(div.error-gone div.page-error).each do |acss|
-        if spage.page.css(acss).size > 0
+        if spage.css(acss).size > 0
           Plog.info("#{@info[:title]} is gone")
           @info[:deleted] = true
           spinner.stop('Done!')
@@ -476,7 +476,7 @@ module SmuleAuto
         end
       end
       spage.click_and_wait('button._1oqc74f')
-      count_set = spage.page.css("div._13gdiri")
+      count_set = spage.css("div._13gdiri")
       if count_set.size > 0
         if (value = count_set[0].text.to_i) > 0
           @info[:listens] = value
@@ -489,7 +489,7 @@ module SmuleAuto
       # The play time won't be known until the source is loaded
       duration_s = nil
       1.upto(15) do
-        duration_s = spage.page.css("._vln25l")[0]
+        duration_s = spage.css("._vln25l")[0]
         if duration_s && duration_s.text != "00:00"
           break
         end
@@ -503,9 +503,6 @@ module SmuleAuto
       end
       duration = duration_s.text.split(':')
       psecs    = duration[0].to_i * 60 + duration[1].to_i
-
-      msg = spage.page.css('div._1ck56r8').text
-      Plog.dump_info(plays:@info[:listens], psecs:psecs, msg:msg)
 
       @info[:listens] += 1
       @info[:psecs] = psecs
@@ -664,7 +661,7 @@ module SmuleAuto
                                    total:collab_links.size)
       collab_links.each do |alink|
         @spage.goto(alink)
-        sitems = @spage.page.css(".duets.content .recording-listItem")
+        sitems = @spage.css(".duets.content .recording-listItem")
         sitems.each do |sitem|
           next unless sinfo = _scan_a_collab_song(sitem)
           if s_singers.size > 0
@@ -733,7 +730,7 @@ module SmuleAuto
     def _scan_users
       _scroll_to_bottom
       result = []
-      sitems = @spage.page.css("._aju92n9")
+      sitems = @spage.css("._aju92n9")
       sitems.each do |sitem|
         name   = sitem.css("._409m7v").text.strip
         avatar = sitem.css("._1eeaa3cb")[0]['style']
@@ -752,7 +749,7 @@ module SmuleAuto
 
     def _each_main_song(pages)
       _scroll_to_bottom(pages)
-      sitems       = @spage.page.css("._8u57ot")
+      sitems       = @spage.css("._8u57ot")
       result       = []
       collab_links = []
       bar          = ProgressBar.create(title:"Checking songs",
@@ -949,6 +946,20 @@ module SmuleAuto
       result
     end
 
+    # Just for debug to bring up the page for testing
+    def test_scanner(user, url)
+      options = getOption
+      scanner = Scanner.new(user, options)
+      scanner.spage.goto(url)
+      spage = scanner.spage
+      require 'byebug'
+
+      byebug
+      a = 10
+      b = 20
+      c = 30
+    end
+
     def _tdir_check(tdir)
       unless test(?d, tdir)
         raise "Target dir #{tdir} not accessible to download music to"
@@ -962,7 +973,7 @@ module SmuleAuto
       sapi    = API.new
       perfset = sapi.get_performances(user, limit:limit, days:days)
       content.add_new_songs(perfset, false)
-      favset = sapi.get_favs(user)
+      favset  = sapi.get_favs(user)
       content.add_new_songs(favset, true)
       perfset
     end
@@ -989,6 +1000,9 @@ module SmuleAuto
         return true
       end
       _download_list(perfset, tdir) if options[:download]
+
+      # Redo since download list will setup ofile field
+      content.add_new_songs(perfset, false)
 
       # Favs must dump the whole thing
       content.writeback

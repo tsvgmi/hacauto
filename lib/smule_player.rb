@@ -8,6 +8,9 @@
 #++
 
 require 'tty-prompt'
+require 'tty-box'
+require 'tty-cursor'
+require 'tty-table'
 
 module SmuleAuto
   StateFile = "splayer.state"
@@ -48,26 +51,47 @@ module SmuleAuto
     end
 
     def _list_set(sitem, cselect, start, limit)
-      bar  = '*' * 10
-      tags = @content.tags
-      #Plog.dump_info(sitem:sitem, size:cselect.size, start:start, limit:limit)
+      bar     = '*' * 10
+      tags    = @content.tags
+      output  = []
+      tb_data = TTY::Table.new
       if sitem
         ptags = (tags[sitem[:stitle]] || []).join(', ')
-        puts "\n[***/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
-          [cselect.size, sitem[:title], sitem[:record_by],
-           sitem[:listens], sitem[:loves], bar[1..sitem[:stars].to_i],
-           sitem[:created].strftime("%Y-%m-%d"), ptags]
+        isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ''
+        row   = [">>>", isfav, sitem[:title],
+		 sitem[:record_by], sitem[:listens], sitem[:loves],
+		 bar[1..sitem[:stars].to_i],
+		 sitem[:created].strftime("%Y-%m-%d"), ptags]
+        tb_data << row
       end
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
-        ptags  = (tags[witem[:stitle]] || []).join(', ')
-        puts "[%3d/%3d] %-40.40s %-20.20s %3d %3d %5.5s %s %s" %
-          [i, cselect.size, witem[:title], witem[:record_by],
-           witem[:listens], witem[:loves],
-           bar[1..witem[:stars].to_i],
-           witem[:created].strftime("%Y-%m-%d"), ptags]
+        ptags = (tags[witem[:stitle]] || []).join(', ')
+        isfav = (witem[:isfav] || witem[:oldfav]) ? 'F' : ''
+        row   = [i, isfav, witem[:title], witem[:record_by],
+		 witem[:listens], witem[:loves],
+		 bar[1..witem[:stars].to_i],
+		 witem[:created].strftime("%Y-%m-%d"), ptags]
+        tb_data << row
       end
+      puts TTY::Cursor.clear_screen
+      puts tb_data.render(:unicode, multiline:true,
+                          width:TTY::Screen.width,
+             alignments:[:right, :left, :left, :left, :right, :right])
+      if sitem
+        msg = @scanner.spage.page.css('div._1ck56r8').text
+        puts msg
+      end
+    end
+
+    def box_msg(msg, options={})
+      box = TTY::Box.frame(top: 0, left: 0,
+              width:options[:width] || TTY::Screen.width,
+              height:options[:height] || TTY::Screen.height-1) do
+        msg
+      end
+      puts box
     end
 
     def _setprompt
@@ -107,7 +131,6 @@ module SmuleAuto
         return 0
       end
 
-      _list_set(sitem, @clist, 0, 5)
       if (psecs = SmuleSong.new(sitem).play(@scanner.spage)) <= 0
         return 0
       end
@@ -121,24 +144,42 @@ module SmuleAuto
       end
     end
 
-    def browser_op(sitem, data)
+    def browser_op(sitem, *operations)
       begin
-        case data
-        when /^l/i
-          @scanner.spage.click_and_wait("div._1v7cqsk")
-        when /^t/i
-          tag = $'.strip
-          msg = @scanner.spage.page.css('div._1ck56r8').text
-          if msg =~ /#{tag}/
-            Plog.info "Message already containing #{tag}"
-            return
+        spage = @scanner.spage
+        operations.each do |data|
+          case data
+          when 'F'                                # Set favorite song
+            spage.click_and_wait("button._13ryz2x")
+            content = spage.refresh
+            fav     = spage.page.css("div._8hpz8v")[0].text
+            if fav != 'Favorite'
+              Plog.info "Song is already favorite"
+              spage.click_and_wait("._6ha5u0", 0)
+              next
+            end
+            spage.click_and_wait("div._8hpz8v", 2, 0)
+          when /^t/i                              # Set a tag in msg
+            tag = $'.strip
+            msg = spage.page.css('div._1ck56r8').text
+            if msg =~ /#{tag}/
+              Plog.info "Message already containing #{tag}"
+              next
+            end
+            text = ' ' + tag
+            spage.click_and_wait("button._13ryz2x")   # ...
+            content  = spage.refresh
+            editable = spage.page.css("div._8hpz8v")[2].text
+            if editable == 'Edit'
+              spage.click_and_wait("a._117spsl", 2, 1)  # Edit
+              spage.type("textarea#message", text)  # Enter tag
+              spage.click_and_wait("input#recording-save")
+            else
+              Plog.info "Song is not editable"
+              spage.click_and_wait("._6ha5u0", 0)
+            end
+            spage.click_and_wait('button._1oqc74f')
           end
-          text = ' ' + tag
-          @scanner.spage.click_and_wait("button._13ryz2x")   # ...
-          @scanner.spage.click_and_wait("a._117spsl", 2, 1)  # Edit
-          @scanner.spage.type("textarea#message", text)  # Enter tag
-          @scanner.spage.click_and_wait("input#recording-save")
-          @scanner.spage.click_and_wait('button._1oqc74f')
         end
       rescue => errmsg
         Plog.error(errmsg)
@@ -147,6 +188,8 @@ module SmuleAuto
 
     HelpScreen = <<EOH
 Command:
+b t#tagname Add tag to the song comment (if allowed)
+b F         Make song favorite
 C           Reload content (if external app update it)
 f *=0       Filter only songs with 0 star (no rating)
 f >=4       Filter only songs with 4+ stars
@@ -164,12 +207,8 @@ s order     Sort order: random[.d], play[.d], love[.d], star[.d], date[.d], titl
 w           Write database
 x           Exit
 
-Filter type:
-s Singer
-t Title
-r Latest days [7]
-f Favorites (old+new)
-* Stars
+Composite:
+F           Set to favorite and add #thvfavs tags (F and bt#thvfavs)
 EOH
     def play_all
       pcount  = 0
@@ -181,6 +220,7 @@ EOH
           @clist = @played_set.uniq.select{|s| _filter_song(s) != :skip}
         end
         if sitem = @clist.shift
+          _list_set(sitem, @clist, 0, 10)
           if (duration = play_asong(sitem)) <= 0
             next
           end
@@ -200,13 +240,19 @@ EOH
         end
 
         while true
-          wait_time = endt - Time.now
-          #Plog.info("Waiting #{wait_time}")
-          if key = prompt.keypress("#{@prompt} (#{wait_time})",
-              timeout:wait_time)
+          if sitem
+            _list_set(sitem, @clist, 0, 10)
+            wait_t = endt - Time.now
+            key    = prompt.keypress("#{@prompt} [#{@clist.size}.:countdown]",
+                                     timeout:wait_t)
+          else
+            key    = prompt.keypress("#{@prompt} [#{@clist.size}]")
+          end
+          if key
             case key
             when '?'
-              puts HelpScreen
+              box_msg HelpScreen
+              prompt.keypress("Press any key to continue ...")
             when '.'
               @clist.unshift(sitem) if sitem
               break
@@ -223,6 +269,7 @@ EOH
                   @clist = sort_selection(newset)
                 when '/'
                   _list_set(sitem, newset, 0, newset.size)
+                  prompt.keypress("Press any key to continue ...")
                 end
               end
             when '-'                   # Remove from list
@@ -243,7 +290,7 @@ EOH
               end
             when '*'                            # Set stars
               sitem[:stars] = prompt.keypress('Value?').to_i
-              _list_set(sitem, [], 0, 0)
+              _list_set(sitem, @clist, 0, 10)
             when 'b'
               if param = prompt.ask('Value?')
                 browser_op(sitem, param)
@@ -256,6 +303,9 @@ EOH
               param = prompt.ask('Value?', default:'')
               @filter = Hash[param.split.map{|fs| fs.split('=')}]
               _setprompt
+            when 'F'                              # Set as favorite and tag
+              browser_op(sitem, "F", "t#thvfavs")
+              prompt.keypress("Press any key to continue ...")
             when 'i'                            # Song Info
               puts({
                 filter: @filter,
@@ -263,9 +313,10 @@ EOH
                 count:  @clist.size,
                 song:   sitem,
               }.to_yaml)
-            when /l/i                            # List playlist
-              offset = (key == 'L') ? prompt.ask('Offset?').to_i : 0
+            when 'l'                            # List playlist
+              offset = prompt.ask('Offset?').to_i
               _list_set(sitem, @clist, offset, 10)
+              prompt.keypress("Press any key to continue ...")
             when /n/i                            # Next n songs
               offset = (key == 'N') ? prompt.ask('Offset?').to_i : 0
               Plog.info("Skip #{offset} songs")
@@ -274,13 +325,16 @@ EOH
             when /p/i                           # List history
               offset = (key == 'P') ? prompt.ask('Offset?').to_i : 0
               _list_set(nil, @played_set.reverse, offset.to_i, 10)
+              prompt.keypress("Press any key to continue ...")
             when 'R'                             # Reload script
               begin
                 [__FILE__, "lib/smule_player.rb"]. each do |script|
+                  Plog.info("Loading #{script}")
                   eval "load '#{script}'", TOPLEVEL_BINDING
                 end
               rescue => errmsg
                 Plog.error errmsg
+                prompt.keypress("Press any key to continue ...")
               end
             when 's'                            # Sort current list
               choices = %w(random play love star date title)
@@ -289,7 +343,7 @@ EOH
             when 't'                             # Set tag
               if tag = prompt.ask('Value ?')
                 @content.add_tag(sitem, tag)
-                _list_set(sitem, [], 0, 0)
+                _list_set(sitem, @clist, 0, 10)
               end
             when 'w'                            # Write content out
               _save_state(false)

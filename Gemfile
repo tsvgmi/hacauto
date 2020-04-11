@@ -12,6 +12,11 @@ gem "ruby-progressbar"
 gem "activesupport"
 gem "tty-prompt"
 gem "tty-spinner"
+gem "tty-box"
+gem "tty-cursor"
+gem "tty-table"
+
+gem "listen"
 
 group "music" do
   gem "taglib-ruby"
