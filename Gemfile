@@ -15,6 +15,7 @@ gem "tty-spinner"
 gem "tty-box"
 gem "tty-cursor"
 gem "tty-table"
+gem "tty-pager"
 
 gem "listen"
 

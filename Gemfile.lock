@@ -97,6 +97,10 @@ GEM
       tty-cursor (~> 0.7)
     tty-color (0.5.1)
     tty-cursor (0.7.1)
+    tty-pager (0.12.1)
+      strings (~> 0.1.4)
+      tty-screen (~> 0.6)
+      tty-which (~> 0.4)
     tty-prompt (0.21.0)
       necromancer (~> 0.5.0)
       pastel (~> 0.7.0)
@@ -114,6 +118,7 @@ GEM
       pastel (~> 0.7.2)
       strings (~> 0.1.5)
       tty-screen (~> 0.7)
+    tty-which (0.4.2)
     tzinfo (1.2.7)
       thread_safe (~> 0.1)
     unf (0.1.4)
@@ -153,6 +158,7 @@ DEPENDENCIES
   taglib-ruby
   tty-box
   tty-cursor
+  tty-pager
   tty-prompt
   tty-spinner
   tty-table
