@@ -191,8 +191,8 @@ class SiteConnect
       if !options[:no_auth] && auth = options[:auth]
         sdriver.goto("/user/login")
         identity, password = auth.split(':')
-        sdriver.click_and_wait('#react-login-button', 2) # Login
-        sdriver.click_and_wait('._cul1gj', 2, 0)        # Email
+        #sdriver.click_and_wait('#react-login-button', 2) # Login
+        sdriver.click_and_wait('a.gqrikP')        # email
         sdriver.type('input[name="snp-username"]', identity + "\n")
         sleep 1
         sdriver.type('input[name="snp-password"]', password + "\n")

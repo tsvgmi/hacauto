@@ -235,10 +235,10 @@ module SmuleAuto
         Plog.info("File #{@cfile} was not changed. Skip")
         return
       end
-      if test(?f, @cfile)
+      if test(?s, @cfile)
         @content = YAML.load_file(@cfile)
       else
-        Plog.warn("#{@cfile} does not exist")
+        Plog.warn("#{@cfile} does not exist or empty")
         @content = {}
       end
       @content.each do |k, r|
@@ -1066,6 +1066,35 @@ module SmuleAuto
     def play(user, tdir='data')
       _tdir_check(tdir)
       SmulePlayer.new(user, tdir, getOption).play_all
+    end
+
+    def show_following(user, tdir='data')
+      _tdir_check(tdir)
+      content   = Content.new(user, tdir)
+      following = content.singers.select{|k, v| v[:following]}
+      bar = ProgressBar.create(total:content.content.size,
+                               format:'%t %B %c/%C')
+      content.content.each do |sid, sinfo|
+        #p sinfo
+        singers = sinfo[:record_by].split(',')
+        singers.select{|r| r != user}.each do |osinger|
+          if finfo = following[osinger]
+            finfo[:last_join] ||= Time.at(0)
+            finfo[:last_join] = [created_value(sinfo[:created]),
+                                 created_value(finfo[:last_join])].max
+          end
+        end
+        bar.increment
+      end
+      following.each do |asinger, finfo|
+        if finfo[:last_join]
+          finfo[:last_days] = (Time.now - finfo[:last_join])/(24*3600)
+        end
+      end
+      following.sort_by{|k, v| v[:last_days] || 9999}.each do |asinger, finfo|
+        puts "%-20.20s - %4d days" % [asinger, finfo[:last_days] || 9999]
+      end
+      true
     end
 
     def fix_content(user, fix_type, tdir='data')
