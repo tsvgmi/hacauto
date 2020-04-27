@@ -128,20 +128,20 @@ EOM
       state
     end
 
-    def play_asong(sitem)
-      res = {duration:0}
+    def _song_playable?(sitem)
       if (sitem[:stars] && sitem[:stars] <= 1)
-        return res
+        return false
       end
       unless @options[:myopen]
         if (sitem[:href] =~ /\/ensembles$/)
-          return res
+          return false
         end
       end
-      unless _filter_song(sitem) == :play
-        return res
-      end
+      _filter_song(sitem) == :play
+    end
 
+    def play_asong(sitem, prompt)
+      res = {duration:0}
       if (psecs = SmuleSong.new(sitem).play(@scanner.spage)) <= 0
         return res
       end
@@ -153,6 +153,7 @@ EOM
       else
         psecs
       end
+
       spage = @scanner.spage
       res[:duration] = duration
       res[:snote]    = spage.page.css('div._1ck56r8').text
@@ -279,8 +280,11 @@ EOH
           @clist = @played_set.uniq.select{|s| _filter_song(s) != :skip}
         end
         if sitem = @clist.shift
+          unless _song_playable?(sitem)
+            next
+          end
           _list_show(sitem, nil, @clist, 0, 10)
-          psitem = play_asong(sitem)
+          psitem = play_asong(sitem, prompt)
           if (duration = psitem[:duration]) <= 0
             next
           end
@@ -363,7 +367,9 @@ EOH
                 @clist = sort_selection(newset)
               end
             when '*'                            # Set stars
-              sitem[:stars] = prompt.keypress('Value?').to_i
+              if sitem
+                sitem[:stars] = prompt.keypress('Value?').to_i
+              end
             when 'b'
               if param = prompt.ask('Value?')
                 browser_op(sitem, psitem, param)
@@ -396,6 +402,9 @@ EOH
                 break if key == 'q'
                 offset += 10
               end
+            when 'L'
+              play_length = prompt.ask('Max Play Length?').to_i
+              @options[:play_length] = play_length if play_length >= 30
             when 'M'
               browser_op(sitem, psitem, key)
               prompt.keypress("Press any key [:countdown]", timeout:3)
@@ -414,6 +423,7 @@ EOH
                   Plog.info("Loading #{script}")
                   eval "load '#{script}'", TOPLEVEL_BINDING
                 end
+                prompt.keypress("Press any key [:countdown]", timeout:3)
               rescue => errmsg
                 Plog.error errmsg
                 prompt.keypress("Press any key to continue ...")

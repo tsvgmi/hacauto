@@ -365,6 +365,9 @@ module SmuleAuto
         r[:isfav]      = isfav if isfav
         # Keep the 1st created, b/c it is more accurate
         sid = r[:sid]
+
+        r.delete(:since)
+        r.delete(:sincev)
         if c = @content[sid]
           c.update(
             listens:   r[:listens],
@@ -1075,13 +1078,14 @@ module SmuleAuto
       bar = ProgressBar.create(total:content.content.size,
                                format:'%t %B %c/%C')
       content.content.each do |sid, sinfo|
-        #p sinfo
         singers = sinfo[:record_by].split(',')
         singers.select{|r| r != user}.each do |osinger|
           if finfo = following[osinger]
             finfo[:last_join] ||= Time.at(0)
             finfo[:last_join] = [created_value(sinfo[:created]),
                                  created_value(finfo[:last_join])].max
+            finfo[:songs] ||= 0
+            finfo[:songs] += 1
           end
         end
         bar.increment
@@ -1092,7 +1096,9 @@ module SmuleAuto
         end
       end
       following.sort_by{|k, v| v[:last_days] || 9999}.each do |asinger, finfo|
-        puts "%-20.20s - %4d days" % [asinger, finfo[:last_days] || 9999]
+        puts "%-20.20s - %3d songs, %4d days, %s" %
+          [asinger, finfo[:songs] || 0, finfo[:last_days] || 9999,
+           finfo[:follower] ? 'follower' : '']
       end
       true
     end
