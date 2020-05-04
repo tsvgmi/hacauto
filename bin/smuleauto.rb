@@ -246,11 +246,13 @@ module SmuleAuto
       end
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
       @tags    = {}
+      if false
       if test(?f, @tag2file)
         File.read(@tag2file).split("\n").each do |l|
           k, v = l.split(':::')
           @tags[k] = (v || '').split(',')
         end
+      end
       end
       @loaded = Time.now
     end
@@ -684,11 +686,35 @@ module SmuleAuto
       result
     end
 
-    def set_unfavs(songs)
+    def set_unfavs(songs, marking=true)
+      prompt = TTY::Prompt.new
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.click_and_wait('._13ryz2x')
         @spage.click_and_wait('._117spsl')
+        if marking
+          tag = '#thvfavs'
+          if asong[:record_by].start_with?(@user)
+            msg = @spage.page.css('div._1ck56r8').text
+            if msg =~ /#{tag}/
+              Plog.info "Message already containing #{tag}"
+              next
+            end
+            text = ' ' + tag
+            @spage.click_and_wait("button._13ryz2x")   # ...
+            content  = @spage.refresh
+            editable = @spage.page.css("div._8hpz8v")[2].text
+            if editable == 'Edit'
+              @spage.click_and_wait("a._117spsl", 2, 1)  # Edit
+              @spage.type("textarea#message", text)  # Enter tag
+              @spage.click_and_wait("input#recording-save")
+            else
+              Plog.info "Song is not editable"
+              @spage.click_and_wait("._6ha5u0", 1)
+            end
+            @spage.click_and_wait('button._1oqc74f')
+          end
+        end
       end
     end
 
