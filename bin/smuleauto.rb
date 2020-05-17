@@ -194,7 +194,7 @@ module SmuleAuto
       @cdir     = cdir
       @cfile    = "#{cdir}/content-#{user}.yml"
       @sfile    = "#{cdir}/singers-#{user}.yml"
-      @tag2file = "#{cdir}/songtags2.yml"
+      @tagfile = "#{cdir}/songtags2.yml"
       @loaded   = Time.at(0)
       refresh
     end
@@ -212,18 +212,24 @@ module SmuleAuto
         ldate  = Time.now - days*24*3600
       end
       Plog.dump_info(ftype:ftype, value:value)
-      @content.each do |k, v|
-        case ftype
-        when :favs
-          newset << v if (v[:isfav] || v[:oldfav])
-        when :record_by
-          newset << v if v[:record_by].downcase.include?(value.downcase)
-        when :title
-          newset << v if v[:stitle].include?(value.downcase)
-        when :recent
-          newset << v if created_value(v[:created]) >= ldate
-        when :star
-          newset << v if v[:stars].to_i >= value.to_i
+      if ftype == :url
+        if result = @content.find{|k, v| v[:href] == value}
+          newset = [result[1]]
+        end
+      else
+        @content.each do |k, v|
+          case ftype
+          when :favs
+            newset << v if (v[:isfav] || v[:oldfav])
+          when :record_by
+            newset << v if v[:record_by].downcase.include?(value.downcase)
+          when :title
+            newset << v if v[:stitle].include?(value.downcase)
+          when :recent
+            newset << v if created_value(v[:created]) >= ldate
+          when :star
+            newset << v if v[:stars].to_i >= value.to_i
+          end
         end
       end
       Plog.info("Selecting #{newset.size} songs")
@@ -246,13 +252,15 @@ module SmuleAuto
       end
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
       @tags    = {}
-      if false
-      if test(?f, @tag2file)
-        File.read(@tag2file).split("\n").each do |l|
-          k, v = l.split(':::')
-          @tags[k] = (v || '').split(',')
+      if test(?f, @tagfile)
+        File.open(@tagfile) do |fid|
+          while l = fid.gets
+            k, v = l.chomp.split(':::')
+            if v && !v.empty?
+              @tags[k] = v.split(',')
+            end
+          end
         end
-      end
       end
       @loaded = Time.now
     end
@@ -275,14 +283,18 @@ module SmuleAuto
         if test(?f, afile)
           FileUtils.move(afile, b2file, verbose:true)
         end
-        File.open(afile, 'w') do |fod|
-          Plog.info("Writing #{content.size} entries to #{afile}")
-          case options[:format]
-          when :text
-            fod.puts content
-          else
-            fod.puts content.to_yaml
+        begin
+          File.open(afile, 'w') do |fod|
+            Plog.info("Writing #{content.size} entries to #{afile}")
+            case options[:format]
+            when :text
+              fod.puts content
+            else
+              fod.puts content.to_yaml
+            end
           end
+        rescue Errno::ENOENT => errmsg
+          Plog.dump_error(file:afile, errmsg:errmsg)
         end
       end
     end
@@ -320,7 +332,7 @@ module SmuleAuto
         wtag = @tags.to_a.sort.
           map {|k2, v| "#{k2}:::#{v.join(',')}"}
         woption = {format: :text, backup: backup}
-        _write_with_backup(@tag2file, wtag, woption)
+        _write_with_backup(@tagfile, wtag, woption)
         @newtag = false
       end
       self
@@ -703,8 +715,8 @@ module SmuleAuto
             text = ' ' + tag
             @spage.click_and_wait("button._13ryz2x")   # ...
             content  = @spage.refresh
-            editable = @spage.page.css("div._8hpz8v")[2].text
-            if editable == 'Edit'
+            editable = @spage.page.css("div._8hpz8v")[2]
+            if editable && editable.text == 'Edit'
               @spage.click_and_wait("a._117spsl", 2, 1)  # Edit
               @spage.type("textarea#message", text)  # Enter tag
               @spage.click_and_wait("input#recording-save")

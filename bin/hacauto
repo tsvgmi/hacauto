@@ -56,8 +56,8 @@ case $oper in
     ;;
 
   smule-*)
-    set -x
     roper=$(echo ${oper#smule-} | tr '-' '_')
+    set -x
     exec smuleauto.rb $roper "$@"
     ;;
 
