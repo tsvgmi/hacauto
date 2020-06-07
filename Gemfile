@@ -16,6 +16,7 @@ gem "tty-box"
 gem "tty-cursor"
 gem "tty-table"
 gem "tty-pager"
+gem "thor"
 
 gem "listen"
 

@@ -17,8 +17,9 @@ module SmuleAuto
 
   class SmulePlayer
     def initialize(user, tdir, options={})
-      @options = options
-      @content = Content.new(user, tdir)
+      @options  = options
+      @roptions = {}
+      @content  = Content.new(user, tdir)
       if test(?f, StateFile)
         config  = YAML.load_file(StateFile)
         @clist  = @content.select_sids(config[:sids])
@@ -149,10 +150,10 @@ EOM
       if (psecs = SmuleSong.new(sitem).play(@scanner.spage)) <= 0
         return res
       end
-      if plength = @options[:play_length] 
+      if plength = @roptions[:play_length] 
         plength = plength.to_i
       end
-      duration = if plength = @options[:play_length] 
+      duration = if plength = @roptions[:play_length] 
         [plength.to_i, psecs].min
       else
         psecs
@@ -468,7 +469,7 @@ EOH
               end
             when 'L'
               play_length = prompt.ask('Max Play Length?').to_i
-              @options[:play_length] = play_length if play_length >= 30
+              @roptions[:play_length] = play_length if play_length >= 30
             when /n/i                            # Next n songs
               offset = (key == 'N') ? prompt.ask('Next track offset?').to_i : 0
               Plog.info("Skip #{offset} songs")
