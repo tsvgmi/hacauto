@@ -51,9 +51,6 @@ module SmuleAuto
     end
 
     def _list_show(sitem, psitem, cselect, start, limit)
-    require 'byebug'
-
-    byebug
       bar    = '*' * 10
       tags   = @content.tags
       table  = TTY::Table.new
@@ -69,13 +66,13 @@ module SmuleAuto
           system "imgcat -r 5 <#{lfile}"
         end
         ptags = (tags[sitem[:stitle]] || []).join(', ')
-        isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ''
+        isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ' '
         box   = TTY::Box.frame(top: 0, left: 15,
                 width:TTY::Screen.width-20,
                 height:5) do
           content = <<EOM
 [#{isfav}] #{sitem[:title]} - #{sitem[:created].strftime("%Y-%m-%d")} - #{bar[1..sitem[:stars].to_i]}
-          #{sitem[:record_by]} - #{sitem[:listens]} plays, #{sitem[:loves]} loves - #{ptags[0..9]}
+    #{sitem[:record_by]} - #{sitem[:listens]} plays, #{sitem[:loves]} loves - #{ptags[0..9]}
 #{(psitem || {})[:snote]}
 EOM
         end
@@ -134,6 +131,9 @@ EOM
 
     def _song_playable?(sitem)
       if (sitem[:stars] && sitem[:stars] <= 1)
+        return false
+      end
+      if sitem[:deleted]
         return false
       end
       unless @options[:myopen]
@@ -203,67 +203,69 @@ EOM
 
     def _set_favorite(sitem)
       spage = @scanner.spage
-      begin
-        spage.click_and_wait("button._13ryz2x")
-        content = spage.refresh
-        fav     = spage.page.css("div._8hpz8v")[0].text
-        if fav != 'Favorite'
-          Plog.info "Song is already favorite"
-          spage.click_and_wait("._6ha5u0", 1)
-          return false
-        end
-        sitem[:isfav] = true
-        spage.click_and_wait("div._8hpz8v", 2, 0)
-      rescue => errmsg
-        Plog.error(errmsg)
+      spage.click_and_wait("button._13ryz2x")
+      content = spage.refresh
+      fav     = spage.page.css("div._8hpz8v")[0].text
+      if fav != 'Favorite'
+        Plog.info "Song is already favorite"
+        spage.click_and_wait("._6ha5u0", 1)
         return false
       end
-      return true
+      sitem[:isfav] = true
+      spage.click_and_wait("div._8hpz8v", 2, 0)
     end
 
     def _set_smule_song_tag(sitem, tag)
       spage = @scanner.spage
-      begin
-        msg = spage.page.css('div._1ck56r8').text
-        if msg =~ /#{tag}/
-          Plog.info "Message already containing #{tag}"
-          return false
-        end
-        text = ' ' + tag
-        spage.click_and_wait("button._13ryz2x")   # ...
-        content  = spage.refresh
-        editable = spage.page.css("div._8hpz8v")[2].text
-        if editable == 'Edit'
-          spage.click_and_wait("a._117spsl", 2, 1)  # Edit
-          spage.type("textarea#message", text)  # Enter tag
-          spage.click_and_wait("input#recording-save")
-        else
-          Plog.info "Song is not editable"
-          spage.click_and_wait("._6ha5u0", 1)
-        end
-        spage.click_and_wait('button._1oqc74f')
-      rescue => errmsg
-        Plog.error(errmsg)
+      msg = spage.page.css('div._1ck56r8').text
+      if msg =~ /#{tag}/
+        Plog.info "Message already containing #{tag}"
         return false
       end
-      return true
+      text = ' ' + tag
+      spage.click_and_wait("button._13ryz2x")   # ...
+      content  = spage.refresh
+      editable = spage.page.css("div._8hpz8v")[2].text
+      if editable == 'Edit'
+        spage.click_and_wait("a._117spsl", 2, 1)  # Edit
+        spage.type("textarea#message", text)  # Enter tag
+        spage.click_and_wait("input#recording-save")
+      else
+        Plog.info "Song is not editable"
+        spage.click_and_wait("._6ha5u0", 1)
+      end
+      spage.click_and_wait('button._1oqc74f')
+    end
+
+    def _refresh_content
+      Plog.info("Refresh content")
+      @content.refresh
+      @clist      = []
+      @played_set = []
     end
 
     def browser_op(sitem, psitem, *operations)
-      begin
-        spage = @scanner.spage
-        operations.each do |data|
-          case data
-          when 'M'
-            _show_msgs(psitem)
-          when 'F'                                # Set favorite song
-            _set_favorite(sitem)
-          when /^t/i                              # Set a tag in msg
-            _set_smule_song_tag(sitem, $')
-          end
+      spage = @scanner.spage
+      operations.each do |data|
+        case data
+        when 'M'
+          _show_msgs(psitem)
+        when 'F'                                # Set favorite song
+          _set_favorite(sitem)
+        when /^t/i                              # Set a tag in msg
+          _set_smule_song_tag(sitem, $')
         end
+      end
+    end
+
+    # Run the code and protect all exception from killing the menu
+    def _menu_eval(*args)
+      begin
+        yield *args
       rescue => errmsg
-        Plog.error(errmsg)
+        prompt = TTY::Prompt.new
+        Plog.dump_error(errmsg:errmsg.to_s, args:args)
+        prompt.keypress("Press any key to continue ...")
       end
     end
 
@@ -279,6 +281,7 @@ f           Filter existing song list
   >=4       Filter song with >= 4 stars
   s=singer  Filter song with singer
   S=singer  Filter song started with singer
+h           Jump to specified song URL
 i           Song Info
 l           List next songs
 L           Set play length
@@ -342,7 +345,9 @@ EOH
             _show_msgs(psitem)
             if sitem[:isfav] || sitem[:oldfav]
               if sitem[:record_by] =~ /^THV_13,/
-                _set_smule_song_tag(sitem, '#thvfavs')
+                _menu_eval do
+                  _set_smule_song_tag(sitem, '#thvfavs')
+                end
               end
             end
             wait_t = endt - Time.now
@@ -370,7 +375,7 @@ EOH
             when /^[\+=\/]/i                # Add/replace list
               choices = %w(favs recent record_by star title)
               ftype   = prompt.enum_select('Filter type?', choices)
-              param   = (ftype == 'favs') ? '' : prompt.ask('Value?')
+              param   = (ftype == 'favs') ? '' : prompt.ask("#{ftype} value ?")
               if param
                 newset  = @content.select_set(ftype.to_sym, param)
                 case key
@@ -392,7 +397,7 @@ EOH
             when '-'                   # Remove from list
               choices = %w(singer star)
               ftype   = prompt.enum_select('Filter type?', choices)
-              if param = prompt.ask('Value?')
+              if param = prompt.ask('Removing filter Value?')
                 newset  = @clist.reject {|v|
                   case ftype
                   when 'singer'
@@ -410,21 +415,31 @@ EOH
                 sitem[:stars] = prompt.keypress('Value?').to_i
               end
             when 'b'
-              if param = prompt.ask('Value?')
-                browser_op(sitem, psitem, param)
-                prompt.keypress("Press any key [:countdown]", timeout:3)
+              if param = prompt.ask('Browser Op alue?')
+                _menu_eval do
+                  browser_op(sitem, psitem, param)
+                  prompt.keypress("Press any key [:countdown]", timeout:3)
+                end
               end
             when 'C'
-              @content.refresh
-              @clist      = []
-              @played_set = []
+              _refresh_content
+            when 'D'
+              if prompt.keypress('Are you sure? ') =~ /^y/i
+                sitem[:deleted] = true
+                prompt.keypress("Press any key [:countdown]", timeout:3)
+                break
+              end
             when 'f'                            # Set filter
-              param = prompt.ask('Value?', default:'')
-              @filter = Hash[param.split.map{|fs| fs.split('=')}]
+              param = prompt.ask('Filter value?', default:'')
+              _menu_eval do
+                @filter = Hash[param.split.map{|fs| fs.split('=')}]
+              end
               _setprompt
             when 'F'                              # Set as favorite and tag
-              _set_favorite(sitem)
-              _set_smule_song_tag(sitem, '#thvfavs')
+              _menu_eval do
+                _set_favorite(sitem)
+                _set_smule_song_tag(sitem, '#thvfavs')
+              end
               prompt.keypress("Press any key [:countdown]", timeout:3)
             when 'h'
               if param = prompt.ask('URL:')
@@ -455,24 +470,21 @@ EOH
               play_length = prompt.ask('Max Play Length?').to_i
               @options[:play_length] = play_length if play_length >= 30
             when /n/i                            # Next n songs
-              offset = (key == 'N') ? prompt.ask('Offset?').to_i : 0
+              offset = (key == 'N') ? prompt.ask('Next track offset?').to_i : 0
               Plog.info("Skip #{offset} songs")
               @clist.shift(offset)
               break
             when /p/i                           # List history
-              offset = (key == 'P') ? prompt.ask('Offset?').to_i : 0
+              offset = (key == 'P') ? prompt.ask('Prev track offset?').to_i : 0
               _list_show(nil, nil, @played_set.reverse, offset.to_i, 10)
               prompt.keypress("Press any key [:countdown]", timeout:3)
             when 'R'                             # Reload script
-              begin
+              _menu_eval do
                 [__FILE__, "lib/smule_player.rb"]. each do |script|
                   Plog.info("Loading #{script}")
                   eval "load '#{script}'", TOPLEVEL_BINDING
+                  prompt.keypress("Press any key [:countdown]", timeout:3)
                 end
-                prompt.keypress("Press any key [:countdown]", timeout:3)
-              rescue => errmsg
-                Plog.error errmsg
-                prompt.keypress("Press any key to continue ...")
               end
             when 's'                            # Sort current list
               choices = %w(random play love star date title
@@ -480,7 +492,7 @@ EOH
               @order  = prompt.enum_select('Order?', choices)
               @clist  = sort_selection(@clist)
             when 't'                             # Set tag
-              if tag = prompt.ask('Value ?')
+              if tag = prompt.ask('Tag value ?')
                 @content.add_tag(sitem, tag)
               end
             when 'w'                            # Write content out

@@ -255,9 +255,13 @@ module SmuleAuto
       if test(?f, @tagfile)
         File.open(@tagfile) do |fid|
           while l = fid.gets
-            k, v = l.chomp.split(':::')
-            if v && !v.empty?
-              @tags[k] = v.split(',')
+            begin
+              k, v = l.chomp.split(':::')
+              if v && !v.empty?
+                @tags[k] = v.split(',')
+              end
+            rescue => errmsg
+              Plog.dump_error(errmsg:errmsg.to_s, l:l)
             end
           end
         end
