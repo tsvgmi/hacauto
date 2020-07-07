@@ -469,7 +469,7 @@ EOH
               end
             when 'L'
               play_length = prompt.ask('Max Play Length?').to_i
-              @roptions[:play_length] = play_length if play_length >= 30
+              @roptions[:play_length] = play_length if play_length >= 15
             when /n/i                            # Next n songs
               offset = (key == 'N') ? prompt.ask('Next track offset?').to_i : 0
               Plog.info("Skip #{offset} songs")

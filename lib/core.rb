@@ -6,8 +6,17 @@
 #---------------------------------------------------------------------------
 #++
 module ThorAddition
+  def self.included(klass)
+    klass.class_eval do
+      def self.exit_on_failure?
+        true
+      end
+    end
+  end
+
   def cli_wrap
     if ENV['BYEBUG']
+      say_status Time.now, "#{File.basename(__FILE__)}:#{__LINE__} " + "Entering debug mode", :yellow
       ENV.delete('BYEBUG')
       require 'byebug'
       byebug

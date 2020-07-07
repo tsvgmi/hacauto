@@ -1,6 +1,6 @@
 source "http://rubygems.org"
 
-gem "progress_bar"
+#gem "progress_bar"
 gem "byebug"
 gem "selenium-webdriver"
 gem "webdrivers"

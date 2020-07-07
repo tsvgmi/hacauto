@@ -13,6 +13,7 @@ require 'core'
 require 'site_connect'
 require 'smule_player'
 require 'tty-spinner'
+require 'tty-progressbar'
 require 'thor'
 
 def clean_emoji(str='')
@@ -97,7 +98,8 @@ end
 
 module SmuleAuto
   class AudioHandler
-    def initialize(link)
+    def initialize(link, options={})
+      @options = options
       @olink   = link.sub(/\/ensembles$/, '')
       source   = HTTP.follow.get(@olink).to_s 
       document = Nokogiri::HTML(source)
@@ -115,23 +117,38 @@ module SmuleAuto
     def get_audio_from_singsalon(ofile, ssconnect)
       ssconnect.type('input.downloader-input', @olink)
       ssconnect.click_and_wait('input.ipsButton[value~=Fetch]')
-      ssconnect.click_and_wait('a.ipsButton[download]')
 
-      while true
-        m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
-          sort_by{|r| File.mtime(r)}.last
-        break if m4file
-        sleep(1)
-      end
+      # This open up new window
+      cur_handle = ssconnect.window_handle
+      handles    = ssconnect.window_handles
+      begin
+        Plog.info("Switch to window #{handles[-1]} to download") if @options[:verbose]
+        ssconnect.switch_to.window(handles[-1])
+        sleep(4)
+        ssconnect.click_and_wait('a.ipsButton[download]')
 
-      Plog.info("Waiting for #{m4file}")
-      while (fsize = File.size(m4file)) < 1_000_000
-        sleep(1)
+        while true
+          m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
+            sort_by{|r| File.mtime(r)}.last
+          break if m4file
+          sleep(1)
+        end
+
+        Plog.info("Waiting for #{m4file}") if @options[:verbose]
+        while (fsize = File.size(m4file)) < 1_000_000
+          sleep(1)
+        end
+        File.open(ofile, 'wb') do |f|
+          f.write(File.read(m4file))
+        end
+        Plog.info("Wrote #{ofile}(#{File.size(ofile)} bytes)")
+      rescue => errmsg
+        Plog.dump_error(errmsg:errmsg)
+      ensure
+        ssconnect.close
+        ssconnect.switch_to.window(cur_handle)
       end
-      File.open(ofile, 'wb') do |f|
-        f.write(File.read(m4file))
-      end
-      Plog.info("Wrote #{ofile}(#{File.size(ofile)} b) from #{@link}")
+      test(?s, ofile)
     end
 
     def get_audio(ofile)
@@ -158,19 +175,12 @@ module SmuleAuto
       unless @song_info_url
         return nil
       end
-
-      # Continue may get banned
-      if true
-        sdoc  = Nokogiri::HTML(curl(@song_info_url))
-        asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[0].
-          sub(/^\s*Song: /, '')[0..-2]
-        CGI.unescapeHTML(JSON.parse(asset).dig('lyrics')).
-                    gsub(/<br>/, "\n").
-                    gsub(/<p>/, "\n\n")
-      else
-        Plog.info(info_link:@song_info_url)
-        return nil
-      end
+      sdoc  = Nokogiri::HTML(curl(@song_info_url))
+      asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[1].
+        sub(/^\s*Song: /, '')[0..-2]
+      CGI.unescapeHTML(JSON.parse(asset).dig('lyrics')).
+                  gsub(/<br>/, "\n").
+                  gsub(/<p>/, "\n\n")
     end
   end
 
@@ -241,6 +251,7 @@ module SmuleAuto
         return
       end
       if test(?s, @cfile)
+        Plog.info("Loading #{@cfile}")
         @content = YAML.load_file(@cfile)
       else
         Plog.warn("#{@cfile} does not exist or empty")
@@ -249,9 +260,11 @@ module SmuleAuto
       @content.each do |k, r|
         r[:sincev] = time_since(r[:since]) / 3600.0
       end
+      Plog.info("Loading #{@sfile}")
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
       @tags    = {}
       if test(?f, @tagfile)
+        Plog.info("Loading #{@tagfile}")
         File.open(@tagfile) do |fid|
           while l = fid.gets
             begin
@@ -421,36 +434,57 @@ module SmuleAuto
       self
     end
 
-    def each(options={})
-      filter = options[:filter] || {}
-      if filter.is_a?(String)
-        if filter.include?('=@')
-          fname, ffile = filter.split('=@')
-          filter[fname] = File.read(ffile).split("\n")
+    # Also select_set implement an alternate selection
+    def _build_filter_from_string(filter)
+      if filter.start_with?('@')
+        ffile = filter[1..-1]
+        filter = Hash[File.read(ffile).split("\n").map{|f| f.split('=')}]
+        filter[:fname] = ffile
+      else
+        filter = Hash[filter.split('/').map{|f| f.split('=')}]
+      end
+      filter = filter.transform_keys(&:to_sym)
+      filter.each do |k, v|
+        if k == :created
+          filter[k] = Time.parse(v)
         else
-          filter  = Hash[(filter || '').split(',').map{|f| f.split('=')}]
+          filter[k] = v.split(',') if v.include?(',')
         end
       end
+      Plog.dump_info(filter:filter)
+      filter
+    end
+
+    def each(options={})
+      filter = options[:filter] || {}
+      filter = _build_filter_from_string(filter) if filter.is_a?(String)
       econtent = []
-      @content.each do |k, v|
+      @content.each do |song_id, sinfo|
         if filter.size > 0
           pass = true
           filter.each do |fk, fv|
             if fv.is_a?(Array)
-              unless fv.include?(v[fk.to_sym].to_s)
+              unless fv.include?(sinfo[fk].to_s)
                 pass = false
                 break
               end
             else
-              unless v[fk.to_sym].to_s =~ /#{fv}/i
-                pass = false
-                break
+              if fk == :created
+                if sinfo[fk].to_time <= fv
+                  pass = false
+                  break
+                end
+              else
+                unless sinfo[fk].to_s =~ /#{fv}/i
+                  pass = false
+                  break
+                end
               end
             end
           end
           next unless pass
         end
-        econtent << [k, v]
+        econtent << [song_id, sinfo]
       end
       if options[:pbar]
         bar = ProgressBar.create(title:options[:pbar], total:econtent.size,
@@ -528,11 +562,12 @@ module SmuleAuto
       @info[:psecs] = psecs
     end
     
-    def download_from_singsalon(ssconnect=nil)
+    def download_from_singsalon(ssconnect=nil, force=false)
       begin
         if @options[:force] || !test(?f, @info[:sfile])
           if ssconnect
-            audio_handler = AudioHandler.new(@surl)
+            audio_handler = AudioHandler.new(@surl, @options)
+            Plog.info("Downloading for #{@info[:title]}")
             if audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
               @lyric = audio_handler.get_lyric
               update_mp4tag
@@ -665,7 +700,7 @@ module SmuleAuto
 
     def initialize(user, options={})
       @user      = user
-      @options   = options
+      @options   = options.transform_keys(&:to_sym)
       @connector = SiteConnect.new(:smule, @options)
       @spage     = SelPage.new(@connector.driver)
       sleep(1)
@@ -850,8 +885,11 @@ module SmuleAuto
                             ofile:afile[:ofile])
           end
           bar.increment
-          res = test(?f, afile[:sfile]) && test(?l, afile[:ofile])
-          !res
+          if options[:force]
+            true
+          else
+            !(test(?f, afile[:sfile]) && test(?l, afile[:ofile]))
+          end
         end
         if options[:limit]
           limit = options[:limit].to_i
@@ -869,11 +907,12 @@ module SmuleAuto
           return
         end
         FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
-        bar = ProgressBar.create(title:"Downloading songs #{flist.size}", total:flist.size)
+        bar = ProgressBar.create(title:"Downloading songs #{flist.size}",
+                                 total:flist.size)
         ssconnect = SiteConnect.new(:singsalon, options).driver
         ssconnect.goto('/smule-downloader')
         flist.each do |afile|
-          SmuleSong.new(afile).download_from_singsalon(ssconnect)
+          SmuleSong.new(afile, options).download_from_singsalon(ssconnect)
           bar.increment
         end
       end
@@ -999,6 +1038,22 @@ module SmuleAuto
       end
     end
 
+    desc "download_songs(user, *filters)", "download_songs"
+    option :missing_only,  type: :boolean
+    def download_songs(user, *filters)
+      cli_wrap do
+        tdir     = _tdir_check(options[:data_dir])
+        content  = Content.new(user, tdir)
+        to_download = []
+        content.each(filter:filters.join('/')) do |sid, sinfo|
+          to_download << sinfo
+        end
+        _download_list(to_download, tdir)
+        content.writeback
+        true
+      end
+    end
+
     desc "scan_favs user", "Scan list of favorites for user"
     def scan_favs(user)
       cli_wrap do
@@ -1052,6 +1107,13 @@ module SmuleAuto
 
     desc "play user", "Play songs from user"
     option :myopen,  type: :boolean, desc:'Play my opens also'
+    long_desc <<-LONGDESC
+      Start a CLI player to play songs from user.  Player support various
+      command to control the song and how to play.
+
+      Player keep the play state on the file splayer.state to allow it
+      to resume where it left off from the previous run.
+    LONGDESC
     def play(user)
       cli_wrap do
         tdir = _tdir_check(options[:data_dir])
@@ -1181,12 +1243,13 @@ module SmuleAuto
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
         content = Content.new(user, tdir)
-        options.update(
+        moptions = options.to_hash.transform_keys(&:to_sym)
+        moptions.update(
           pbar:   "Move content from #{old_name}",
           filter: "record_by=#{old_name}",
         )
         changed = false
-        content.each(options) do |k, v|
+        content.each(moptions) do |k, v|
           new_record_by = v[:record_by].gsub(old_name, new_name)
           if new_record_by != v[:record_by]
             v[:record_by] = new_record_by
@@ -1196,6 +1259,7 @@ module SmuleAuto
           end
         end
         content.writeback if changed
+        true
       end
     end
   end
@@ -1203,7 +1267,4 @@ end
 
 if (__FILE__ == $0)
   SmuleAuto::Main.start(ARGV)
-  options = [
-    ['--no_auth',     '-n', 0],
-  ]
 end

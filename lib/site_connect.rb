@@ -136,9 +136,7 @@ class SDriver
     if data
       Plog.info "Enter on #{selector} - #{data[0..19]}" if @options[:verbose]
       elem = @driver.find_element(:css, selector)
-      if options[:clear]
-        elem.send_keys(''*120)
-      end
+      elem.clear unless options[:append]
       elem.send_keys(data)
     end
   end
@@ -164,7 +162,8 @@ class SiteConnect
       auth    = options[:auth]
       identity, password = auth.split(':')
       sdriver    = SDriver.new(options[:url], user:identity,
-                               browser:options[:browser])
+                               browser:options[:browser],
+                               verbose:options[:verbose])
       sdriver.click_and_wait('#login-link', 5)
       sdriver.type('#identity', identity)
       sdriver.type('#password', password)
@@ -176,7 +175,8 @@ class SiteConnect
       auth    = options[:auth]
       identity, password = auth.split(':')
       sdriver = SDriver.new(options[:url], user:identity,
-                             browser:options[:browser])
+                             browser:options[:browser],
+                             verbose:options[:verbose])
       sdriver.click_and_wait('paper-button[data-action="signin"]')
       sdriver.type('#identifierId', identity + "\n")
       sdriver.type('input[name="password"]', password + "\n")
@@ -187,7 +187,7 @@ class SiteConnect
     end
 
     def connect_smule(options)
-      sdriver = SDriver.new(options[:url], browser:options[:browser])
+      sdriver = SDriver.new(options[:url], options)
       if !options[:no_auth] && auth = options[:auth]
         sdriver.goto("/user/login")
         identity, password = auth.split(':')
@@ -201,7 +201,7 @@ class SiteConnect
     end
 
     def connect_singsalon(options)
-      sdriver = SDriver.new('https://sing.salon', browser:options[:browser])
+      sdriver = SDriver.new('https://sing.salon', options)
       if !options[:no_auth] && auth = options[:auth]
         identity, password = auth.split(':')
         sdriver.click_and_wait('#elUserSignIn')
@@ -213,7 +213,7 @@ class SiteConnect
     end
 
     def connect_other(options)
-      SDriver.new(options[:url], browser:options[:browser])
+      SDriver.new(options[:url], options)
     end
   end
   
@@ -223,7 +223,7 @@ class SiteConnect
     unless config
       raise "Unsupported target: #{site}"
     end
-    config.update(options.compact)
+    config.update(options.transform_keys(&:to_sym).compact)
     case site
     when :gmusic
       @driver = SiteConnect.connect_gmusic(config)
