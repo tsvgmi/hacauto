@@ -188,7 +188,7 @@ class SiteConnect
 
     def connect_smule(options)
       sdriver = SDriver.new(options[:url], options)
-      if !options[:no_auth] && auth = options[:auth]
+      if !options[:skip_auth] && auth = options[:auth]
         sdriver.goto("/user/login")
         identity, password = auth.split(':')
         sdriver.click_and_wait('a[data-test-id="login-type-btnlogin-acc"]') # email
@@ -202,7 +202,7 @@ class SiteConnect
 
     def connect_singsalon(options)
       sdriver = SDriver.new('https://sing.salon', options)
-      if !options[:no_auth] && auth = options[:auth]
+      if !options[:skip_auth] && auth = options[:auth]
         identity, password = auth.split(':')
         sdriver.click_and_wait('#elUserSignIn')
         sdriver.type('input[name="auth"]', identity + "\n")

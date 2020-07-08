@@ -16,6 +16,8 @@ require 'tty-spinner'
 require 'tty-progressbar'
 require 'thor'
 
+require 'smule-content'
+
 def clean_emoji(str='')
   str=str.force_encoding('utf-8').encode
   arr_regex=[/[\u{1f600}-\u{1f64f}]/,/[\u{2702}-\u{27b0}]/,/[\u{1f680}-\u{1f6ff}]/,/[\u{24C2}-\u{1F251}]/,/[\u{1f300}-\u{1f5ff}]/]
@@ -98,18 +100,33 @@ end
 
 module SmuleAuto
   class AudioHandler
+    attr_reader :exist
+
     def initialize(link, options={})
       @options = options
       @olink   = link.sub(/\/ensembles$/, '')
+      @exist   = false
+
       source   = HTTP.follow.get(@olink).to_s 
       document = Nokogiri::HTML(source)
+      asset    = nil
       if stream = document.at('meta[name="twitter:player:stream"]')
         @link = stream['content']
-        asset = document.css('head script')[0].text.split("\n").
-          grep(/Recording:/)[0].sub(/^\s*Recording: /, '')[0..-2]
-        @song_info_url = 'https://www.smule.com' +
-          JSON.parse(asset).dig('performance', 'song_info_url')
-      else
+        asset = document.css('head script')[0].text.split("\n").grep(/Recording:/)[0].sub(/^\s*Recording: /, '')[0..-2]
+      elsif stream = document.css('script')[0]
+        if asset = stream.text.split("\n").grep(/^\s+Recording: /)[0]
+          asset = asset.sub(/^\s+Recording: /, '').sub(/,$/, '')
+        end
+      end
+      if asset
+        song_info_url = (JSON.parse(asset) || {}).dig('performance', 'song_info_url')
+        if song_info_url
+          @song_info_url = 'https://www.smule.com' + song_info_url
+          (JSON.parse(asset) || {}).dig('performance', 'song_info_url')
+          @exist = true
+        end
+      end
+      unless @exist
         Plog.error("Link no longer contain song - #{link}")
       end
     end
@@ -119,19 +136,27 @@ module SmuleAuto
       ssconnect.click_and_wait('input.ipsButton[value~=Fetch]')
 
       # This open up new window
-      cur_handle = ssconnect.window_handle
       handles    = ssconnect.window_handles
+      cur_handle = ssconnect.window_handle
       begin
-        Plog.info("Switch to window #{handles[-1]} to download") if @options[:verbose]
-        ssconnect.switch_to.window(handles[-1])
-        sleep(4)
+        if handles.size > 1
+          Plog.info("Switch to window #{handles[-1]} to download") if @options[:verbose]
+          ssconnect.switch_to.window(handles[-1])
+          sleep(4)
+        end
         ssconnect.click_and_wait('a.ipsButton[download]')
 
+        wait_time = 0
         while true
+          if wait_time >= 60
+            Plog.error("Timeout waitint for file to appear in Downloads")
+            return false
+          end
           m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
             sort_by{|r| File.mtime(r)}.last
           break if m4file
           sleep(1)
+          wait_time += 1
         end
 
         Plog.info("Waiting for #{m4file}") if @options[:verbose]
@@ -145,30 +170,12 @@ module SmuleAuto
       rescue => errmsg
         Plog.dump_error(errmsg:errmsg)
       ensure
-        ssconnect.close
-        ssconnect.switch_to.window(cur_handle)
+        if handles.size > 1
+          ssconnect.close
+          ssconnect.switch_to.window(cur_handle)
+        end
       end
       test(?s, ofile)
-    end
-
-    def get_audio(ofile)
-      if @link
-        if false
-          # This trigger IP ban.
-          audio = HTTP.follow.get(@link)
-          File.open(ofile, 'wb') do |f|
-            f.write(audio.body)
-          end
-          Plog.info("Wrote #{ofile} from #{@link}.  Wait a bit")
-          sleep(5+rand(5))
-        else
-          Plog.info(audio_link:@link)
-        end
-        true
-      else
-        Plog.error("No audio file found previously")
-        false
-      end
     end
 
     def get_lyric
@@ -178,9 +185,12 @@ module SmuleAuto
       sdoc  = Nokogiri::HTML(curl(@song_info_url))
       asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[1].
         sub(/^\s*Song: /, '')[0..-2]
-      CGI.unescapeHTML(JSON.parse(asset).dig('lyrics')).
-                  gsub(/<br>/, "\n").
-                  gsub(/<p>/, "\n\n")
+      if asset = JSON.parse(asset)
+        CGI.unescapeHTML(asset.dig('lyrics')).gsub(/<br>/, "\n").
+                    gsub(/<p>/, "\n\n")
+      else
+        nil
+      end
     end
   end
 
@@ -195,314 +205,13 @@ module SmuleAuto
     end
   end
 
-  class Content
-    attr_reader :content, :singers, :tags
-
-    def initialize(user, cdir='.')
-      @user     = user
-      @cdir     = cdir
-      @cfile    = "#{cdir}/content-#{user}.yml"
-      @sfile    = "#{cdir}/singers-#{user}.yml"
-      @tagfile = "#{cdir}/songtags2.yml"
-      @loaded   = Time.at(0)
-      refresh
-    end
-
-    def select_sids(sids)
-      @content.select{|k, v| sids.include?(k)}.values
-    end
-
-    def select_set(ftype, value)
-      newset = []
-
-      if ftype == :recent
-        days = value.to_i
-        days = 7 if days <= 0
-        ldate  = Time.now - days*24*3600
-      end
-      Plog.dump_info(ftype:ftype, value:value)
-      if ftype == :url
-        if result = @content.find{|k, v| v[:href] == value}
-          newset = [result[1]]
-        end
-      else
-        @content.each do |k, v|
-          case ftype
-          when :favs
-            newset << v if (v[:isfav] || v[:oldfav])
-          when :record_by
-            newset << v if v[:record_by].downcase.include?(value.downcase)
-          when :title
-            newset << v if v[:stitle].include?(value.downcase)
-          when :recent
-            newset << v if created_value(v[:created]) >= ldate
-          when :star
-            newset << v if v[:stars].to_i >= value.to_i
-          end
-        end
-      end
-      Plog.info("Selecting #{newset.size} songs")
-      newset
-    end
-
-    def refresh
-      if File.mtime(@cfile) <= @loaded
-        Plog.info("File #{@cfile} was not changed. Skip")
-        return
-      end
-      if test(?s, @cfile)
-        Plog.info("Loading #{@cfile}")
-        @content = YAML.load_file(@cfile)
-      else
-        Plog.warn("#{@cfile} does not exist or empty")
-        @content = {}
-      end
-      @content.each do |k, r|
-        r[:sincev] = time_since(r[:since]) / 3600.0
-      end
-      Plog.info("Loading #{@sfile}")
-      @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
-      @tags    = {}
-      if test(?f, @tagfile)
-        Plog.info("Loading #{@tagfile}")
-        File.open(@tagfile) do |fid|
-          while l = fid.gets
-            begin
-              k, v = l.chomp.split(':::')
-              if v && !v.empty?
-                @tags[k] = v.split(',')
-              end
-            rescue => errmsg
-              Plog.dump_error(errmsg:errmsg.to_s, l:l)
-            end
-          end
-        end
-      end
-      @loaded = Time.now
-    end
-
-    def following
-      @singers.select{|k, v| v[:following]}
-    end
-
-    def follower
-      @singers.select{|k, v| v[:follower]}
-    end
-
-    def _write_with_backup(mfile, content, options={})
-      wset = [mfile]
-      if options[:backup]
-        wset << File.join('/Volumes/Voice/SMULE', File.basename(mfile))
-      end
-      wset.uniq.each do |afile|
-        b2file = afile + ".bak"
-        if test(?f, afile)
-          FileUtils.move(afile, b2file, verbose:true)
-        end
-        begin
-          File.open(afile, 'w') do |fod|
-            Plog.info("Writing #{content.size} entries to #{afile}")
-            case options[:format]
-            when :text
-              fod.puts content
-            else
-              fod.puts content.to_yaml
-            end
-          end
-        rescue Errno::ENOENT => errmsg
-          Plog.dump_error(file:afile, errmsg:errmsg)
-        end
-      end
-    end
-
-    def writeback(backup=true)
-      if File.mtime(@cfile) > @loaded
-        Plog.error("File #{@cfile} was updated after load - #{@loaded}")
-      end
-
-      @content = @content.select do |sid, asong|
-        !asong[:deleted]
-      end
-      @content.each do |sid, asong|
-        stitle = to_search_str(asong[:title])
-        asong[:stitle] ||= stitle
-      end
-      woption = {format: :yaml, backup: backup}
-      _write_with_backup(@cfile, @content, woption)
-      _write_with_backup(@sfile, @singers, woption) if @schanged
-      @loaded   = Time.now
-
-      newsong = false
-      @content.each do |sid, asong|
-        title = asong[:title]
-        stitle = to_search_str(title)
-        if stitle && !stitle.empty?
-          unless @tags[stitle]
-            @tags[stitle] = []
-            newsong = true
-          end
-        end
-      end
-
-      if newsong || @newtag
-        wtag = @tags.to_a.sort.
-          map {|k2, v| "#{k2}:::#{v.join(',')}"}
-        woption = {format: :text, backup: backup}
-        _write_with_backup(@tagfile, wtag, woption)
-        @newtag = false
-      end
-      self
-    end
-
-    def add_tag(song, tag)
-      key = song[:stitle]
-      @tags[key] = ((@tags[key] || []) + [tag]).uniq
-      @newtag    = true
-    end
-
-    def set_follows(followings, followers)
-      # Clear the list first
-      @singers.each do |singer, sinfo|
-        @singers[singer].delete(:following)
-        @singers[singer].delete(:follower)
-      end
-      followings.each do |singer|
-        @singers[singer[:name]] = singer
-        @singers[singer[:name]][:following] = true
-      end
-      followers.each do |singer|
-        @singers[singer[:name]] ||= singer
-        @singers[singer[:name]][:follower] = true
-      end
-      @schanged = true
-      self
-    end
-
-    def add_new_songs(block, isfav=false)
-      require 'time'
-
-      now = Time.now
-
-      # Favlist must be reset if specified
-      if isfav
-        @content.each do |sid, sinfo|
-          sinfo.delete(:isfav)
-        end
-      end
-
-      block.each do |r|
-        r[:updated_at] = now
-        r[:isfav]      = isfav if isfav
-        # Keep the 1st created, b/c it is more accurate
-        sid = r[:sid]
-
-        r.delete(:since)
-        r.delete(:sincev)
-        if c = @content[sid]
-          c.update(
-            listens:   r[:listens],
-            loves:     r[:loves],
-            since:     r[:since],
-            record_by: r[:record_by],   # In case user change login
-            isfav:     r[:isfav],
-            orig_city: r[:orig_city],
-            media_url: r[:media_url],
-            sfile:     r[:sfile] || c[:sfile],
-            ofile:     r[:ofile] || c[:ofile],
-          )
-          if c[:isfav]
-            c[:oldfav] = true
-          end
-        else
-          @content[sid] = r
-        end
-      end
-      self
-    end
-
-    def list
-      block = []
-      @content.each do |href, r|
-        title     = r[:title].scrub
-        record_by = r[:record_by]
-        stitle    = to_search_str(title)
-        block << [title, record_by, stitle]
-      end
-      block.sort_by {|t, r, st| "#{st}:#{r}"}.each do |title, record_by, st|
-        puts "%-50.50s %-24.24s %s" % [title, record_by, st]
-      end
-      self
-    end
-
-    # Also select_set implement an alternate selection
-    def _build_filter_from_string(filter)
-      if filter.start_with?('@')
-        ffile = filter[1..-1]
-        filter = Hash[File.read(ffile).split("\n").map{|f| f.split('=')}]
-        filter[:fname] = ffile
-      else
-        filter = Hash[filter.split('/').map{|f| f.split('=')}]
-      end
-      filter = filter.transform_keys(&:to_sym)
-      filter.each do |k, v|
-        if k == :created
-          filter[k] = Time.parse(v)
-        else
-          filter[k] = v.split(',') if v.include?(',')
-        end
-      end
-      Plog.dump_info(filter:filter)
-      filter
-    end
-
-    def each(options={})
-      filter = options[:filter] || {}
-      filter = _build_filter_from_string(filter) if filter.is_a?(String)
-      econtent = []
-      @content.each do |song_id, sinfo|
-        if filter.size > 0
-          pass = true
-          filter.each do |fk, fv|
-            if fv.is_a?(Array)
-              unless fv.include?(sinfo[fk].to_s)
-                pass = false
-                break
-              end
-            else
-              if fk == :created
-                if sinfo[fk].to_time <= fv
-                  pass = false
-                  break
-                end
-              else
-                unless sinfo[fk].to_s =~ /#{fv}/i
-                  pass = false
-                  break
-                end
-              end
-            end
-          end
-          next unless pass
-        end
-        econtent << [song_id, sinfo]
-      end
-      if options[:pbar]
-        bar = ProgressBar.create(title:options[:pbar], total:econtent.size,
-                                format:'%t %B %c/%C')
-      end
-      econtent.each do |k, v|
-        yield k, v
-        bar.increment if options[:pbar]
-      end
-      true
-    end
-  end
 
   class SmuleSong
     def initialize(sinfo, options={})
-      @info    = sinfo
-      @options = options
-      @surl    = "https://smule.com#{@info[:href]}"
+      @info          = sinfo
+      @options       = options
+      @surl          = "https://smule.com#{@info[:href]}"
+      @audio_handler = AudioHandler.new(@surl, @options)
     end
 
     def [](key)
@@ -566,14 +275,17 @@ module SmuleAuto
       begin
         if @options[:force] || !test(?f, @info[:sfile])
           if ssconnect
-            audio_handler = AudioHandler.new(@surl, @options)
+            @audio_handler = AudioHandler.new(@surl, @options)
+            unless @audio_handler.exist
+              return false
+            end
             Plog.info("Downloading for #{@info[:title]}")
-            if audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
-              @lyric = audio_handler.get_lyric
+            if @audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
               update_mp4tag
             end
           else
             Plog.error("Need to download song, but there is no connection")
+            return false
           end
         end
         unless test(?l, @info[:ofile])
@@ -585,7 +297,9 @@ module SmuleAuto
         end
       rescue => errmsg
         Plog.dump_error(errmsg:errmsg)
+        return false
       end
+      true
     end
 
     def update_mp4tag
@@ -603,26 +317,36 @@ module SmuleAuto
         year    = cdate.year
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
 
-        command = "atomicparsley #{@info[:sfile]} --overWrite"
+        command = "atomicparsley #{@info[:sfile]}"
 
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
         curl(@info[:avatar], lcfile)
-        command += " --artwork #{lcfile}"
+        if test(?f, lcfile) && `file #{lcfile}` =~ /JPEG/
+          command += " --artwork #{lcfile}"
+        end
         command += " --title '#{title}'"
         command += " --artist '#{artist}'"
         command += " --album '#{album}'"
         command += " --year '#{year}'"
         command += " --comment '#{comment}'"
 
-        if @lyric
+        if lyric = @audio_handler.get_lyric
           tmpf = Tempfile.new("lyric")
-          tmpf.puts(@lyric)
+          tmpf.puts(lyric)
           tmpf.close
-          command += " --lyricsFile #{tmpf.path}"
+          l_flag = " --lyricsFile #{tmpf.path}"
+        else
+          l_flag = ''
         end
 
-        system("set -x; #{command}; rm -f #{lcfile}")
+        output = `(set -x; #{command} --overWrite #{l_flag}) | tee /dev/tty`
+
+        # Not enough room - try drop the lyric part
+        if output =~ /insufficient space to retag the source file/io
+          system("set -x; #{command}")
+        end
+        FileUtils.remove(lcfile, verbose:true)
         true
       else
         false
@@ -700,7 +424,7 @@ module SmuleAuto
 
     def initialize(user, options={})
       @user      = user
-      @options   = options.transform_keys(&:to_sym)
+      @options   = options
       @connector = SiteConnect.new(:smule, @options)
       @spage     = SelPage.new(@connector.driver)
       sleep(1)
@@ -763,20 +487,6 @@ module SmuleAuto
       new_size  = result.size - count
       set_unfavs(result[new_size..-1])
       result[0..new_size-1]
-    end
-
-    def scan_followers
-      @spage.goto(@user)
-      @spage.click_and_wait('._16qibwx:nth-child(4)')
-      sleep(2)
-      _scan_users
-    end
-
-    def scan_followings
-      @spage.goto(@user)
-      @spage.click_and_wait('._16qibwx:nth-child(5)')
-      sleep(2)
-      _scan_users
     end
 
     def _scroll_to_bottom(pages=nil)
@@ -902,19 +612,23 @@ module SmuleAuto
         flist
       end
 
-      def _download_list(flist, tdir)
+      def _download_list(flist, tdir, ssconnect=nil)
         unless flist = _prepare_download(flist, tdir)
-          return
+          return 0
         end
         FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
         bar = ProgressBar.create(title:"Downloading songs #{flist.size}",
                                  total:flist.size)
-        ssconnect = SiteConnect.new(:singsalon, options).driver
+        ssconnect ||= SiteConnect.new(:singsalon, options).driver
         ssconnect.goto('/smule-downloader')
+        fcount = 0
         flist.each do |afile|
-          SmuleSong.new(afile, options).download_from_singsalon(ssconnect)
+          if SmuleSong.new(afile, options).download_from_singsalon(ssconnect)
+            fcount += 1
+          end
           bar.increment
         end
+        fcount
       end
 
       def _connect_site(site=:smule)
@@ -946,7 +660,8 @@ module SmuleAuto
           return []
         end
         collab_urls = ensembles.sort_by{|r| created_value(r[:created])}.reverse.map{|r| r[:href]}
-        result      = Scanner.new(user, options).scan_collab_list(collab_urls)
+        result      = Scanner.new(user, writable_options).
+          scan_collab_list(collab_urls)
         content.add_new_songs(result, false)
         result
       end
@@ -972,8 +687,8 @@ module SmuleAuto
 
     class_option :browser,  type: :string, default:'firefox',
       desc:'Browser to use (firefox|chrome)'
-    class_option :no_auth,  type: :boolean,
-      desc:'Do not login from browser (anonymous use)'
+    class_option :skip_auth,  type: :boolean, 
+      desc:'Login account from browser (not anonymous)'
     class_option :days,     type: :numeric, default:7,
       desc:'Days to look back'
     class_option :download, type: :boolean, desc:'Downloading songs'
@@ -1039,7 +754,6 @@ module SmuleAuto
     end
 
     desc "download_songs(user, *filters)", "download_songs"
-    option :missing_only,  type: :boolean
     def download_songs(user, *filters)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
@@ -1078,7 +792,8 @@ module SmuleAuto
           raise "Target dir #{tdir} not accessible to download music to"
         end
         favset  = API.new.get_favs(user)
-        result  = Scanner.new(user, options).unfavs_old(count.to_i, favset)
+        result  = Scanner.new(user, writable_options).
+          unfavs_old(count.to_i, favset)
         Content.new(user, tdir).add_new_songs(result, true).writeback if tdir
         result
       end
@@ -1101,6 +816,80 @@ module SmuleAuto
           fset << users
         end
         Content.new(user, tdir).set_follows(fset[0], fset[1]).writeback
+        true
+      end
+    end
+
+    desc "open_on_itune(user, *filters)", "open_on_itune"
+    option :time,  type: :numeric, default:10
+    def open_on_itune(user, *filters)
+      cli_wrap do
+        tdir     = _tdir_check(options[:data_dir])
+        content  = Content.new(user, tdir)
+        to_download = []
+        content.each(filter:filters.join('/')) do |sid, sinfo|
+          sfile = sinfo[:sfile]
+          if sfile && test(?f, sfile)
+            Plog.dump_info(sinfo:sinfo, _ofmt:'Y')
+            system("open -g #{sfile}")
+            sleep(options[:time])
+          elsif sfile
+            Plog.info("#{sfile} not found.  Removing the stale name")
+          end
+        end
+        true
+      end
+    end
+
+    desc "fix_mp3_files(user, *filters)", "fix_mp3_meta"
+    option :open,      type: :boolean, desc:'Open after fixing to check'
+    option :overwrite, type: :boolean, desc:'Open after fixing to check'
+    def fix_mp3_files(user, *filters)
+      cli_wrap do
+        moptions = writable_options.update(
+          pbar:  'Correct MP3 meta',
+          force: true,
+          filter: filters.join('/'),
+        )
+        tdir      = _tdir_check(moptions[:data_dir])
+        content   = Content.new(user, tdir)
+        ssconnect = SiteConnect.new(:singsalon, moptions).driver
+        ssconnect.goto('/smule-downloader')
+        content.each(moptions) do |sid, sinfo|
+          sfile = sinfo[:sfile]
+          do_download = false
+
+          if sfile =~ /Voice-\d+/
+            sfile = sinfo[:sfile] = sfile.sub(/Voice-1/, 'Voice')
+          end
+
+          if options[:overwrite]
+            do_download = true
+          else
+            if sfile && test(?f, sfile)
+              wset = `atomicparsley #{sfile} -t`.split("\n").map {|l|
+                key, value = l.split(/\s+contains:\s+/)
+                key = key.split[-1].gsub(/["]/, '')[1..-1].to_sym
+                [key, value]
+              }
+              wset  = Hash[wset]
+              album = sinfo[:created].strftime("Smule-%Y.%m")
+              year  = sinfo[:created].strftime("%Y")
+              if wset[:nam] == 'ver:1' || wset[:alb] != album || \
+                  wset[:day] != year
+                do_download = true
+              end
+            else
+              do_download = true
+            end
+          end
+
+          if do_download
+            if _download_list([sinfo], tdir, ssconnect) > 0
+              system("open -g #{sfile}") if moptions[:open]
+            end
+          end
+        end
         true
       end
     end
@@ -1196,44 +985,6 @@ module SmuleAuto
       end
     end
 
-    desc "add_mp3_comment user", "Download/add mp3 metadata into file"
-    def add_mp3_comment(user)
-      cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = Content.new(user, tdir)
-        changed = false
-        content.each(options) do |k, v|
-          unless @options[:force]
-            if v[:ofile] && test(?l, v[:ofile]) &&
-               v[:sfile] && test(?f, v[:sfile])
-              next
-            end
-          end
-          v[:ofile], v[:sfile] = _ofile(v)
-          if !test(?f, v[:sfile]) || (File.size(v[:sfile]) < 1_000_000) ||
-              !test(?l, v[:ofile])
-            SmuleSong.new(v, force:true).download_from_singsalon
-          else
-            SmuleSong.new(v, force:true).update_mp4tag
-          end
-
-          # Remove content, if I could not get the source.  Could be
-          # removed from smule already
-          unless test(?f, v[:sfile])
-            Plog.info("Removing #{v[:sfile]}")
-            content.content.delete(k)
-          end
-
-          Plog.dump_info(v:v)
-          changed = true
-        end
-        if changed
-          content.writeback
-        end
-        true
-      end
-    end
-
     desc "move_singer user old_name new_name", "Move songs from old singer to new singer"
     long_desc <<-LONGDESC
       Singer changes login all the times.  That would change control data as
@@ -1243,7 +994,7 @@ module SmuleAuto
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
         content = Content.new(user, tdir)
-        moptions = options.to_hash.transform_keys(&:to_sym)
+        moptions = writable_options
         moptions.update(
           pbar:   "Move content from #{old_name}",
           filter: "record_by=#{old_name}",

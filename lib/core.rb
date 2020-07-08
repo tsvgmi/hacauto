@@ -38,6 +38,10 @@ module ThorAddition
     end
     return 0
   end
+
+  def writable_options
+    options.transform_keys(&:to_sym)
+  end
 end
 
 # Functions to support CLI interaction (i.e. options processing,
@@ -801,7 +805,11 @@ class Plog
 
     def dump_info(obj)
       PLogger.set_clevel(1)
-      Plog.info(obj.inspect)
+      if obj[:_ofmt] == 'Y'
+        Plog.info(obj.to_yaml)
+      else
+        Plog.info(obj.inspect)
+      end
       PLogger.set_clevel(0)
     end
 
