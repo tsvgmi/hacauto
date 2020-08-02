@@ -229,7 +229,7 @@ EOM
       editable = spage.page.css("div._8hpz8v")[2].text
       if editable == 'Edit'
         spage.click_and_wait("a._117spsl", 2, 1)  # Edit
-        spage.type("textarea#message", text)  # Enter tag
+        spage.type("textarea#message", text, append:true)  # Enter tag
         spage.click_and_wait("input#recording-save")
       else
         Plog.info "Song is not editable"

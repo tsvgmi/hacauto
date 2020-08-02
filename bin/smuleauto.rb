@@ -3,12 +3,11 @@
 # File:        hacauto.rb
 #---------------------------------------------------------------------------
 #++
-require File.dirname(__FILE__) + "/../etc/toolenv"
+require_relative "../etc/toolenv"
 require 'nokogiri'
 require 'yaml'
 require 'cgi'
 require 'http'
-require 'ruby-progressbar'
 require 'core'
 require 'site_connect'
 require 'smule_player'
@@ -210,7 +209,7 @@ module SmuleAuto
     def initialize(sinfo, options={})
       @info          = sinfo
       @options       = options
-      @surl          = "https://smule.com#{@info[:href]}"
+      @surl          = "https://www.smule.com#{@info[:href]}"
       @audio_handler = AudioHandler.new(@surl, @options)
     end
 
@@ -313,6 +312,7 @@ module SmuleAuto
         date    = cdate.strftime("%Y-%m-%d")
         album   = cdate.strftime("Smule-%Y.%m")
         artist  = @info[:record_by].gsub(',', ', ')
+        aartist = @info[:record_by].gsub(/(,?)#{}(,?)/, "\1\2")
         comment = "#{date} - #{href}"
         year    = cdate.year
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
@@ -364,14 +364,14 @@ module SmuleAuto
       offset    = 0
       limit     = (options[:limit] || 10_000).to_i
       first_day = Time.now - (options[:days] || 7).to_i*24*3600
+      bar       = TTY::ProgressBar.new("Checking songs [:bar]", total:500)
       catch(:done) do
         while true
-          Plog.dump_info(path:"#{url}?offset=#{offset}")
-          result = JSON.parse(curl("#{url}?offset=#{offset}"))
+          ourl = "#{url}?offset=#{offset}"
+          bar.log(ourl) if @options[:verbose]
+          result = JSON.parse(curl(ourl))
           slist  = result['list']
           slist.each do |info|
-            #Plog.dump_info(info:info)
-            #puts info.to_yaml
             record_by = [info.dig('owner', 'handle')]
             info['other_performers'].each do |rinfo|
               record_by << rinfo['handle']
@@ -397,15 +397,17 @@ module SmuleAuto
             }
             allset << rec
             if created <= first_day
-              Plog.info("Created less than #{first_day}")
+              bar.log("Created less than #{first_day}")
               throw :done
             end
             throw :done if (allset.size >= limit)
           end
           offset = result['next_offset']
           throw :done if offset < 0
+          bar.advance(slist.size)
         end
       end
+      bar.finish
       allset
     end
 
@@ -435,7 +437,7 @@ module SmuleAuto
 
     def scan_collab_list(collab_links)
       result    = []
-      bar       = ProgressBar.create(title:"Checking collabs",
+      bar       = TTY::ProgressBar.new("Checking collabs [:bar] :percent",
                                    total:collab_links.size)
       collab_links.each do |alink|
         @spage.goto(alink)
@@ -445,7 +447,7 @@ module SmuleAuto
           sinfo.update(parent:alink)
           result << sinfo
         end
-        bar.increment
+        bar.advance
       end
       Plog.info("Found #{result.size} songs in collabs")
       result
@@ -491,12 +493,13 @@ module SmuleAuto
 
     def _scroll_to_bottom(pages=nil)
       pages ||= 50
-      bar    = ProgressBar.create(title:"Scroll to end", total:pages)
+      bar    = TTY::ProgressBar.new("Scroll to end [:bar] :percent",
+                                    total:pages)
       (1..pages).each_with_index do |apage, index|
         @spage.execute_script("window.scrollBy({top:700, left:0, behaviour:'smooth'})")
         # Scroll fast, and you'll be banned.  So slowly
         sleep 1
-        bar.increment
+        bar.advance
       end
       @spage.refresh
     end
@@ -519,22 +522,6 @@ module SmuleAuto
       end
       Plog.dump_info(user:result.size)
       result
-    end
-
-    def _each_main_song(pages)
-      _scroll_to_bottom(pages)
-      sitems       = @spage.css("._8u57ot")
-      result       = []
-      collab_links = []
-      bar          = ProgressBar.create(title:"Checking songs",
-                                        total:sitems.size)
-      sitems.each do |sitem|
-        plink = sitem.css('a._1sgodipg')[0]
-        next unless plink
-        next if sitem.css('._1wii2p1').size <= 0
-        yield sitem
-        bar.increment
-      end
     end
 
     def _scan_a_collab_song(sitem)
@@ -578,7 +565,8 @@ module SmuleAuto
       end
 
       def _prepare_download(flist, tdir)
-        bar     = ProgressBar.create(title:"Preparing list #{flist.size}", total:flist.size)
+        bar     = TTY::ProgressBar.new("Preparing list [:bar] :percent",
+                                       total:flist.size)
         flist   = flist.select do |afile|
           afile[:ofile], afile[:sfile] = _ofile(afile)
           odir          = File.dirname(afile[:ofile])
@@ -594,7 +582,7 @@ module SmuleAuto
             Plog.dump_error(errmsg:errmsg, sfile:afile[:sfile],
                             ofile:afile[:ofile])
           end
-          bar.increment
+          bar.advance
           if options[:force]
             true
           else
@@ -612,21 +600,22 @@ module SmuleAuto
         flist
       end
 
-      def _download_list(flist, tdir, ssconnect=nil)
+      def _download_list(flist, tdir, user, ssconnect=nil)
         unless flist = _prepare_download(flist, tdir)
           return 0
         end
         FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
-        bar = ProgressBar.create(title:"Downloading songs #{flist.size}",
-                                 total:flist.size)
+        bar = TTY::ProgressBar.new("Downloading songs [:bar] :percent",
+                                   total:flist.size)
         ssconnect ||= SiteConnect.new(:singsalon, options).driver
         ssconnect.goto('/smule-downloader')
         fcount = 0
         flist.each do |afile|
           if SmuleSong.new(afile, options).download_from_singsalon(ssconnect)
             fcount += 1
+            system("open -g #{afile[:sfile]}") if options[:open]
           end
-          bar.increment
+          bar.advance
         end
         fcount
       end
@@ -676,7 +665,7 @@ module SmuleAuto
       def _collect_songs(user, content)
         limit   = (options[:limit] || 10_000).to_i
         days    = (options[:days] || 7).to_i
-        sapi    = API.new
+        sapi    = API.new(options)
         perfset = sapi.get_performances(user, limit:limit, days:days)
         content.add_new_songs(perfset, false)
         favset  = sapi.get_favs(user)
@@ -699,6 +688,7 @@ module SmuleAuto
       desc:'Data directory to keep songs (m4a)'
     class_option :force,    type: :boolean
     class_option :verbose,  type: :boolean
+    class_option :open,     type: :boolean, desc: 'Opening mp4 after download'
 
     desc "collect_collabs user", "Collect songs others join"
     def collect_collabs(user)
@@ -709,7 +699,7 @@ module SmuleAuto
         if collabs.size <= 0
           return true
         end
-        _download_list(collabs, tdir) if options[:download]
+        _download_list(collabs, tdir, user) if options[:download]
         content.writeback
         true
       end
@@ -724,7 +714,7 @@ module SmuleAuto
         if perfset.size <= 0
           return true
         end
-        _download_list(perfset, tdir) if options[:download]
+        _download_list(perfset, tdir, user) if options[:download]
 
         # Redo since download list will setup ofile field
         content.add_new_songs(perfset, false)
@@ -746,7 +736,7 @@ module SmuleAuto
           return true
         end
         if options[:download]
-          _download_list(newsongs + collabs, tdir)
+          _download_list(newsongs + collabs, tdir, user)
         end
         content.writeback
         true
@@ -762,7 +752,7 @@ module SmuleAuto
         content.each(filter:filters.join('/')) do |sid, sinfo|
           to_download << sinfo
         end
-        _download_list(to_download, tdir)
+        _download_list(to_download, tdir, user)
         content.writeback
         true
       end
@@ -885,7 +875,7 @@ module SmuleAuto
           end
 
           if do_download
-            if _download_list([sinfo], tdir, ssconnect) > 0
+            if _download_list([sinfo], tdir, user, ssconnect) > 0
               system("open -g #{sfile}") if moptions[:open]
             end
           end
@@ -916,8 +906,8 @@ module SmuleAuto
         tdir      = _tdir_check(options[:data_dir])
         content   = Content.new(user, tdir)
         following = content.singers.select{|k, v| v[:following]}
-        bar = ProgressBar.create(total:content.content.size,
-                                 format:'%t %B %c/%C')
+        bar = TTY::ProgressBar.new("Following [:bar] :percent",
+                                   total:content.content.size)
         content.content.each do |sid, sinfo|
           singers = sinfo[:record_by].split(',')
           singers.select{|r| r != user}.each do |osinger|
@@ -929,7 +919,7 @@ module SmuleAuto
               finfo[:songs] += 1
             end
           end
-          bar.increment
+          bar.advance
         end
         following.each do |asinger, finfo|
           if finfo[:last_join]
