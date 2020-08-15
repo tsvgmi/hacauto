@@ -6,6 +6,7 @@
 # $Id$
 #---------------------------------------------------------------------------
 #++
+require 'tty-progressbar'
 
 module SmuleAuto
   class Content
@@ -29,9 +30,16 @@ module SmuleAuto
       newset = []
 
       if ftype == :recent
-        days = value.to_i
-        days = 7 if days <= 0
-        ldate  = Time.now - days*24*3600
+        if value =~ /,/
+          sday, eday = value.split(',').map{|f| f.to_i}
+        else
+          sday, eday = value.to_i, 0
+        end
+        ldate  = Time.now - sday*24*3600
+        edate  = Time.now - eday*24*3600
+        if ldate > edate
+          ldate, edate = edate, ldate
+        end
       end
       Plog.dump_info(ftype:ftype, value:value)
       if ftype == :url
@@ -41,6 +49,8 @@ module SmuleAuto
       else
         @content.each do |k, v|
           case ftype
+          when :isfav
+            newset << v if v[:isfav]
           when :favs
             newset << v if (v[:isfav] || v[:oldfav])
           when :record_by
@@ -48,7 +58,8 @@ module SmuleAuto
           when :title
             newset << v if v[:stitle].include?(value.downcase)
           when :recent
-            newset << v if created_value(v[:created]) >= ldate
+            newset << v if (created_value(v[:created]) >= ldate &&
+              created_value(v[:created]) <= edate)
           when :star
             newset << v if v[:stars].to_i >= value.to_i
           end
@@ -302,12 +313,12 @@ module SmuleAuto
         econtent << [song_id, sinfo]
       end
       if options[:pbar]
-        bar = ProgressBar.create(title:options[:pbar], total:econtent.size,
-                                format:'%t %B %c/%C')
+        bar = TTY::ProgressBar.new(options[:pbar] + ' [:bar] :percent',
+                                   total:econtent.size)
       end
       econtent.each do |k, v|
         yield k, v
-        bar.increment if options[:pbar]
+        bar.advance if options[:pbar]
       end
       true
     end

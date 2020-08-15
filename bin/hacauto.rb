@@ -103,14 +103,14 @@ class AutoFill
 
   def find_missing_song(slist)
     missing = []
-    bar = ProgressBar.new(slist.size)
+    bar = TTY::ProgressBar.new('Missing [:bar] :percent', slist.size)
     slist.each do |sinfo|
       sname = sinfo[:name]
       if missing?(sname)
         missing << sinfo
-        Plog.info "Missing #{sname} (#{missing.size})"
+        bar.log "Missing #{sname} (#{missing.size})"
       end
-      bar.increment!
+      bar.advance
     end
     missing
   end
@@ -685,16 +685,16 @@ class HACAuto
     def hav_load_songs(sfile)
       options = _getOptions
       slist   = YAML.load_file(sfile)
-      bar     = ProgressBar.new(slist.size)
+      bar     = TTY::ProgressBar.new('Loading song [:bar] :percent', slist.size)
       slist.each do |sinfo|
         unless sinfo[:lyric]
           begin
             sinfo.update(HavSource.new.lyric_info(sinfo[:href]))
           rescue => errmsg
-            Plog.error errmsg
+            bar.log(errmsg.to_s)
           end
         end
-        bar.increment!
+        bar.advance
       end
       options[:ofile] ||= sfile
       _output_data(slist, options)
@@ -808,12 +808,12 @@ class HACAuto
 
       hacfill = AutoFill.new(options)
       _connect_site do |spage|
-        bar = ProgressBar.new(slist.size)
+        bar = TTY::ProgressBar.new('Posting [:bar] :percent', slist.size)
         slist.each_with_index do |sentry, index|
           sname, _surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
-          Plog.info "Next to add is #{sname} - [#{index+1}/#{slist.size}]"
+          bar.log "Next to add is #{sname} - [#{index+1}/#{slist.size}]"
           hacfill.add_to_plist(spage, plname, sentry, options)
-          bar.increment!
+          bar.advance
         end
         if options[:src_url]
           plno = options[:new_id] || plname
