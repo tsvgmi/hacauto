@@ -19,7 +19,8 @@ module SmuleAuto
     def initialize(user, tdir, options={})
       @options  = options
       @roptions = {}
-      @content  = Content.new(user, tdir)
+      @content  = options[:use_db] ? 
+        SmuleDB.new(user, tdir) : Content.new(user, tdir)
       if test(?f, StateFile)
         config  = YAML.load_file(StateFile)
         @clist  = @content.select_sids(config[:sids])
@@ -66,7 +67,8 @@ module SmuleAuto
           print cursor.move_to(0,0)
           system "imgcat -r 5 <#{lfile}"
         end
-        ptags = (tags[sitem[:stitle]] || []).join(', ')
+        #ptags = (tags[sitem[:stitle]] || []).join(', ')
+        ptags = tags[sitem[:stitle]] || ''
         isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ' '
         box   = TTY::Box.frame(top: 0, left: 15,
                 width:TTY::Screen.width-20,
@@ -82,7 +84,8 @@ EOM
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
-        ptags = (tags[witem[:stitle]] || []).join(', ')
+        #ptags = (tags[witem[:stitle]] || []).join(', ')
+        ptags = tags[witem[:stitle]] || ''
         isfav = (witem[:isfav] || witem[:oldfav]) ? 'F' : ''
         row   = [i, isfav, witem[:title], witem[:record_by],
 		 witem[:listens], witem[:loves],
@@ -147,7 +150,11 @@ EOM
 
     def play_asong(sitem, prompt)
       res = {duration:0}
-      if (psecs = SmuleSong.new(sitem).play(@scanner.spage)) <= 0
+      psecs = SmuleSong.new(sitem).play(@scanner.spage)
+      if psecs == :deleted
+        @content.delete_song(sitem)
+        return res
+      elsif psecs <= 0
         return res
       end
       if plength = @roptions[:play_length] 
@@ -217,8 +224,9 @@ EOM
     end
 
     def _set_smule_song_tag(sitem, tag)
-      spage = @scanner.spage
-      msg = spage.page.css('div._1ck56r8').text
+      spage   = @scanner.spage
+      content = spage.refresh
+      msg     = spage.page.css('div._1ck56r8').text
       if msg =~ /#{tag}/
         Plog.info "Message already containing #{tag}"
         return false
@@ -266,7 +274,7 @@ EOM
       rescue => errmsg
         prompt = TTY::Prompt.new
         Plog.dump_error(errmsg:errmsg.to_s, args:args)
-        prompt.keypress("Press any key to continue ...")
+        prompt.keypress("[ME] Press any key to continue ...")
       end
     end
 
@@ -311,10 +319,14 @@ EOH
       pcount  = 0
       _setprompt
       prompt = TTY::Prompt.new
+      sitem  = nil
       while true
         # Replay the same list again if exhausted
         if @clist.size <= 0
           @clist = @played_set.uniq.select{|s| _filter_song(s) != :skip}
+        end
+        if sitem
+          @content.update_song(sitem)
         end
         if sitem = @clist.shift
           unless _song_playable?(sitem)
@@ -426,7 +438,8 @@ EOH
               _refresh_content
             when 'D'
               if prompt.keypress('Are you sure? ') =~ /^y/i
-                sitem[:deleted] = true
+                @content.delete_song(sitem)
+                sitem = nil
                 prompt.keypress("Press any key [:countdown]", timeout:3)
                 break
               end
@@ -441,7 +454,6 @@ EOH
                 _set_favorite(sitem)
                 _set_smule_song_tag(sitem, '#thvfavs')
               end
-              prompt.keypress("Press any key [:countdown]", timeout:3)
             when 'h'
               if param = prompt.ask('URL:')
                 param   = param.sub(%r(^https://www.smule.com), '')
@@ -481,11 +493,13 @@ EOH
               prompt.keypress("Press any key [:countdown]", timeout:3)
             when 'R'                             # Reload script
               _menu_eval do
-                [__FILE__, "lib/smule_player.rb"]. each do |script|
-                  Plog.info("Loading #{script}")
-                  eval "load '#{script}'", TOPLEVEL_BINDING
-                  prompt.keypress("Press any key [:countdown]", timeout:3)
+                [__FILE__, "lib/smule*rb"]. each do |ptn|
+                  Dir.glob(ptn).each do |script|
+                    Plog.info("Loading #{script}")
+                    eval "load '#{script}'", TOPLEVEL_BINDING
+                  end
                 end
+                prompt.keypress("Press any key [:countdown]", timeout:3)
               end
             when 's'                            # Sort current list
               choices = %w(random play love star date title
@@ -500,6 +514,8 @@ EOH
               _save_state(false)
             when 'x'                            # Quit
               return
+            when 'Z'                            # Quit
+              byebug
             end
           end
           #Plog.dump(now:Time.now, endt:endt)

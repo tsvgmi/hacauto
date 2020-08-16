@@ -50,7 +50,7 @@ def to_search_str(str)
   AccentMap.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
   end
-  stitle
+  stitle.strip
 end
 
 def curl(path, ofile=nil)
@@ -238,9 +238,8 @@ module SmuleAuto
       %w(div.error-gone div.page-error).each do |acss|
         if spage.css(acss).size > 0
           Plog.info("#{@info[:title]} is gone")
-          @info[:deleted] = true
           spinner.stop('Done!')
-          return 0
+          return :deleted
         end
       end
       spage.click_and_wait('button._1oqc74f')
@@ -735,18 +734,26 @@ module SmuleAuto
       def _collect_collabs(user, content)
         days      = (options[:days] || 30).to_i
         last_date = (Time.now - days*24*3600)
-        ensembles = []
-        content.content.each do |sid, cinfo|
-          cdate = created_value(cinfo[:created])
-          if cinfo[:href] =~ /ensembles$/ && cdate > last_date
-            ensembles << cinfo
+        if options[:use_db]
+          collab_urls = content.content.
+            where(Sequel.like(:href, '%/ensembles')).
+            where(created:Date.today-days..Date.today).
+            reverse(:created).map(:href)
+        else
+          ensembles = []
+          content.content.each do |sid, cinfo|
+            cdate = created_value(cinfo[:created])
+            if cinfo[:href] =~ /ensembles$/ && cdate > last_date
+              ensembles << cinfo
+            end
           end
+          collab_urls = ensembles.sort_by{|r| created_value(r[:created])}.
+            reverse.map{|r| r[:href]}
         end
-        if ensembles.size <= 0
+        if collab_urls.size <= 0
           Plog.info("No collabs found in last #{days} days")
           return []
         end
-        collab_urls = ensembles.sort_by{|r| created_value(r[:created])}.reverse.map{|r| r[:href]}
         result      = Scanner.new(user, writable_options).
           scan_collab_list(collab_urls)
         content.add_new_songs(result, false)
@@ -958,11 +965,12 @@ module SmuleAuto
 
     desc "fix_mp3_files(user, *filters)", "fix_mp3_meta"
     option :open,      type: :boolean, desc:'Open after fixing to check'
-    option :overwrite, type: :boolean, desc:'Redownload and overwrite existing file'
+    option :overwrite, type: :boolean,
+      desc:'Redownload and overwrite existing file'
     long_desc <<-LONGDESC
-Check and add in metadata to mp3 file if missing.  Sometimes website change
-attribute so we could not get the metadata and create raw mp3 file. This should
-be reran after fix to insure the metadata is saved into the file
+Check and add in metadata to mp3 file if missing.  Sometimes website changes
+attributes so we could not get the metadata and create raw mp3 file. This
+should be reran after fix to insure the metadata is saved into the file
 
 metadata look like could be written only once. So if it was written wrongly
 before, you'd need to use --overwrite to force download a fresh copy again

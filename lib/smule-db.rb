@@ -10,17 +10,96 @@ require 'sequel'
 require 'tty-progressbar'
 require 'core'
 
+require 'sequel/adapters/sqlite'
+class Sequel::SQLite::Dataset
+  def size
+    self.count
+  end
+end
+
 module SmuleAuto
+  class HashableSet
+    def initialize(dataset, key, vcol=nil)
+      @dataset = dataset
+      @key     = key
+      @vcol    = vcol
+    end
+    
+    def [](kval)
+      unless rec = @dataset.where(@key => kval).first
+        require 'byebug'
+
+        byebug
+        @dataset.insert_conflict(:replace).insert(@key => kval)
+      end
+      rec ||= @dataset.where(@key => kval).first
+      @vcol ? rec[@vcol] : rec
+    end
+  end
+
   class SmuleDB
     DBNAME = "smule.db"
+
+    attr_reader :content
 
     def initialize(user, cdir = '.')
       create_db unless test(?f, DBNAME)
       @user     = user
       @DB       = Sequel.sqlite(DBNAME)
-      @content = @DB[:contents]
+      @content  = @DB[:contents]
       @singers  = @DB[:singers]
       @songtags = @DB[:songtags]
+    end
+
+    def tags
+      HashableSet.new(@songtags, :name, :tags)
+    end
+
+    def update_song(sinfo)
+      @content.insert_conflict(:replace).insert(sinfo)
+    end
+
+    def delete_song(sinfo)
+      sinfo[:deleted] = true
+      @content.where(sid:sinfo[:sid]).delete
+    end
+
+    def select_set(ftype, value)
+      if ftype == :recent
+        if value =~ /,/
+          sday, eday = value.split(',').map{|f| f.to_i}
+        else
+          sday, eday = value.to_i, 0
+        end
+        ldate  = Time.now - sday*24*3600
+        edate  = Time.now - eday*24*3600
+        if ldate > edate
+          ldate, edate = edate, ldate
+        end
+      end
+      case ftype
+      when :url
+        newset = @content.where(href:value)
+      when :isfav
+        newset = @content.where(isfav:true)
+      when :favs
+        newset = @content.where(isfav:true) + @content.where(oldfav:true)
+        newset = @content.where{(isfav=true) or (oldfav=true)}
+      when :record_by
+        newset = @content.where(Sequel.like(:record_by, "%#{value}%"))
+      when :title
+        newset = @content.where(Sequel.like(:stitle, "%#{value}%"))
+      when :recent
+        newset = @content.where(created: ldate..edate)
+      when :star
+        newset = @content.where{stars >= value.to_i}
+      else
+        Plog.info("Unknown selection - #{ftype}")
+        newset = @content
+      end
+      Plog.dump_info(msg:"Selecting #{newset.size} songs",
+                     ftype:ftype, value:value)
+      newset.all
     end
 
     def each(options={})
@@ -30,7 +109,11 @@ module SmuleAuto
       end
     end
 
-    def writeback
+    def select_sids(sids)
+      @content.where(sid:sids).all
+    end
+
+    def writeback(_backup=true)
       Plog.info("Skip write back")
     end
 
@@ -69,7 +152,7 @@ module SmuleAuto
       ycontent.each do |sid, sinfo|
         irec = sinfo.dup
         irec.delete(:m4tag)
-        irec.delete(:media_url)
+        #irec.delete(:media_url)
         irec[:record_by] = irec[:record_by]
         begin
           @content.insert_conflict(:replace).insert(irec)
@@ -137,6 +220,7 @@ module SmuleAuto
             c[:oldfav] = true
           end
         else
+          r[:stitle] = to_search_str(r[:title])
           @content.insert(r)
         end
       end

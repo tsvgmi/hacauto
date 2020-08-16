@@ -22,6 +22,14 @@ module SmuleAuto
       refresh
     end
 
+    def update_song(sinfo)
+      Plog.info("No update for text data")
+    end
+
+    def delete_song(sinfo)
+      sinfo[:deleted] = true
+    end
+
     def select_sids(sids)
       @content.select{|k, v| sids.include?(k)}.values
     end
