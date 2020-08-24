@@ -17,6 +17,7 @@ require 'thor'
 
 require 'smule-content'
 require 'smule-db'
+require 'smule_song'
 
 def clean_emoji(str='')
   str=str.force_encoding('utf-8').encode
@@ -97,108 +98,7 @@ def _record_by_map(record_by)
   end
 end
 
-
 module SmuleAuto
-  class AudioHandler
-    attr_reader :exist
-
-    def initialize(link, options={})
-      @options = options
-      @olink   = link.sub(/\/ensembles$/, '')
-      @exist   = false
-
-      source   = HTTP.follow.get(@olink).to_s 
-      document = Nokogiri::HTML(source)
-      asset    = nil
-      if stream = document.at('meta[name="twitter:player:stream"]')
-        @link = stream['content']
-        asset = document.css('head script')[0].text.split("\n").grep(/Recording:/)[0].sub(/^\s*Recording: /, '')[0..-2]
-      elsif stream = document.css('script')[0]
-        if asset = stream.text.split("\n").grep(/^\s+Recording: /)[0]
-          asset = asset.sub(/^\s+Recording: /, '').sub(/,$/, '')
-        end
-      end
-      if asset
-        song_info_url = (JSON.parse(asset) || {}).dig('performance', 'song_info_url')
-        if song_info_url
-          @song_info_url = 'https://www.smule.com' + song_info_url
-          (JSON.parse(asset) || {}).dig('performance', 'song_info_url')
-          @exist = true
-        end
-      end
-      unless @exist
-        Plog.error("Link no longer contain song - #{link}")
-      end
-    end
-
-    def get_audio_from_singsalon(ofile, ssconnect)
-      ssconnect.type('input.downloader-input', @olink)
-      ssconnect.click_and_wait('input.ipsButton[value~=Fetch]')
-
-      # This open up new window
-      handles    = ssconnect.window_handles
-      cur_handle = ssconnect.window_handle
-      begin
-        if handles.size > 1
-          Plog.info("Switch to window #{handles[-1]} to download") if @options[:verbose]
-          ssconnect.switch_to.window(handles[-1])
-          sleep(4)
-        end
-        ssconnect.click_and_wait('a.ipsButton[download]')
-
-        wait_time = 0
-        while true
-          if wait_time >= 60
-            Plog.error("Timeout waitint for file to appear in Downloads")
-            return false
-          end
-          m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
-            sort_by{|r| File.mtime(r)}.last
-          break if m4file
-          sleep(1)
-          wait_time += 1
-        end
-
-        Plog.info("Waiting for #{m4file}") if @options[:verbose]
-        while (fsize = File.size(m4file)) < 1_000_000
-          sleep(1)
-        end
-        File.open(ofile, 'wb') do |f|
-          f.write(File.read(m4file))
-        end
-        Plog.info("Wrote #{ofile}(#{File.size(ofile)} bytes)")
-      rescue => errmsg
-        Plog.dump_error(errmsg:errmsg)
-      ensure
-        if handles.size > 1
-          ssconnect.close
-          ssconnect.switch_to.window(cur_handle)
-        end
-      end
-      test(?s, ofile)
-    end
-
-    def get_lyric
-      unless @song_info_url
-        return nil
-      end
-      sdoc  = Nokogiri::HTML(curl(@song_info_url))
-      begin
-        asset = sdoc.css('head script')[0].text.split("\n").grep(/Song:/)[1].
-          sub(/^\s*Song: /, '')[0..-2]
-        if asset = JSON.parse(asset)
-          CGI.unescapeHTML(asset.dig('lyrics')).gsub(/<br>/, "\n").
-                      gsub(/<p>/, "\n\n")
-        else
-          nil
-        end
-      rescue => errmsg
-        Plog.error(errmsg:errmsg)
-        nil
-      end
-    end
-  end
-
   class ConfigFile
     def initialize(cfile)
       @cfile = cfile
@@ -206,155 +106,6 @@ module SmuleAuto
         @content = YAML.load_file(@cfile)
       else
         @content = {}
-      end
-    end
-  end
-
-
-  class SmuleSong
-    def initialize(sinfo, options={})
-      @info          = sinfo
-      @options       = options
-      @surl          = "https://www.smule.com#{@info[:href]}"
-      @audio_handler = AudioHandler.new(@surl, @options)
-    end
-
-    def [](key)
-      @info[key]
-    end
-
-    def [](key, value)
-      @info[key] = value
-    end
-
-    def play(spage)
-      href = @info[:href].sub(/\/ensembles$/, '')
-
-      spinner = TTY::Spinner.new("[:spinner] Loading ...",
-                                    format: :pulse_2)
-      spinner.auto_spin
-      # This will start playing
-      spage.goto(href)
-      %w(div.error-gone div.page-error).each do |acss|
-        if spage.css(acss).size > 0
-          Plog.info("#{@info[:title]} is gone")
-          spinner.stop('Done!')
-          return :deleted
-        end
-      end
-      spage.click_and_wait('button._1oqc74f')
-      count_set = spage.css("div._13gdiri")
-      if count_set.size > 0
-        if (value = count_set[0].text.to_i) > 0
-          @info[:listens] = value
-        end
-        if (value = count_set[1].text.to_i) > 0
-          @info[:loves] = value
-        end
-      end
-
-      # The play time won't be known until the source is loaded
-      duration_s = nil
-      1.upto(15) do
-        duration_s = spage.css("._vln25l")[0]
-        if duration_s && duration_s.text != "00:00"
-          break
-        end
-        sleep 2
-        spage.refresh
-      end
-      spinner.stop('Done!')
-      unless duration_s
-        Plog.error("Cannot get song info")
-        return 0
-      end
-      duration = duration_s.text.split(':')
-      psecs    = duration[0].to_i * 60 + duration[1].to_i
-
-      @info[:listens] += 1
-      @info[:psecs] = psecs
-    end
-    
-    def download_from_singsalon(ssconnect=nil, force=false)
-      begin
-        if @options[:force] || !test(?f, @info[:sfile])
-          if ssconnect
-            unless @audio_handler.exist
-              Plog.error("Audio handler not exist !!!")
-              return false
-            end
-            Plog.info("Downloading for #{@info[:title]}")
-            if @audio_handler.get_audio_from_singsalon(@info[:sfile], ssconnect)
-              update_mp4tag
-            end
-          else
-            Plog.error("Need to download song, but there is no connection")
-            return false
-          end
-        end
-        unless test(?l, @info[:ofile])
-          unless test(?d, File.dirname(@info[:ofile]))
-            FileUtils.mkdir_p(File.dirname(@info[:ofile]), verbose:true)
-          end
-          FileUtils.symlink(@info[:sfile], @info[:ofile],
-                            verbose:true, force:true)
-        end
-      rescue => errmsg
-        Plog.dump_error(errmsg:errmsg)
-        return false
-      end
-      true
-    end
-
-    def update_mp4tag
-      ofile = @info[:sfile]
-      cdate = @info[:created] || Time.now
-      if cdate.is_a?(String)
-        cdate = Time.parse(cdate)
-      end
-      if ofile && test(?f, ofile)
-        href    = 'https://www.smule.com' + @info[:href]
-        date    = cdate.strftime("%Y-%m-%d")
-        album   = cdate.strftime("Smule-%Y.%m")
-        artist  = @info[:record_by].gsub(',', ', ')
-        aartist = @info[:record_by].gsub(/(,?)#{}(,?)/, "\1\2")
-        comment = "#{date} - #{href}"
-        year    = cdate.year
-        title   = clean_emoji(@info[:title]).gsub(/\'/, "")
-
-        command = "atomicparsley #{@info[:sfile]}"
-
-        # Get the artwork
-        lcfile  = File.basename(@info[:avatar])
-        curl(@info[:avatar], lcfile)
-        if test(?f, lcfile) && `file #{lcfile}` =~ /JPEG/
-          command += " --artwork #{lcfile}"
-        end
-        command += " --title '#{title}'"
-        command += " --artist '#{artist}'"
-        command += " --album '#{album}'"
-        command += " --year '#{year}'"
-        command += " --comment '#{comment}'"
-
-        if lyric = @audio_handler.get_lyric
-          tmpf = Tempfile.new("lyric")
-          tmpf.puts(lyric)
-          tmpf.close
-          l_flag = " --lyricsFile #{tmpf.path}"
-        else
-          l_flag = ''
-        end
-
-        output = `(set -x; #{command} --overWrite #{l_flag}) | tee /dev/tty`
-
-        # Not enough room - try drop the lyric part
-        if output =~ /insufficient space to retag the source file/io
-          system("set -x; #{command}")
-        end
-        FileUtils.remove(lcfile, verbose:true)
-        true
-      else
-        false
       end
     end
   end
@@ -369,11 +120,12 @@ module SmuleAuto
       offset    = 0
       limit     = (options[:limit] || 10_000).to_i
       first_day = Time.now - (options[:days] || 7).to_i*24*3600
-      bar       = TTY::ProgressBar.new("Checking songs [:bar]", total:500)
+      bar       = TTY::ProgressBar.new("Checking songs [:bar] :percent",
+                                       total:100)
       catch(:done) do
         while true
           ourl = "#{url}?offset=#{offset}"
-          bar.log(ourl)
+          bar.log(ourl) if @options[:verbose]
           output = curl(ourl)
           if output == 'Forbidden'
             sleep 2
@@ -396,14 +148,11 @@ module SmuleAuto
               listens:     stats['total_listens'],
               loves:       stats['total_loves'],
               gifts:       stats['total_gifts'],
-              since:       "#{since} min",
               avatar:      info['cover_url'],
               is_ensemble: info['child_count'].to_i > 0,
-              #collab_url:  collab_url,
               sid:         info['key'],
               created:     created,
               orig_city:   (info['orig_track_city'] || {}).values.join(', '),
-              media_url:   info['media_url'],
             }
             allset << rec
             if created <= first_day
@@ -447,9 +196,7 @@ module SmuleAuto
 
     def scan_collab_list(collab_links)
       result    = []
-      bar       = TTY::ProgressBar.new("Checking collabs [:bar] :percent",
-                                   total:collab_links.size)
-      collab_links.each do |alink|
+      progress_set(collab_links, "Checking collabs") do |alink, bar|
         @spage.goto(alink)
         sitems = @spage.css(".duets.content .recording-listItem")
         sitems.each do |sitem|
@@ -457,7 +204,7 @@ module SmuleAuto
           sinfo.update(parent:alink)
           result << sinfo
         end
-        bar.advance
+        true
       end
       Plog.info("Found #{result.size} songs in collabs")
       result
@@ -490,14 +237,12 @@ module SmuleAuto
       sitems       = @spage.css("._8u57ot")
       result       = []
       collab_links = []
-      bar          = TTY::ProgressBar.new("Checking songs [:bar] :percent",
-                                        total:sitems.size)
-      sitems.each do |sitem|
+      progress_set(sitems, "Checking songs") do |sitem, bar|
         plink = sitem.css('a._1sgodipg')[0]
         next unless plink
         next if sitem.css('._1wii2p1').size <= 0
         yield sitem
-        bar.advance
+        true
       end
     end
 
@@ -508,12 +253,10 @@ module SmuleAuto
       end
       since       = sitem.css('._1wii2p1')[2].text
       record_by   = nil
-      collab_url  = nil
       is_ensemble = false
       if collabs = sitem.css('a._api99xt')[0]
         href = collabs['href']
         if href =~ /ensembles$/
-          collab_url  = href
           is_ensemble = true
           record_by   = [@user]
         end
@@ -535,10 +278,8 @@ module SmuleAuto
         record_by:   _record_by_map(record_by).join(','),
         listens:     sitem.css('._1wii2p1')[0].text.to_i,
         loves:       sitem.css('._1wii2p1')[1].text.to_i,
-        since:       since,
         avatar:      (sitem.css('img')[0] || {})['src'],
         is_ensemble: is_ensemble,
-        collab_url:  collab_url,
         sid:         sid,
         created:     created,
       }
@@ -584,9 +325,7 @@ module SmuleAuto
 
     def _scroll_to_bottom(pages=nil)
       pages ||= 50
-      bar    = TTY::ProgressBar.new("Scroll to end [:bar] :percent",
-                                    total:pages)
-      (1..pages).each_with_index do |apage, index|
+      progress_set(1..pages, "Scroll to end") do |apage, bar|
         @spage.execute_script("window.scrollBy({top:700, left:0, behaviour:'smooth'})")
         # Scroll fast, and you'll be banned.  So slowly
         if block_given?
@@ -596,7 +335,7 @@ module SmuleAuto
           end
         end
         sleep 1
-        bar.advance
+        true
       end
       @spage.refresh
     end
@@ -637,7 +376,6 @@ module SmuleAuto
         record_by:   _record_by_map(record_by).join(','),
         listens:     sitem.css('.stat-listens').first.text.to_i,
         loves:       sitem.css('.stat-loves').first.text.to_i,
-        since:       sitem.css('.stat-timeago').first.text.strip,
         avatar:      plink['data-src'],
         is_ensemble: false,
         sid:         sid,
@@ -650,21 +388,20 @@ module SmuleAuto
     include ThorAddition
 
     no_commands do
-      def _ofile(afile)
+      def _ofile(sinfo)
         tdir  = '/Volumes/Voice/SMULE'
-        odir  = tdir + "/#{afile[:record_by].split(',').sort.join('-')}"
-        title = afile[:title].strip.gsub(/[\/\"]/, '-')
+        odir  = tdir + "/#{sinfo[:record_by].split(',').sort.join('-')}"
+        title = sinfo[:title].strip.gsub(/[\/\"]/, '-')
         ofile = File.join(odir,
                           title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
 
-        sfile = File.join(tdir, "STORE", afile[:sid] + '.m4a')
+        sfile = File.join(tdir, "STORE", sinfo[:sid] + '.m4a')
         [ofile, sfile]
       end
 
       def _prepare_download(flist, tdir)
-        bar     = TTY::ProgressBar.new("Preparing list [:bar] :percent",
-                                       total:flist.size)
-        flist   = flist.select do |afile|
+        newlist = []
+        progress_set(flist, "Preparing download") do |afile, bar|
           afile[:ofile], afile[:sfile] = _ofile(afile)
           odir          = File.dirname(afile[:ofile])
           FileUtils.mkdir_p(odir, verbose:@options[:verbose]) unless test(?d, odir)
@@ -679,13 +416,15 @@ module SmuleAuto
             Plog.dump_error(errmsg:errmsg, sfile:afile[:sfile],
                             ofile:afile[:ofile])
           end
-          bar.advance
-          if options[:force]
+          do_download = if options[:force]
             true
           else
             !(test(?f, afile[:sfile]) && test(?l, afile[:ofile]))
           end
+          newlist << afile if do_download
+          true
         end
+        flist = newlist
         if options[:limit]
           limit = options[:limit].to_i
           flist = flist[0..limit-1]
@@ -697,22 +436,29 @@ module SmuleAuto
         flist
       end
 
-      def _download_list(flist, tdir, user, ssconnect=nil)
-        unless flist = _prepare_download(flist, tdir)
+      def _open_song(sinfo)
+        if options[:open]
+          system("set -x; open -g #{sinfo[:sfile]}")
+          sleep(2)
+        end
+      end
+
+      def _download_list(flist, tdir, user)
+       flist = _prepare_download(flist, tdir)
+       if !flist || (flist.size <= 0)
           return 0
         end
         FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
-        bar = TTY::ProgressBar.new("Downloading songs [:bar] :percent",
-                                   total:flist.size)
-        ssconnect ||= SiteConnect.new(:singsalon, options).driver
+        ssconnect = SiteConnect.new(:singsalon, options).driver
         ssconnect.goto('/smule-downloader')
         fcount = 0
-        flist.each do |afile|
-          if SmuleSong.new(afile, options).download_from_singsalon(ssconnect)
+        progress_set(flist, "Downloading songs") do |afile, bar|
+          if SmuleSong.new(afile, options).
+              download_from_singsalon(ssconnect, excuser:user)
             fcount += 1
-            system("open -g #{afile[:sfile]}") if options[:open]
+            _open_song(afile)
           end
-          bar.advance
+          true
         end
         fcount
       end
@@ -732,31 +478,28 @@ module SmuleAuto
       end
 
       def _collect_collabs(user, content)
-        days      = (options[:days] || 30).to_i
-        last_date = (Time.now - days*24*3600)
-        if options[:use_db]
-          collab_urls = content.content.
-            where(Sequel.like(:href, '%/ensembles')).
-            where(created:Date.today-days..Date.today).
-            reverse(:created).map(:href)
-        else
-          ensembles = []
-          content.content.each do |sid, cinfo|
-            cdate = created_value(cinfo[:created])
-            if cinfo[:href] =~ /ensembles$/ && cdate > last_date
-              ensembles << cinfo
-            end
-          end
-          collab_urls = ensembles.sort_by{|r| created_value(r[:created])}.
-            reverse.map{|r| r[:href]}
-        end
-        if collab_urls.size <= 0
+        days        = (options[:days] || 30).to_i
+        last_date   = (Time.now - days*24*3600)
+        collab_list = Performance.
+          where(Sequel.like(:href, '%/ensembles')).
+          where(created:Date.today-days..Date.today).
+          reverse(:created)
+        if collab_list.count <= 0
           Plog.info("No collabs found in last #{days} days")
           return []
         end
-        result      = Scanner.new(user, writable_options).
-          scan_collab_list(collab_urls)
-        content.add_new_songs(result, false)
+        if true
+          result = []
+          progress_set(collab_list, "Checking collabs") do |sinfo, bar|
+            result.concat(SmuleSong.new(sinfo, options).get_ensemble_asset)
+            true
+          end
+        else
+          collab_urls = collab_list.map(:href)
+          result      = Scanner.new(user, writable_options).
+            scan_collab_list(collab_urls)
+          content.add_new_songs(result, false)
+        end
         result
       end
 
@@ -774,8 +517,6 @@ module SmuleAuto
           sapi    = API.new(options)
           perfset = sapi.get_performances(user, limit:limit, days:days)
           content.add_new_songs(perfset, false)
-          favset  = sapi.get_favs(user)
-          content.add_new_songs(favset, true)
         else
           scanner = Scanner.new(user, writable_options)
           perfset = scanner.scan_songs
@@ -785,11 +526,7 @@ module SmuleAuto
       end
 
       def song_content(user, tdir)
-        if options[:use_db]
-          SmuleDB.new(user, tdir)
-        else
-          Content.new(user, tdir)
-        end
+        SmuleDB.instance(user, tdir)
       end
     end
 
@@ -810,58 +547,25 @@ module SmuleAuto
       desc:'Pages to scan'
     class_option :verbose,  type: :boolean
     class_option :open,     type: :boolean, desc: 'Opening mp4 after download'
-    class_option :use_db,   type: :boolean
-    class_option :use_api,   type: :boolean
+    class_option :use_api,  type: :boolean, default:true
 
-    desc "collect_collabs user", "Collect songs others join"
-    def collect_collabs(user)
-      cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = song_content(user, tdir)
-        collabs = _collect_collabs(user, content)
-        if collabs.size <= 0
-          return true
-        end
-        _download_list(collabs, tdir, user) if options[:download]
-        content.writeback
-        true
-      end
-    end
-
-    desc "collect_songs user", "Collect songs user join"
+    desc "collect_songs user", "Collect all songs and collabs of user"
+    option :with_collabs,  type: :boolean
     def collect_songs(user)
-      cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = song_content(user, tdir)
-        perfset = _collect_songs(user, content)
-        if perfset.size <= 0
-          return true
-        end
-        _download_list(perfset, tdir, user) if options[:download]
-
-        # Redo since download list will setup ofile field
-        content.add_new_songs(perfset, false)
-
-        # Favs must dump the whole thing
-        content.writeback
-        true
-      end
-    end
-
-    desc "collect_songs_and_collabs user", "Collect all songs with user"
-    def collect_songs_and_collabs(user)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
         content  = song_content(user, tdir)
         newsongs = _collect_songs(user, content)
-        collabs  = _collect_collabs(user, content)
-        if (newsongs.size) <= 0 && (collabs.size <= 0)
+        if options[:with_collabs]
+          newsongs.concat(_collect_collabs(user, content))
+        end
+        if (newsongs.size) <= 0
           return true
         end
         if options[:download]
-          _download_list(newsongs + collabs, tdir, user)
+          _download_list(newsongs, tdir, user)
+          content.add_new_songs(newsongs, false)
         end
-        content.writeback
         true
       end
     end
@@ -876,7 +580,6 @@ module SmuleAuto
           to_download << sinfo
         end
         _download_list(to_download, tdir, user)
-        content.writeback
         true
       end
     end
@@ -892,7 +595,6 @@ module SmuleAuto
           favset = Scanner.new(user, writable_options).scan_favs
         end
         content.add_new_songs(favset, true)
-        content.writeback
         true
       end
     end
@@ -916,7 +618,7 @@ module SmuleAuto
         end
         result  = Scanner.new(user, writable_options).
           unfavs_old(count.to_i, favset)
-        song_content(user, tdir).add_new_songs(result, true).writeback if tdir
+        song_content(user, tdir).add_new_songs(result, true) if tdir
         true
       end
     end
@@ -937,13 +639,13 @@ module SmuleAuto
           }
           fset << users
         end
-        song_content(user, tdir).set_follows(fset[0], fset[1]).writeback
+        song_content(user, tdir).set_follows(fset[0], fset[1])
         true
       end
     end
 
     desc "open_on_itune(user, *filters)", "open_on_itune"
-    option :time,  type: :numeric, default:10
+    option :open,  type: :boolean, default:true
     def open_on_itune(user, *filters)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
@@ -953,8 +655,7 @@ module SmuleAuto
           sfile = sinfo[:sfile]
           if sfile && test(?f, sfile)
             Plog.dump_info(sinfo:sinfo, _ofmt:'Y')
-            system("open -g #{sfile}")
-            sleep(options[:time])
+            _open_song(sinfo)
           elsif sfile
             Plog.info("#{sfile} not found.  Removing the stale name")
           end
@@ -984,7 +685,7 @@ before, you'd need to use --overwrite to force download a fresh copy again
         )
         tdir      = _tdir_check(moptions[:data_dir])
         content   = song_content(user, tdir)
-        sconnect  = nil
+        dl_list   = []
         content.each(moptions) do |sid, sinfo|
           sfile = sinfo[:sfile]
 
@@ -992,29 +693,20 @@ before, you'd need to use --overwrite to force download a fresh copy again
             sfile = sinfo[:sfile] = sfile.sub(/Voice-1/, 'Voice')
           end
 
-          unless options[:overwrite]
-            if sfile && test(?f, sfile)
-              wset = `atomicparsley #{sfile} -t`.split("\n").map {|l|
-                key, value = l.split(/\s+contains:\s+/)
-                key = key.split[-1].gsub(/["]/, '')[1..-1].to_sym
-                [key, value]
-              }
-              wset  = Hash[wset]
-              album = sinfo[:created].strftime("Smule-%Y.%m")
-              year  = sinfo[:created].strftime("%Y")
-              if wset[:nam] == 'ver:1' || wset[:alb] != album || \
-                  wset[:day] != year
-                SmuleSong.new(sinfo, moptions).update_mp4tag
+          rcode = SmuleSong.new(sinfo, moptions).update_mp4tag(user)
+          if rcode == :updated
+            _open_song(sinfo)
+            next
+          elsif rcode == :notfound || rcode == :error
+            [:ofile, :sfile].each do |afile|
+              if test(?f, sinfo[afile])
+                FileUtils.remove(sinfo[afile], verbose:true, force:true)
               end
-              next
             end
-          end
-
-          ssconnect ||= SiteConnect.new(:singsalon, moptions).driver
-          if _download_list([sinfo], tdir, user, ssconnect) > 0
-            system("open -g #{sfile}") if moptions[:open]
+            dl_list << sinfo
           end
         end
+        _download_list(dl_list, tdir, user)
         true
       end
     end
@@ -1042,8 +734,8 @@ before, you'd need to use --overwrite to force download a fresh copy again
         content   = song_content(user, tdir)
         following = content.singers.select{|k, v| v[:following]}
         bar = TTY::ProgressBar.new("Following [:bar] :percent",
-                                   total:content.content.size)
-        content.content.each do |sid, sinfo|
+                                   total:Performance.size)
+        Performance.each do |sid, sinfo|
           singers = sinfo[:record_by].split(',')
           singers.select{|r| r != user}.each do |osinger|
             if finfo = following[osinger]
@@ -1077,36 +769,36 @@ before, you'd need to use --overwrite to force download a fresh copy again
     LONGDESC
     def fix_content(user, fix_type)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = song_content(user, tdir)
-        ccount  = 0
-        cutoff  = Time.parse("2019-09-01")
+        tdir     = _tdir_check(options[:data_dir])
+        content  = song_content(user, tdir)
         fix_type = fix_type.to_sym
-        content.each do |sid, cinfo|
-          case fix_type
-          when :date
-            unless cinfo[:created].is_a?(Time)
-              cinfo[:created] = created_value(cinfo[:created])
-              ccount += 1
-            end
-          when :record_by
-            if cinfo[:record_by].is_a?(Array)
-              cinfo[:record_by] = cinfo[:record_by].join(',')
-              ccount += 1
-            end
-          when :favs
-            cdate = created_value(cinfo[:created])
-            if (cdate < cutoff) || !cinfo[:oldfav]
+        ccount   = 0
+        SmuleDB.instance(user)
+        case fix_type
+        when :stitle
+          query  = Performance.where(stitle:nil)
+          ccount = query.count
+          query.each do |r|
+            stitle = to_search_str(r[:title])
+            r.update(stitle:stitle)
+          end
+        when :sfile
+          query   = Performance.where(sfile:nil)
+          ccount  = query.count
+          dl_list = []
+          query.each do |r|
+            ofile, sfile = _ofile(r)
+            if !test(?f, sfile) || !test(?f, ofile)
+              Plog.error("#{sfile} or #{ofile} does not exist")
+              dl_list << r
               next
             end
-            Plog.dump_info(sid:sid, cdate:cdate)
-            cinfo.delete(:oldfav)
+            r.update(sfile:sfile, ofile:ofile)
           end
+          _download_list(dl_list, tdir, user)
         end
-        if ccount > 0
-          Plog.info("#{ccount} records fixed")
-          content.writeback
-        end
+        Plog.info("#{ccount} records fixed")
+        ccount
       end
     end
 
@@ -1124,18 +816,38 @@ before, you'd need to use --overwrite to force download a fresh copy again
           pbar:   "Move content from #{old_name}",
           filter: "record_by=#{old_name}",
         )
-        changed = false
-        content.each(moptions) do |k, v|
+        Performance.
+          where(Sequel.like(:record_by, "%#{old_name}%")).each do |v|
           new_record_by = v[:record_by].gsub(old_name, new_name)
           if new_record_by != v[:record_by]
-            v[:record_by] = new_record_by
-            v[:ofile], v[:sfile] = _ofile(v)
-            SmuleSong.new(v).download_from_singsalon
-            changed = true
+            ofile, sfile = _ofile(v)
+            v.update(record_by:new_record_by, ofile:ofile, sfile:sfile)
+            SmuleSong.new(v, options).download_from_singsalon(nil, excuser:user)
           end
         end
-        content.writeback if changed
         true
+      end
+    end
+
+    desc "smule_song_info(url)", "smule_song_info"
+    def smule_song_info(url)
+      cli_wrap do
+        SmuleDB.instance("THV_13", ".")
+        surl = url.sub(%r{^https://www.smule.com}, '')
+        sinfo = Performance.first(href:surl) || Performance.new(href:surl)
+        song  = SmuleSong.new(sinfo, options)
+        if url =~ /ensembles$/
+          song.get_ensemble_asset
+        else
+          song.get_asset
+        end.to_yaml
+      end
+    end
+
+   desc "curl(url)", "curl"
+   def do_curl(url)
+      cli_wrap do
+        curl(url)
       end
     end
   end

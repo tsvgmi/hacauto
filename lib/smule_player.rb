@@ -19,8 +19,7 @@ module SmuleAuto
     def initialize(user, tdir, options={})
       @options  = options
       @roptions = {}
-      @content  = options[:use_db] ? 
-        SmuleDB.new(user, tdir) : Content.new(user, tdir)
+      @content  = SmuleDB.instance(user, tdir)
       if test(?f, StateFile)
         config  = YAML.load_file(StateFile)
         @clist  = @content.select_sids(config[:sids])
@@ -40,7 +39,6 @@ module SmuleAuto
     end
     
     def _save_state(backup=false)
-      @content.writeback(backup)
       data = {
         filter: @filter,
         order:  @order,
@@ -186,7 +184,7 @@ EOM
       spage  = @scanner.spage
       spage.refresh
       if spage.css('button._1oqc74f').size > 0       # Is stopped
-        spage.click_and_wait('button._1oqc74f')
+        spage.click_and_wait('button._1oqc74f', 0)
         curtime   = spage.css("span._1guzb8h").text.split(':')
         curtime_s = curtime[0].to_i*60 + curtime[1].to_i
         remain    = psitem[:duration] - curtime_s
@@ -194,7 +192,7 @@ EOM
         #Plog.dump_info(curtime:curtime, curtime_s:curtime_s, remain:remain)
       elsif spage.css('button._1s30tn4h').size > 0   # Is playing
         Plog.info("Was playing.  Stopping")
-        spage.click_and_wait('button._1s30tn4h')
+        spage.click_and_wait('button._1s30tn4h', 0)
       else
         Plog.error("Unknown state to toggle")
       end
@@ -220,7 +218,7 @@ EOM
         return false
       end
       sitem[:isfav] = true
-      spage.click_and_wait("div._8hpz8v", 2, 0)
+      spage.click_and_wait("div._8hpz8v", 1, 0)
     end
 
     def _set_smule_song_tag(sitem, tag)
@@ -232,18 +230,18 @@ EOM
         return false
       end
       text = ' ' + tag
-      spage.click_and_wait("button._13ryz2x")   # ...
+      spage.click_and_wait("button._13ryz2x", 1)   # ...
       content  = spage.refresh
       editable = spage.page.css("div._8hpz8v")[2].text
       if editable == 'Edit'
-        spage.click_and_wait("a._117spsl", 2, 1)  # Edit
+        spage.click_and_wait("a._117spsl", 1, 1)  # Edit
         spage.type("textarea#message", text, append:true)  # Enter tag
         spage.click_and_wait("input#recording-save")
       else
         Plog.info "Song is not editable"
         spage.click_and_wait("._6ha5u0", 1)
       end
-      spage.click_and_wait('button._1oqc74f')
+      spage.click_and_wait('button._1oqc74f', 0)
     end
 
     def _refresh_content
@@ -515,6 +513,8 @@ EOH
             when 'x'                            # Quit
               return
             when 'Z'                            # Quit
+              require 'byebug'
+
               byebug
             end
           end

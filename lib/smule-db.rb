@@ -27,9 +27,6 @@ module SmuleAuto
     
     def [](kval)
       unless rec = @dataset.where(@key => kval).first
-        require 'byebug'
-
-        byebug
         @dataset.insert_conflict(:replace).insert(@key => kval)
       end
       rec ||= @dataset.where(@key => kval).first
@@ -42,13 +39,23 @@ module SmuleAuto
 
     attr_reader :content
 
+    def self.instance(user, cdir='.')
+      @_db ||= SmuleDB.new(user, cdir)
+    end
+
     def initialize(user, cdir = '.')
       create_db unless test(?f, DBNAME)
       @user     = user
       @DB       = Sequel.sqlite(DBNAME)
-      @content  = @DB[:contents]
+      YAML.load_file('etc/db_models.yml').each do |model, minfo|
+        klass = Class.new(Sequel::Model)
+        klass.dataset = @DB[minfo['table'].to_sym]
+        Object.const_set model, klass
+      end
+
+      @content  = @DB[:performances]
       @singers  = @DB[:singers]
-      @songtags = @DB[:songtags]
+      @songtags = @DB[:song_tags]
     end
 
     def tags
@@ -56,7 +63,11 @@ module SmuleAuto
     end
 
     def update_song(sinfo)
-      @content.insert_conflict(:replace).insert(sinfo)
+      begin
+        @content.insert_conflict(:replace).insert(sinfo)
+      rescue => errmsg
+        Plog.error(errmsg)
+      end
     end
 
     def delete_song(sinfo)
@@ -69,7 +80,7 @@ module SmuleAuto
         if value =~ /,/
           sday, eday = value.split(',').map{|f| f.to_i}
         else
-          sday, eday = value.to_i, 0
+          sday, eday = value.to_i, -1
         end
         ldate  = Time.now - sday*24*3600
         edate  = Time.now - eday*24*3600
@@ -113,10 +124,6 @@ module SmuleAuto
       @content.where(sid:sids).all
     end
 
-    def writeback(_backup=true)
-      Plog.info("Skip write back")
-    end
-
     def dump_db
       file  = "data/content-new.yml"
       Plog.info("Writing #{file} - #{@content.count}")
@@ -152,7 +159,6 @@ module SmuleAuto
       ycontent.each do |sid, sinfo|
         irec = sinfo.dup
         irec.delete(:m4tag)
-        #irec.delete(:media_url)
         irec[:record_by] = irec[:record_by]
         begin
           @content.insert_conflict(:replace).insert(irec)
@@ -199,26 +205,22 @@ module SmuleAuto
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
-        # Keep the 1st created, b/c it is more accurate
+        r.delete(:lyrics)
         sid = r[:sid]
 
-        r.delete(:since)
-        r.delete(:sincev)
         if c = @content.where(sid:sid).first
-          c.update(
+          updset = {
             listens:   r[:listens],
             loves:     r[:loves],
-            since:     r[:since],
             record_by: r[:record_by],   # In case user change login
             isfav:     r[:isfav],
             orig_city: r[:orig_city],
-            media_url: r[:media_url],
+            avatar:    r[:avatar],
             sfile:     r[:sfile] || c[:sfile],
             ofile:     r[:ofile] || c[:ofile],
-          )
-          if c[:isfav]
-            c[:oldfav] = true
-          end
+          }
+          updset[:oldfav] = true if updset[:isfav]
+          @content.where(sid:sid).update(updset)
         else
           r[:stitle] = to_search_str(r[:title])
           @content.insert(r)
@@ -226,7 +228,6 @@ module SmuleAuto
       end
       self
     end
-
   end
 
   class Main < Thor
@@ -235,14 +236,14 @@ module SmuleAuto
     desc "load_db user", "load_db"
     def load_db_for_user(user, cdir='.')
       cli_wrap do
-        SmuleDB.new(user, cdir).load_db
+        SmuleDB.instance(user, cdir).load_db
       end
     end
 
     desc "dump_db", "dump_db"
     def dump_db(user, cdir='.')
       cli_wrap do
-        SmuleDB.new(user, cdir).dump_db
+        SmuleDB.instance(user, cdir).dump_db
       end
     end
   end

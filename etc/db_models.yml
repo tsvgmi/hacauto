@@ -1,0 +1,9 @@
+---
+Performance:
+  table: performances
+  
+Singer:
+  table: singers
+
+SongTag:
+  table: song_tags

@@ -9,7 +9,7 @@
 require 'tty-progressbar'
 
 module SmuleAuto
-  class Content
+  class FileContent
     attr_reader :content, :singers, :tags
 
     def initialize(user, cdir='.')
@@ -89,9 +89,9 @@ module SmuleAuto
         Plog.warn("#{@cfile} does not exist or empty")
         @content = {}
       end
-      @content.each do |k, r|
-        r[:sincev] = time_since(r[:since]) / 3600.0
-      end
+      #@content.each do |k, r|
+        #r[:sincev] = time_since(r[:since]) / 3600.0
+      #end
       Plog.info("Loading #{@sfile}")
       @singers = test(?f, @sfile) ? YAML.load_file(@sfile) : {}
       @tags    = {}
@@ -228,8 +228,8 @@ module SmuleAuto
         # Keep the 1st created, b/c it is more accurate
         sid = r[:sid]
 
-        r.delete(:since)
-        r.delete(:sincev)
+        #r.delete(:since)
+        #r.delete(:sincev)
         if c = @content[sid]
           c.update(
             listens:   r[:listens],
