@@ -82,7 +82,6 @@ EOM
       start.upto(start+limit-1) do |i|
         witem  = cselect[i]
         next unless witem
-        #ptags = (tags[witem[:stitle]] || []).join(', ')
         ptags = tags[witem[:stitle]] || ''
         isfav = (witem[:isfav] || witem[:oldfav]) ? 'F' : ''
         row   = [i, isfav, witem[:title], witem[:record_by],

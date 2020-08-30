@@ -44,10 +44,10 @@ module ThorAddition
   end
 end
 
-def progress_set(wset, title)
-  call_from = caller[0].split.last.gsub(/['"`]/, '')
-  tstring   = "%-16.16s [:bar] :percent" % call_from
-  bar = TTY::ProgressBar.new(tstring, total:wset.size)
+def progress_set(wset, title=nil)
+  title ||= caller[0].split.last.gsub(/['"`]/, '')
+  tstring = "%-16.16s [:bar] :percent" % title
+  bar     = TTY::ProgressBar.new(tstring, total:wset.size)
   wset.each do |entry|
     unless yield entry, bar
       break

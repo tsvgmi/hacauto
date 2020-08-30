@@ -15,7 +15,6 @@ require 'tty-spinner'
 require 'tty-progressbar'
 require 'thor'
 
-require 'smule-content'
 require 'smule-db'
 require 'smule_song'
 
@@ -90,6 +89,7 @@ end
 # new one and we want to associate with new account
 Alternate = {
   '__MinaTrinh__' => 'Mina_________',
+  '_Huong'        => '__HUONG',
 }
 
 def _record_by_map(record_by)
@@ -143,6 +143,7 @@ module SmuleAuto
             since   = ((Time.now - created)/60).to_i
             rec     = {
               title:       info['title'],
+              stitle:      to_search_str(info['title']),
               href:        info['web_url'],
               record_by:   _record_by_map(record_by).join(','),
               listens:     stats['total_listens'],
@@ -274,6 +275,7 @@ module SmuleAuto
       title    = clean_emoji(plink.text).strip
       {
         title:       title,
+        stitle:      to_search_str(title),
         href:        plink['href'],
         record_by:   _record_by_map(record_by).join(','),
         listens:     sitem.css('._1wii2p1')[0].text.to_i,
@@ -372,6 +374,7 @@ module SmuleAuto
       title    = clean_emoji(plink['title']).strip
       {
         title:       title,
+        stitle:      to_search_str(title),
         href:        plink['href'],
         record_by:   _record_by_map(record_by).join(','),
         listens:     sitem.css('.stat-listens').first.text.to_i,
@@ -562,10 +565,32 @@ module SmuleAuto
         if (newsongs.size) <= 0
           return true
         end
+        content.add_new_songs(newsongs, false)
         if options[:download]
           _download_list(newsongs, tdir, user)
           content.add_new_songs(newsongs, false)
         end
+        true
+      end
+    end
+
+    desc "download_urls(user, *urls)", "download_urls"
+    def download_urls(user, *urls)
+      cli_wrap do
+        SmuleDB.instance(user, ".")
+        to_download = []
+        tdir        = _tdir_check(options[:data_dir])
+        urls.each do |url|
+          surl  = url.sub(%r{^https://www.smule.com}, '')
+          sinfo = Performance.first(href:surl) || Performance.new(href:surl)
+          asset = SmuleSong.new(sinfo, options).get_asset
+          asset.delete(:lyrics)
+          sinfo.update(asset)
+          to_download << sinfo
+        end
+        _download_list(to_download, tdir, user)
+        content  = song_content(user, tdir)
+        content.add_new_songs(to_download, false)
         true
       end
     end
@@ -696,7 +721,6 @@ before, you'd need to use --overwrite to force download a fresh copy again
           rcode = SmuleSong.new(sinfo, moptions).update_mp4tag(user)
           if rcode == :updated
             _open_song(sinfo)
-            next
           elsif rcode == :notfound || rcode == :error
             [:ofile, :sfile].each do |afile|
               if test(?f, sinfo[afile])
@@ -767,7 +791,7 @@ before, you'd need to use --overwrite to force download a fresh copy again
       Just a place holder to fix data content.  Code will be implemented
       as needed
     LONGDESC
-    def fix_content(user, fix_type)
+    def fix_content(user, fix_type, *data)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
         content  = song_content(user, tdir)
@@ -775,6 +799,17 @@ before, you'd need to use --overwrite to force download a fresh copy again
         ccount   = 0
         SmuleDB.instance(user)
         case fix_type
+        when :tags
+          if data.size <= 1
+            Plog.error("No data specified for tag")
+            return false
+          end
+          recs   = []
+          filter = "stitle like '%#{data.shift}%'"
+          content.each(filter:filter) do |sid, r|
+            recs << r
+          end
+          ccount = content.add_tag(recs, data.join(','))
         when :stitle
           query  = Performance.where(stitle:nil)
           ccount = query.count

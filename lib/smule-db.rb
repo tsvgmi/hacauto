@@ -64,6 +64,7 @@ module SmuleAuto
 
     def update_song(sinfo)
       begin
+        sinfo.delete(:lyrics)
         @content.insert_conflict(:replace).insert(sinfo)
       rescue => errmsg
         Plog.error(errmsg)
@@ -114,9 +115,12 @@ module SmuleAuto
     end
 
     def each(options={})
-      Plog.dump_info(options:options)
-      @content.where(Sequel.lit(options[:filter])).each do |r|
+      recs = @content.where(Sequel.lit(options[:filter])).
+        order(:record_by, :created)
+      Plog.dump_info(options:options, rcount:recs.count)
+      progress_set(recs) do |r, bar|
         yield r[:sid], r
+        true
       end
     end
 
@@ -205,10 +209,7 @@ module SmuleAuto
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
-        r.delete(:lyrics)
-        sid = r[:sid]
-
-        if c = @content.where(sid:sid).first
+        if c = @content.where(sid:r[:sid]).first
           updset = {
             listens:   r[:listens],
             loves:     r[:loves],
@@ -220,13 +221,48 @@ module SmuleAuto
             ofile:     r[:ofile] || c[:ofile],
           }
           updset[:oldfav] = true if updset[:isfav]
-          @content.where(sid:sid).update(updset)
+          @content.where(sid:r[:sid]).update(updset)
         else
-          r[:stitle] = to_search_str(r[:title])
+          r.delete(:lyrics)
           @content.insert(r)
         end
       end
       self
+    end
+
+    def set_follows(followings, followers)
+      @singers.update(following:nil, follower:nil)
+      allset = {}
+      followings.each do |e|
+        k = e[:name]
+        allset[k] = e
+        allset[k][:following] = true
+      end
+      followers.each do |e|
+        k = e[:name]
+        allset[k] ||= e
+        allset[k][:follower] = true
+      end
+      allset.each do |k, v|
+        @singers.insert_conflict(:replace).insert(v)
+      end
+      self
+    end
+
+    def add_tag(song, tags)
+      songs   = song.is_a?(Array) ? song : [song]
+      stitles = songs.map{|r| r[:stitle]}
+      wset    = SongTag.where(name:stitles)
+      addset, delset = tags.split(',').partition{|r| r[0] != '-'}
+      delset = delset.map{|r| r[1..-1]}
+      SongTag.where(name:stitles).each do |r|
+        new_val = ((r[:tags] || '').split(',') + addset).uniq
+        new_val -= delset
+        new_val = new_val.sort.uniq.join(',')
+        Plog.dump_info(new_val:new_val, r:r)
+        r.update(tags:new_val)
+      end
+      wset.count
     end
   end
 

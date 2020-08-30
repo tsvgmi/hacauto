@@ -38,6 +38,7 @@ module SmuleAuto
       output = {
         sid:           perf[:key],
         title:         perf[:title],
+        stitle:        to_search_str(perf[:title]),
         href:          perf[:web_url],
         psecs:         perf[:song_length],
         created:       perf[:created_at],
@@ -97,8 +98,12 @@ module SmuleAuto
       unless asset_str
         return {}
       end
-      res    = JSON.parse(asset_str, symbolize_names:true) || {}
-      perf   = res[:performance]
+      res = JSON.parse(asset_str, symbolize_names:true) || {}
+      unless perf = res[:performance]
+        Plog.dump_error(msg:"No performance data found", olink:olink)
+        return {}
+      end
+
       lyrics = nil
       if perf[:lyrics]
         lyrics = JSON.parse(perf[:lyrics], symbolize_names:true).
@@ -108,6 +113,7 @@ module SmuleAuto
       output = {
         sid:           perf[:key],
         title:         perf[:title],
+        stitle:        to_search_str(perf[:title]),
         href:          perf[:web_url],
         psecs:         perf[:song_length],
         created:       perf[:created_at],
@@ -121,7 +127,7 @@ module SmuleAuto
         lyrics:        lyrics,
       }
       if perf[:child_count] <= 0
-        operf = perf[:other_performers][0]
+        operf = (perf[:other_performers][0] || {})
         output.update(
           other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
           record_by:   [perf[:performed_by], operf[:handle]].join(','),
@@ -219,7 +225,7 @@ module SmuleAuto
       end
       wset = `atomicparsley #{sfile} -t`.split("\n").map {|l|
         key, value = l.split(/\s+contains:\s+/)
-        key = key.split[-1].gsub(/["]/, '')[1..-1].to_sym
+        key = key.split[-1].gsub(/[^a-z0-9_]/i, '').to_sym
         [key, value]
       }
       wset    = Hash[wset]
@@ -227,7 +233,7 @@ module SmuleAuto
       year    = @info[:created].strftime("%Y")
       aartist = @info[:record_by].gsub(/(,?)#{excuser}(,?)/, '')
       if wset[:nam] == 'ver:1' || wset[:alb] != album || \
-          wset[:day] != year || wset[:ART] != aartist
+          wset[:day] != year || wset[:aART] != aartist
         wset.delete(:lyr)
         Plog.dump_info(msg:"Tagging #{sfile}", wset:wset, title:@info[:title],
                        record_by:@info[:record_by])
@@ -256,7 +262,7 @@ module SmuleAuto
         lcfile  = File.basename(@info[:avatar])
         curl(@info[:avatar], lcfile)
         if test(?f, lcfile) && `file #{lcfile}` =~ /JPEG/
-          command += " --artwork #{lcfile}"
+          command += " --artwork REMOVE_ALL --artwork #{lcfile}"
         end
         command += " --title '#{title}'"
         command += " --artist '#{artist}'"
@@ -277,7 +283,8 @@ module SmuleAuto
           l_flag = ''
         end
 
-        output = `(set -x; #{command} --overWrite #{l_flag}) | tee /dev/tty`
+        output = `(set -x; #{command} --overWrite #{l_flag}) | tee /dev/tty`.
+          encode("UTF-8", invalid: :replace, replace: "")
         if output =~ /insufficient space to retag the source file/io
           return :error
         end
