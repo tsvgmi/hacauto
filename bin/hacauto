@@ -16,7 +16,6 @@ fi
 #------------------------------------------------ Begin of script ---
 #------------------------------------------------ Begin of script ---
 
-F_subCommand $*
 oper=$1; shift
 case $oper in
   download-transpose)
@@ -54,6 +53,12 @@ case $oper in
     fi
     echo "Final file is $ofile.  Open in Sonic Visualizer"
     open -a "Sonic Visualiser" "$ofile"
+    ;;
+
+  smule-*)
+    roper=$(echo ${oper#smule-} | tr '-' '_')
+    set -x
+    exec smuleauto.rb $roper "$@"
     ;;
 
   *)

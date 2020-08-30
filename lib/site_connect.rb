@@ -103,7 +103,7 @@ class SDriver
         }
       )
       @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
-                                        options:foptions)
+                                      options:foptions)
     else
       profile = Selenium::WebDriver::Firefox::Profile.new
       profile["browser.download.folderList"]               = 2
@@ -127,7 +127,7 @@ class SDriver
       errmsg
     end
   end
-
+ 
   def alert
     @driver.switch_to.alert
   end
@@ -136,9 +136,7 @@ class SDriver
     if data
       Plog.info "Enter on #{selector} - #{data[0..19]}" if @options[:verbose]
       elem = @driver.find_element(:css, selector)
-      if options[:clear]
-        elem.send_keys(''*120)
-      end
+      elem.clear unless options[:append]
       elem.send_keys(data)
     end
   end
@@ -164,7 +162,8 @@ class SiteConnect
       auth    = options[:auth]
       identity, password = auth.split(':')
       sdriver    = SDriver.new(options[:url], user:identity,
-                               browser:options[:browser])
+                               browser:options[:browser],
+                               verbose:options[:verbose])
       sdriver.click_and_wait('#login-link', 5)
       sdriver.type('#identity', identity)
       sdriver.type('#password', password)
@@ -176,7 +175,8 @@ class SiteConnect
       auth    = options[:auth]
       identity, password = auth.split(':')
       sdriver = SDriver.new(options[:url], user:identity,
-                             browser:options[:browser])
+                             browser:options[:browser],
+                             verbose:options[:verbose])
       sdriver.click_and_wait('paper-button[data-action="signin"]')
       sdriver.type('#identifierId', identity + "\n")
       sdriver.type('input[name="password"]', password + "\n")
@@ -187,23 +187,22 @@ class SiteConnect
     end
 
     def connect_smule(options)
-      sdriver = SDriver.new(options[:url], browser:options[:browser])
-      if !options[:no_auth] && auth = options[:auth]
+      sdriver = SDriver.new(options[:url], options)
+      if !options[:skip_auth] && auth = options[:auth]
         sdriver.goto("/user/login")
         identity, password = auth.split(':')
-        #sdriver.click_and_wait('#react-login-button', 2) # Login
-        sdriver.click_and_wait('a.gqrikP')        # email
+        sdriver.click_and_wait('a[data-test-id="login-type-btn-login-acc"]') # email
         sdriver.type('input[name="snp-username"]', identity + "\n")
         sleep 1
         sdriver.type('input[name="snp-password"]', password + "\n")
-        sdriver.click_and_wait('._1tkfhqj')             # Login
+        sdriver.click_and_wait('a[data-test-id="email-login-ctalogin-acc"]') # login
       end
       sdriver
     end
 
     def connect_singsalon(options)
-      sdriver = SDriver.new('https://sing.salon', browser:options[:browser])
-      if !options[:no_auth] && auth = options[:auth]
+      sdriver = SDriver.new('https://sing.salon', options)
+      if !options[:skip_auth] && auth = options[:auth]
         identity, password = auth.split(':')
         sdriver.click_and_wait('#elUserSignIn')
         sdriver.type('input[name="auth"]', identity + "\n")
@@ -214,7 +213,7 @@ class SiteConnect
     end
 
     def connect_other(options)
-      SDriver.new(options[:url], browser:options[:browser])
+      SDriver.new(options[:url], options)
     end
   end
   
@@ -224,7 +223,7 @@ class SiteConnect
     unless config
       raise "Unsupported target: #{site}"
     end
-    config.update(options.compact)
+    config.update(options.transform_keys(&:to_sym).compact)
     case site
     when :gmusic
       @driver = SiteConnect.connect_gmusic(config)

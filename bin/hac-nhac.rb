@@ -512,12 +512,12 @@ class HavSource < MusicSource
   def find_matching_songs(slist)
     result     = []
     not_founds = []
-    bar    = ProgressBar.new(slist.size)
+    bar        = TTY::ProgressBar.new('Find [:bar] :percent', slist.size)
     slist.each do |sinfo|
-      bar.increment!
+      bar.advance
       plinks = find_matching_song(sinfo[:name])
       unless plinks
-        Plog.info("#{sname0} not found on HAV")
+        bar.log("#{sname0} not found on HAV")
         not_founds << sinfo
         next
       end
@@ -852,19 +852,19 @@ class HacSource < MusicSource
   def find_matching_songs(slist, do_match=true)
     found_set  = []
     not_founds = []
-    bar        = ProgressBar.new(slist.size)
+    bar        = TTY::ProgressBar.new('Find [:bar] :percent', slist.size)
     slist.each do |sinfo|
       ck_name = sinfo[:name].strip.sub(/\s*\(.*$/o, '').sub(/\s+cover/io, '')
-      url     = "#{@base_url}/search?q=#{CGI.escape(ck_name)}"
-      Plog.dump_info(url:url)
+      url = "#{@base_url}/search?q=#{CGI.escape(ck_name)}"
       begin
-        page    = get_page(url)
+        bar.log(url)
+        page = get_page(url)
       rescue OpenURI::HTTPError => errmsg
-        Plog.dump_error(url:url, errmsg:errmsg)
+        bar.log(errmsg.to_s)
         next
       end
 
-      bar.increment!
+      bar.advance
       found_item = nil
       [:perfect, :name_only, :first].each do |phase|
         page.css('.song-item').each do |sitem|

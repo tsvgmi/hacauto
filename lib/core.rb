@@ -5,17 +5,56 @@
 # $Id: core.rb 6 2010-11-26 10:59:34Z tvuong $
 #---------------------------------------------------------------------------
 #++
-#class Hash
-  #def to_yaml(opts = {})
-    #YAML::quick_emit(object_id, opts) do |out|
-      #out.map(taguri, to_yaml_style) do |map|
-        #sort_by{|a| a.to_s}.each do |k, v|
-          #map.add(k, v)
-        #end
-      #end
-    #end
-  #end
-#end
+module ThorAddition
+  def self.included(klass)
+    klass.class_eval do
+      def self.exit_on_failure?
+        true
+      end
+    end
+  end
+
+  def cli_wrap
+    if ENV['BYEBUG']
+      say_status Time.now, "#{File.basename(__FILE__)}:#{__LINE__} " + "Entering debug mode", :yellow
+      ENV.delete('BYEBUG')
+      require 'byebug'
+      byebug
+    end
+    Signal.trap('SIGINT')  { exit(1) }
+    Signal.trap('SIGQUIT') { Elog.info "Quitting from signal."; exit(0) }
+
+    result = yield
+
+    if result.is_a?(FalseClass)
+      return(1)
+    end
+    if result.is_a?(TrueClass)
+      return(0)
+    elsif result.is_a?(String)
+      puts result
+    else
+      puts result.inspect
+    end
+    return 0
+  end
+
+  def writable_options
+    options.transform_keys(&:to_sym)
+  end
+end
+
+def progress_set(wset, title=nil)
+  title ||= caller[0].split.last.gsub(/['"`]/, '')
+  tstring = "%-16.16s [:bar] :percent" % title
+  bar     = TTY::ProgressBar.new(tstring, total:wset.size)
+  wset.each do |entry|
+    unless yield entry, bar
+      break
+    end
+    bar.advance
+  end
+end
 
 # Functions to support CLI interaction (i.e. options processing,
 # help, result interpretation, exit handling)
@@ -778,7 +817,11 @@ class Plog
 
     def dump_info(obj)
       PLogger.set_clevel(1)
-      Plog.info(obj.inspect)
+      if obj[:_ofmt] == 'Y'
+        Plog.info(obj.to_yaml)
+      else
+        Plog.info(obj.inspect)
+      end
       PLogger.set_clevel(0)
     end
 

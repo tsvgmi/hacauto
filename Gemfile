@@ -1,6 +1,6 @@
 source "http://rubygems.org"
 
-gem "progress_bar"
+#gem "progress_bar"
 gem "byebug"
 gem "selenium-webdriver"
 gem "webdrivers"
@@ -16,6 +16,7 @@ gem "tty-box"
 gem "tty-cursor"
 gem "tty-table"
 gem "tty-pager"
+gem "thor"
 
 gem "listen"
 
