@@ -58,6 +58,7 @@ case $oper in
   smule-*)
     roper=$(echo ${oper#smule-} | tr '-' '_')
     set -x
+    #export RUBYOPT="--jit --jit-verbose=15 --jit-max-cache=1000 --jit-min-calls=50"
     exec smuleauto.rb $roper "$@"
     ;;
 

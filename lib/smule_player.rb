@@ -17,6 +17,7 @@ module SmuleAuto
 
   class SmulePlayer
     def initialize(user, tdir, options={})
+      @user     = user
       @options  = options
       @roptions = {}
       @content  = SmuleDB.instance(user, tdir)
@@ -31,6 +32,7 @@ module SmuleAuto
       @order  ||= 'play'
       @played_set = []
       @scanner = Scanner.new(user, @options)
+      @sapi    = API.new(options)
       at_exit {
         _save_state(true)
         exit 0
@@ -210,7 +212,11 @@ EOM
       spage = @scanner.spage
       spage.click_and_wait("button._13ryz2x")
       content = spage.refresh
-      fav     = spage.page.css("div._8hpz8v")[0].text
+      unless fav = spage.page.css("div._8hpz8v")[0]
+        Plog.error("Cannot locate fav element")
+        return
+      end
+      fav = fav.text
       if fav != 'Favorite'
         Plog.info "Song is already favorite"
         spage.click_and_wait("._6ha5u0", 1)
@@ -231,7 +237,11 @@ EOM
       text = ' ' + tag
       spage.click_and_wait("button._13ryz2x", 1)   # ...
       content  = spage.refresh
-      editable = spage.page.css("div._8hpz8v")[2].text
+      unless editable = spage.page.css("div._8hpz8v")[2]
+        Plog.error("Cannot locate edit element")
+        return
+      end
+      editable = editable.text
       if editable == 'Edit'
         spage.click_and_wait("a._117spsl", 1, 1)  # Edit
         spage.type("textarea#message", text, append:true)  # Enter tag
@@ -243,13 +253,9 @@ EOM
       spage.click_and_wait('button._1oqc74f', 0)
     end
 
-    def _refresh_content
-      Plog.info("Refresh content")
-      @content.refresh
-      @clist      = []
-      @played_set = []
-    end
-
+    # These are for test hooks mostly where could could not test code due to it
+    # being in run loop.  Code could be copied here for testing as the function
+    # is redefineable at runtime with 'R' option
     def browser_op(sitem, psitem, *operations)
       spage = @scanner.spage
       operations.each do |data|
@@ -258,8 +264,6 @@ EOM
           _show_msgs(psitem)
         when 'F'                                # Set favorite song
           _set_favorite(sitem)
-        when /^t/i                              # Set a tag in msg
-          _set_smule_song_tag(sitem, $')
         end
       end
     end
@@ -270,7 +274,7 @@ EOM
         yield *args
       rescue => errmsg
         prompt = TTY::Prompt.new
-        Plog.dump_error(errmsg:errmsg.to_s, args:args)
+        Plog.dump_error(errmsg:errmsg, args:args, trace:errmsg.backtrace)
         prompt.keypress("[ME] Press any key to continue ...")
       end
     end
@@ -280,8 +284,7 @@ Command:
 ? Help
 b Browser   command (see below)
   t#tagname Adding tag name (only for songs started by you)
-  F         Mark the song as favorite
-C           Reload content (if external app update it)
+F           Mark the song as favorite
 f           Filter existing song list
   *=0       Filter songs w/o star
   >=4       Filter song with >= 4 stars
@@ -295,8 +298,8 @@ n           Goto next (1) song
 p           List played (previous) songs
 R           Reload script
 s           Sort order
+S           Sync with smule (update new songs, collab)
 t           Give new tags to current song
-w           Write database
 x           Exit
 *           Give stars to current song
 
@@ -383,7 +386,7 @@ EOH
               @clist.unshift(sitem) if sitem
               break
             when /^[\+=\/]/i                # Add/replace list
-              choices = %w(favs recent record_by star title)
+              choices = %w(favs recent record_by star title query)
               ftype   = prompt.enum_select('Filter type?', choices)
               param   = (ftype == 'favs') ? '' : prompt.ask("#{ftype} value ?")
               if param
@@ -431,8 +434,6 @@ EOH
                   prompt.keypress("Press any key [:countdown]", timeout:3)
                 end
               end
-            when 'C'
-              _refresh_content
             when 'D'
               if prompt.keypress('Are you sure? ') =~ /^y/i
                 @content.delete_song(sitem)
@@ -503,12 +504,18 @@ EOH
                            play.d love.d star.d date.d title.d)
               @order  = prompt.enum_select('Order?', choices)
               @clist  = sort_selection(@clist)
+            when 'S'
+              _menu_eval do
+                perfset   = @sapi.get_performances(@user, limit:50, days:1)
+                perfset.concat(SmuleSong.collect_collabs(@user, 7))
+                new_count = @content.add_new_songs(perfset, false)
+                prompt.keypress("#{new_count} songs added [:countdown]",
+                                timeout:3)
+              end
             when 't'                             # Set tag
               if tag = prompt.ask('Tag value ?')
                 @content.add_tag(sitem, tag)
               end
-            when 'w'                            # Write content out
-              _save_state(false)
             when 'x'                            # Quit
               return
             when 'Z'                            # Quit

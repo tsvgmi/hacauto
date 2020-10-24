@@ -193,7 +193,7 @@ class SiteConnect
         identity, password = auth.split(':')
         sdriver.click_and_wait('a[data-test-id="login-type-btn-login-acc"]') # email
         sdriver.type('input[name="snp-username"]', identity + "\n")
-        sleep 1
+        sleep 3
         sdriver.type('input[name="snp-password"]', password + "\n")
         sdriver.click_and_wait('a[data-test-id="email-login-ctalogin-acc"]') # login
       end

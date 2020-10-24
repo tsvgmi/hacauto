@@ -50,7 +50,7 @@ def to_search_str(str)
   AccentMap.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
   end
-  stitle.strip
+  stitle.gsub(/\s+/, ' ').strip
 end
 
 def curl(path, ofile=nil)
@@ -88,8 +88,10 @@ end
 # Account to move songs to.  i.e. user close old account and open
 # new one and we want to associate with new account
 Alternate = {
-  '__MinaTrinh__' => 'Mina_________',
+  'Eddy2020_'     => 'Mina_________',
   '_Huong'        => '__HUONG',
+  '__MinaTrinh__' => 'Mina_________',
+  'tim_chet'      => 'ngotngao_mantra',
 }
 
 def _record_by_map(record_by)
@@ -406,7 +408,7 @@ module SmuleAuto
         newlist = []
         progress_set(flist, "Preparing download") do |afile, bar|
           afile[:ofile], afile[:sfile] = _ofile(afile)
-          odir          = File.dirname(afile[:ofile])
+          odir = File.dirname(afile[:ofile])
           FileUtils.mkdir_p(odir, verbose:@options[:verbose]) unless test(?d, odir)
           begin
             if test(?f, afile[:ofile]) && !test(?l, afile[:ofile])
@@ -453,8 +455,8 @@ module SmuleAuto
         end
         FileUtils.rm(Dir.glob("#{ENV['HOME']}/Downloads/*.m4a"))
         ssconnect = SiteConnect.new(:singsalon, options).driver
-        ssconnect.goto('/smule-downloader')
-        fcount = 0
+        fcount    = 0
+        flist     = flist.sort_by {|f| f[:created]}
         progress_set(flist, "Downloading songs") do |afile, bar|
           if SmuleSong.new(afile, options).
               download_from_singsalon(ssconnect, excuser:user)
@@ -480,32 +482,6 @@ module SmuleAuto
         end
       end
 
-      def _collect_collabs(user, content)
-        days        = (options[:days] || 30).to_i
-        last_date   = (Time.now - days*24*3600)
-        collab_list = Performance.
-          where(Sequel.like(:href, '%/ensembles')).
-          where(created:Date.today-days..Date.today).
-          reverse(:created)
-        if collab_list.count <= 0
-          Plog.info("No collabs found in last #{days} days")
-          return []
-        end
-        if true
-          result = []
-          progress_set(collab_list, "Checking collabs") do |sinfo, bar|
-            result.concat(SmuleSong.new(sinfo, options).get_ensemble_asset)
-            true
-          end
-        else
-          collab_urls = collab_list.map(:href)
-          result      = Scanner.new(user, writable_options).
-            scan_collab_list(collab_urls)
-          content.add_new_songs(result, false)
-        end
-        result
-      end
-
       def _tdir_check(tdir)
         unless test(?d, tdir)
           raise "Target dir #{tdir} not accessible to download music to"
@@ -527,19 +503,12 @@ module SmuleAuto
         end
         perfset
       end
-
-      def song_content(user, tdir)
-        SmuleDB.instance(user, tdir)
-      end
     end
 
     class_option :browser,  type: :string, default:'firefox',
       desc:'Browser to use (firefox|chrome)'
     class_option :skip_auth,  type: :boolean, 
       desc:'Login account from browser (not anonymous)'
-    class_option :days,     type: :numeric, default:7,
-      desc:'Days to look back'
-    class_option :download, type: :boolean, desc:'Downloading songs'
     class_option :data_dir, type: :string, default:'./data',
       desc:'Data directory to keep data base and file'
     class_option :limit,    type: :numeric, desc:'Max # of songs to process'
@@ -554,13 +523,16 @@ module SmuleAuto
 
     desc "collect_songs user", "Collect all songs and collabs of user"
     option :with_collabs,  type: :boolean
+    option :days,     type: :numeric, default:7,
+      desc:'Days to look back'
+    option :download, type: :boolean, desc:'Downloading songs'
     def collect_songs(user)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
-        content  = song_content(user, tdir)
+        content  = SmuleDB.instance(user, tdir)
         newsongs = _collect_songs(user, content)
         if options[:with_collabs]
-          newsongs.concat(_collect_collabs(user, content))
+          newsongs.concat(SmuleSong.collect_collabs(user, options[:days]))
         end
         if (newsongs.size) <= 0
           return true
@@ -574,7 +546,11 @@ module SmuleAuto
       end
     end
 
-    desc "download_urls(user, *urls)", "download_urls"
+    desc "download_urls user url ...", "Download from a list of URL's"
+    long_desc <<-LONGDESC
+Download from a list of URL's and update the database with the new data.
+Done in case some URL did not get download to the local file correctly
+    LONGDESC
     def download_urls(user, *urls)
       cli_wrap do
         SmuleDB.instance(user, ".")
@@ -589,17 +565,22 @@ module SmuleAuto
           to_download << sinfo
         end
         _download_list(to_download, tdir, user)
-        content  = song_content(user, tdir)
+        content  = SmuleDB.instance(user, tdir)
         content.add_new_songs(to_download, false)
         true
       end
     end
 
-    desc "download_songs(user, *filters)", "download_songs"
+    desc "download_songs user [filters ...]", "Download songs matching criteria"
+    long_desc <<-LONGDESC
+Check and download any missing/mis-labeled songs for the matching filter.
+Done if any downloaded files are missed or processed incorrectly
+Filters is the list of SQL's into into DB.
+    LONGDESC
     def download_songs(user, *filters)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
-        content  = song_content(user, tdir)
+        content  = SmuleDB.instance(user, tdir)
         to_download = []
         content.each(filter:filters.join('/')) do |sid, sinfo|
           to_download << sinfo
@@ -613,7 +594,7 @@ module SmuleAuto
     def scan_favs(user)
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
-        content = song_content(user, tdir)
+        content  = SmuleDB.instance(user, tdir)
         if options[:use_api]
           favset = API.new.get_favs(user)
         else
@@ -634,7 +615,7 @@ module SmuleAuto
     def unfavs_old(user, count=10)
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
-        content = song_content(user, tdir)
+        content  = SmuleDB.instance(user, tdir)
         if options[:use_api]
           favset  = API.new.get_favs(user)
         else
@@ -643,7 +624,7 @@ module SmuleAuto
         end
         result  = Scanner.new(user, writable_options).
           unfavs_old(count.to_i, favset)
-        song_content(user, tdir).add_new_songs(result, true) if tdir
+        content.add_new_songs(result, true) if tdir
         true
       end
     end
@@ -664,18 +645,23 @@ module SmuleAuto
           }
           fset << users
         end
-        song_content(user, tdir).set_follows(fset[0], fset[1])
+        SmuleDB.instance(user, tdir).set_follows(fset[0], fset[1])
         true
       end
     end
 
-    desc "open_on_itune(user, *filters)", "open_on_itune"
+    desc "open_on_itune(user, *filters)", "Open songs on iTunes"
     option :open,  type: :boolean, default:true
+    long_desc <<-LONGDESC
+Open the songs on itunes.  This is done to force itune to refresh the MP3
+header and update its database.
+Filters is the list of SQL's into into DB.
+    LONGDESC
     def open_on_itune(user, *filters)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
-        content  = song_content(user, tdir)
         to_download = []
+        content  = SmuleDB.instance(user, tdir)
         content.each(filter:filters.join('/')) do |sid, sinfo|
           sfile = sinfo[:sfile]
           if sfile && test(?f, sfile)
@@ -689,10 +675,8 @@ module SmuleAuto
       end
     end
 
-    desc "fix_mp3_files(user, *filters)", "fix_mp3_meta"
+    desc "fix_mp3_files(user, *filters)", "Fix the mp3 files (correct metadata)"
     option :open,      type: :boolean, desc:'Open after fixing to check'
-    option :overwrite, type: :boolean,
-      desc:'Redownload and overwrite existing file'
     long_desc <<-LONGDESC
 Check and add in metadata to mp3 file if missing.  Sometimes website changes
 attributes so we could not get the metadata and create raw mp3 file. This
@@ -709,8 +693,8 @@ before, you'd need to use --overwrite to force download a fresh copy again
           filter: filters.join('/'),
         )
         tdir      = _tdir_check(moptions[:data_dir])
-        content   = song_content(user, tdir)
         dl_list   = []
+        content  = SmuleDB.instance(user, tdir)
         content.each(moptions) do |sid, sinfo|
           sfile = sinfo[:sfile]
 
@@ -736,17 +720,23 @@ before, you'd need to use --overwrite to force download a fresh copy again
     end
 
     desc "play user", "Play songs from user"
-    option :myopen,  type: :boolean, desc:'Play my opens also'
+    option :myopen,      type: :boolean, desc:'Play my opens also'
+    option :update_favs, type: :boolean, default:false
     long_desc <<-LONGDESC
-      Start a CLI player to play songs from user.  Player support various
-      command to control the song and how to play.
+Start a CLI player to play songs from user.  Player support various command to
+control the song and how to play.
 
-      Player keep the play state on the file splayer.state to allow it
-      to resume where it left off from the previous run.
+Player keep the play state on the file splayer.state to allow it to resume where
+it left off from the previous run.
     LONGDESC
     def play(user)
       cli_wrap do
         tdir = _tdir_check(options[:data_dir])
+        if options[:update_favs]
+          content  = SmuleDB.instance(user, tdir)
+          favset = API.new.get_favs(user)
+          content.add_new_songs(favset, true)
+        end
         SmulePlayer.new(user, tdir, options).play_all
       end
     end
@@ -755,11 +745,11 @@ before, you'd need to use --overwrite to force download a fresh copy again
     def show_following(user)
       cli_wrap do
         tdir      = _tdir_check(options[:data_dir])
-        content   = song_content(user, tdir)
-        following = content.singers.select{|k, v| v[:following]}
+        content   = SmuleDB.instance(user, tdir)
+        following = content.singers.where(following:true).as_hash(:name)
         bar = TTY::ProgressBar.new("Following [:bar] :percent",
-                                   total:Performance.size)
-        Performance.each do |sid, sinfo|
+                                   total:Performance.count)
+        Performance.each do |sinfo|
           singers = sinfo[:record_by].split(',')
           singers.select{|r| r != user}.each do |osinger|
             if finfo = following[osinger]
@@ -794,7 +784,7 @@ before, you'd need to use --overwrite to force download a fresh copy again
     def fix_content(user, fix_type, *data)
       cli_wrap do
         tdir     = _tdir_check(options[:data_dir])
-        content  = song_content(user, tdir)
+        content  = SmuleDB.instance(user, tdir)
         fix_type = fix_type.to_sym
         ccount   = 0
         SmuleDB.instance(user)
@@ -845,44 +835,93 @@ before, you'd need to use --overwrite to force download a fresh copy again
     def move_singer(user, old_name, new_name)
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
-        content = song_content(user, tdir)
+        content  = SmuleDB.instance(user, tdir)
         moptions = writable_options
         moptions.update(
           pbar:   "Move content from #{old_name}",
           filter: "record_by=#{old_name}",
         )
         Performance.
-          where(Sequel.like(:record_by, "%#{old_name}%")).each do |v|
-          new_record_by = v[:record_by].gsub(old_name, new_name)
-          if new_record_by != v[:record_by]
+          where(Sequel.ilike(:record_by, "%#{old_name}%")).each do |v|
+          if v[:record_by] =~ /,#{old_name}$|^#{old_name},/
+            new_record_by = v[:record_by].gsub(old_name, new_name)
             ofile, sfile = _ofile(v)
             v.update(record_by:new_record_by, ofile:ofile, sfile:sfile)
-            SmuleSong.new(v, options).download_from_singsalon(nil, excuser:user)
+            SmuleSong.new(v, moptions).download_from_singsalon(nil, excuser:user)
           end
         end
         true
       end
     end
 
-    desc "smule_song_info(url)", "smule_song_info"
-    def smule_song_info(url)
+    desc "song_info url", "Get the song info from URL and update into database"
+    long_desc <<-LONGDESC
+Check the URL's and update into database
+Done if any downloaded files are missed or processed incorrectly
+Filters is the list of SQL's into into DB.
+    LONGDESC
+    def song_info(url)
       cli_wrap do
         SmuleDB.instance("THV_13", ".")
         surl = url.sub(%r{^https://www.smule.com}, '')
         sinfo = Performance.first(href:surl) || Performance.new(href:surl)
         song  = SmuleSong.new(sinfo, options)
         if url =~ /ensembles$/
-          song.get_ensemble_asset
+          result = song.get_ensemble_asset
         else
-          song.get_asset
-        end.to_yaml
+          result = [song.get_asset]
+        end
+        result.each do |sdata|
+          sdata.delete(:lyrics)
+          Plog.dump_info(title:sdata[:title], record_by:sdata[:record_by])
+          href  = sdata[:href]
+          sinfo = Performance.first(href:href) || Performance.new(href:href)
+          sinfo.update(sdata)
+          sinfo.save
+        end
+        true
       end
     end
 
-   desc "curl(url)", "curl"
-   def do_curl(url)
+    desc "to_open(user)", "Show list of potential to open songs"
+    option :tag,  type: :string
+    long_desc <<-LONGDESC
+List the candidates for open from the matching filter.
+Filters is the list of SQL's into into DB.
+* Song which has not been opened
+* Was a favorites
+* Sorted by date
+    LONGDESC
+    def to_open(user, *filter)
       cli_wrap do
-        curl(url)
+        tdir    = _tdir_check(options[:data_dir])
+        content = SmuleDB.instance(user, tdir)
+
+        wset   = Performance.where(record_by:user)
+        opened = {}
+        wset.all.each do |r|
+          opened[r[:stitle]] = true
+        end
+
+        wset = Performance.where(Sequel.lit('isfav = 1 or oldfav = 1')).order(:created)
+        if filter.size > 0
+          wset = wset.where(Sequel.lit(filter.join(' ')))
+        end
+        wset = wset.join_table(:inner, :song_tags, name: :stitle)
+
+        if tag = options[:tag]
+          wset = wset.where(Sequel.lit("tags like '%#{tag}%'"))
+        end
+
+        topen = {}
+        wset.all.each do |r|
+          next if opened[r[:stitle]]
+          topen[r[:stitle]] = [r[:created], r[:tags]]
+        end
+        topen.sort_by{|k, v| v[0]}.each do |name, sinfo|
+          puts "%s %-40s %s" % [sinfo[0], name, sinfo[1]]
+        end
+        true
       end
     end
   end
@@ -891,3 +930,4 @@ end
 if (__FILE__ == $0)
   SmuleAuto::Main.start(ARGV)
 end
+

@@ -41,7 +41,7 @@ module SmuleAuto
         stitle:        to_search_str(perf[:title]),
         href:          perf[:web_url],
         psecs:         perf[:song_length],
-        created:       perf[:created_at],
+        created:       Time.parse(perf[:created_at]),
         avatar:        perf[:cover_url],
         orig_city:     (perf[:orig_track_city] || {}).values.join(', '),
         listens:       perf[:stats][:total_listens],
@@ -52,11 +52,12 @@ module SmuleAuto
         lyrics:        lyrics,
       }
       if perf[:child_count] <= 0
-        operf = perf[:other_performers][0]
-        output.update(
-          other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
-          record_by:   [perf[:performed_by], operf[:handle]].join(','),
-        )
+        if operf = perf[:other_performers][0]
+          output.update(
+            other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
+            record_by:   [perf[:performed_by], operf[:handle]].join(','),
+          )
+        end
       else
         output[:is_ensemble] = true
       end
@@ -143,11 +144,11 @@ module SmuleAuto
 
     def play(spage)
       href = @info[:href].sub(/\/ensembles$/, '')
-
+      # This will start playing
+      # Page was archived
       spinner = TTY::Spinner.new("[:spinner] Loading ...",
                                     format: :pulse_2)
-      spinner.auto_spin
-      # This will start playing
+      spinner.auto_spin      
       spage.goto(href)
       %w(div.error-gone div.page-error).each do |acss|
         if spage.css(acss).size > 0
@@ -157,18 +158,7 @@ module SmuleAuto
         end
       end
       spage.click_and_wait('button._1oqc74f')
-      count_set = spage.css("div._13gdiri")
-      if count_set.size > 0
-        if (value = count_set[0].text.to_i) > 0
-          @info[:listens] = value
-        end
-        if (value = count_set[1].text.to_i) > 0
-          @info[:loves] = value
-        end
-      end
 
-      # The play time won't be known until the source is loaded
-      duration_s = nil
       1.upto(15) do
         duration_s = spage.css("._vln25l")[0]
         if duration_s && duration_s.text != "00:00"
@@ -178,15 +168,19 @@ module SmuleAuto
         spage.refresh
       end
       spinner.stop('Done!')
-      unless duration_s
-        Plog.error("Cannot get song info")
-        return 0
-      end
-      duration = duration_s.text.split(':')
-      psecs    = duration[0].to_i * 60 + duration[1].to_i
 
+      # Should pickup for joined file where info was not picked up
+      # at first
+      asset = get_asset
+      if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s == ""
+        @info[:other_city] = asset[:other_city]
+      end
+
+      # Click on play
+      @info.update(listens:asset[:listens], loves:asset[:loves],
+                   psecs:asset[:psecs])
       @info[:listens] += 1
-      @info[:psecs] = psecs
+      @info[:psecs]
     end
     
     def download_from_singsalon(ssconnect=nil, coptions={})
@@ -220,7 +214,7 @@ module SmuleAuto
     def is_mp4_tagged?(excuser=nil)
       sfile = @info[:sfile]
       if !sfile || !test(?s, sfile)
-        Plog.error("#{sfile} empty or not exist")
+        Plog.error("#{@info[:stitle]}:#{sfile} empty or not exist")
         return false
       end
       wset = `atomicparsley #{sfile} -t`.split("\n").map {|l|
@@ -295,8 +289,50 @@ module SmuleAuto
       end
     end
 
+    def wait_loop(limit, msg, sleep=1)
+      wait_time = 0
+      Plog.info("Waiting for #{msg}:#{limit}")
+      while true
+        if wait_time >= limit
+          Plog.error("Timeout waiting for operation")
+          return false
+        end
+        yield
+        sleep(sleep)
+        wait_time += sleep
+      end
+      Plog.info("found")
+      true
+    end
+
+    def wait_for_last_file(wdir, ofile, wtime=3600)
+      Plog.info("Right click and download to #{ofile} please")
+      m4file = nil
+      wait_loop(wtime, "see file") do
+        m4file = Dir.glob("#{wdir}/*.m4a").
+          sort_by{|r| File.mtime(r)}.last
+        break if (m4file && test(?f, m4file))
+      end
+      if !m4file || !test(?f, m4file)
+        return false
+      end
+
+      wait_loop(60, "see content") do
+        if (fsize = File.size(m4file)) > 1_000_000
+          break
+        end
+      end
+      File.open(ofile, 'wb') do |f|
+        f.write(File.read(m4file))
+      end
+      File.delete(m4file)
+      Plog.info("Wrote #{ofile}(#{File.size(ofile)} bytes)")
+      true
+    end
+
     def get_audio_from_singsalon(ofile, ssconnect)
       olink   = 'https://www.smule.com/' + @info[:href].sub(/\/ensembles$/, '')
+      ssconnect.goto('/smule-downloader')
       ssconnect.type('input.downloader-input', olink)
       ssconnect.click_and_wait('input.ipsButton[value~=Fetch]')
 
@@ -304,47 +340,32 @@ module SmuleAuto
       handles    = ssconnect.window_handles
       cur_handle = ssconnect.window_handle
       begin
-        # This code is no longer active.  It was done during the time the site
-        # switch to more debug mode to troubleshoot issue
-        if handles.size > 1
-          Plog.info("Switch to window #{handles[-1]} to download") if @options[:verbose]
-          ssconnect.switch_to.window(handles[-1])
-          sleep(4)
-        end
-        ssconnect.click_and_wait('a.ipsButton[download]')
-
-        wait_time = 0
-        while true
-          if wait_time >= 60
-            Plog.error("Timeout waiting for file to appear in Downloads")
-            return false
-          end
-          m4file = Dir.glob("#{ENV['HOME']}/Downloads/*.m4a").
-            sort_by{|r| File.mtime(r)}.last
-          break if m4file
-          sleep(1)
-          wait_time += 1
-        end
-
-        Plog.info("Waiting for #{m4file}") if @options[:verbose]
-        while (fsize = File.size(m4file)) < 1_000_000
-          sleep(1)
-        end
-        File.open(ofile, 'wb') do |f|
-          f.write(File.read(m4file))
-        end
-        Plog.info("Wrote #{ofile}(#{File.size(ofile)} bytes)")
+        wait_for_last_file(Dir.pwd, ofile)
       rescue => errmsg
         Plog.dump_error(errmsg:errmsg)
-      ensure
-        # This code is no longer active.  It was done during the time the site
-        # switch to more debug mode to troubleshoot issue
-        if handles.size > 1
-          ssconnect.close
-          ssconnect.switch_to.window(cur_handle)
-        end
       end
       test(?s, ofile)
     end
+
+    def self.collect_collabs(user, days)
+      days        = days.to_i
+      last_date   = (Time.now - days*24*3600)
+      collab_list = Performance.
+        where(Sequel.like(:record_by, user)).
+        where(Sequel.like(:href, '%/ensembles')).
+        where(created:Date.today-days..Date.today).
+        reverse(:created)
+      if collab_list.count <= 0
+        Plog.info("No collabs found in last #{days} days")
+        return []
+      end
+      result = []
+      progress_set(collab_list, "Checking collabs") do |sinfo, bar|
+        result.concat(SmuleSong.new(sinfo, verbose:true).get_ensemble_asset)
+        true
+      end
+      result
+    end
+
   end
 end
