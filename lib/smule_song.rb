@@ -190,7 +190,7 @@ module SmuleAuto
             Plog.info("Downloading for #{@info[:title]}")
             get_audio_from_singsalon(@info[:sfile], ssconnect)
           else
-            Plog.error("Need to download song, but there is no connection")
+            Plog.error("Need to download #{@info[:stitle]}/#{@info[:record_by]}, but there is no connection")
             return false
           end
         end

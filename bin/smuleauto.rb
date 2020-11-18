@@ -197,6 +197,25 @@ module SmuleAuto
       }
     end
 
+    def star_set(song_set, count)
+      song_set.each do |sinfo|
+        href = sinfo[:href]
+        next if href =~ /ensembles$/
+        next if sinfo[:record_by].include?(@user)
+        next if Love.first(sid:sinfo[:sid], user:@user)
+        @spage.goto(href, 5)
+        if @spage.css("div._1v7cqsk").size > 0
+          Plog.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
+          @spage.click_and_wait("div._1v7cqsk", 1)
+          count -= 1
+          if count <= 0
+            break
+          end
+        end
+        Love.insert(sid:sinfo[:sid], user:@user)
+      end
+    end
+
     def scan_collab_list(collab_links)
       result    = []
       progress_set(collab_links, "Checking collabs") do |alink, bar|
@@ -490,8 +509,8 @@ module SmuleAuto
       end
 
       def _collect_songs(user, content)
-        limit = (options[:limit] || 10_000).to_i
-        days  = (options[:days] || 7).to_i
+        limit = options[:limit]
+        days  = options[:days]
         if options[:use_api]
           sapi    = API.new(options)
           perfset = sapi.get_performances(user, limit:limit, days:days)
@@ -511,7 +530,8 @@ module SmuleAuto
       desc:'Login account from browser (not anonymous)'
     class_option :data_dir, type: :string, default:'./data',
       desc:'Data directory to keep data base and file'
-    class_option :limit,    type: :numeric, desc:'Max # of songs to process'
+    class_option :limit,    type: :numeric, desc:'Max # of songs to process',
+      default:10_000
     class_option :song_dir, type: :string, default:'/Volumes/Voice/SMULE',
       desc:'Data directory to keep songs (m4a)'
     class_option :force,    type: :boolean
@@ -520,11 +540,11 @@ module SmuleAuto
     class_option :verbose,  type: :boolean
     class_option :open,     type: :boolean, desc: 'Opening mp4 after download'
     class_option :use_api,  type: :boolean, default:true
+    class_option :days,     type: :numeric, default:7,
+      desc:'Days to look back'
 
     desc "collect_songs user", "Collect all songs and collabs of user"
     option :with_collabs,  type: :boolean
-    option :days,     type: :numeric, default:7,
-      desc:'Days to look back'
     option :download, type: :boolean, desc:'Downloading songs'
     def collect_songs(user)
       cli_wrap do
@@ -749,7 +769,8 @@ it left off from the previous run.
         following = content.singers.where(following:true).as_hash(:name)
         bar = TTY::ProgressBar.new("Following [:bar] :percent",
                                    total:Performance.count)
-        Performance.each do |sinfo|
+        Performance.where(Sequel.lit 'record_by like ?', "%#{user}%").
+                          each do |sinfo|
           singers = sinfo[:record_by].split(',')
           singers.select{|r| r != user}.each do |osinger|
             if finfo = following[osinger]
@@ -758,6 +779,11 @@ it left off from the previous run.
                                    created_value(finfo[:last_join])].max
               finfo[:songs] ||= 0
               finfo[:songs] += 1
+
+              if sinfo[:isfav] || sinfo[:oldfav]
+                finfo[:favs] ||= 0
+                finfo[:favs] += 1
+              end
             end
           end
           bar.advance
@@ -768,8 +794,10 @@ it left off from the previous run.
           end
         end
         following.sort_by{|k, v| v[:last_days] || 9999}.each do |asinger, finfo|
-          puts "%-20.20s - %3d songs, %4d days, %s" %
-            [asinger, finfo[:songs] || 0, finfo[:last_days] || 9999,
+          puts "%-20.20s - %3d songs, %3d favs, %4d days, %s" %
+            [asinger, finfo[:songs] || 0,
+             finfo[:favs] || 0,
+             finfo[:last_days] || 9999,
              finfo[:follower] ? 'follower' : '']
         end
         true
@@ -855,6 +883,7 @@ it left off from the previous run.
     end
 
     desc "song_info url", "Get the song info from URL and update into database"
+    option :update,  type: :boolean, desc:'Updating database'
     long_desc <<-LONGDESC
 Check the URL's and update into database
 Done if any downloaded files are missed or processed incorrectly
@@ -871,20 +900,25 @@ Filters is the list of SQL's into into DB.
         else
           result = [song.get_asset]
         end
-        result.each do |sdata|
-          sdata.delete(:lyrics)
-          Plog.dump_info(title:sdata[:title], record_by:sdata[:record_by])
-          href  = sdata[:href]
-          sinfo = Performance.first(href:href) || Performance.new(href:href)
-          sinfo.update(sdata)
-          sinfo.save
+        if options[:update]
+          result.each do |sdata|
+            sdata.delete(:lyrics)
+            Plog.dump_info(title:sdata[:title], record_by:sdata[:record_by])
+            href  = sdata[:href]
+            sinfo = Performance.first(href:href) || Performance.new(href:href)
+            sinfo.update(sdata)
+            sinfo.save
+          end
+          true
+        else
+          result.to_yaml
         end
-        true
       end
     end
 
     desc "to_open(user)", "Show list of potential to open songs"
-    option :tag,  type: :string
+    option :tags,  type: :string
+    option :favs,  type: :boolean, default:true
     long_desc <<-LONGDESC
 List the candidates for open from the matching filter.
 Filters is the list of SQL's into into DB.
@@ -903,14 +937,17 @@ Filters is the list of SQL's into into DB.
           opened[r[:stitle]] = true
         end
 
-        wset = Performance.where(Sequel.lit('isfav = 1 or oldfav = 1')).order(:created)
+        wset = Performance.order(:created).
+          join_table(:inner, :song_tags, name: :stitle)
+
         if filter.size > 0
           wset = wset.where(Sequel.lit(filter.join(' ')))
         end
-        wset = wset.join_table(:inner, :song_tags, name: :stitle)
-
-        if tag = options[:tag]
-          wset = wset.where(Sequel.lit("tags like '%#{tag}%'"))
+        if options[:favs]
+          wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1'))
+        end
+        if tags = options[:tags]
+          wset = wset.where(Sequel.lit 'tags like ?', "%#{tags}%")
         end
 
         topen = {}
@@ -922,6 +959,50 @@ Filters is the list of SQL's into into DB.
           puts "%s %-40s %s" % [sinfo[0], name, sinfo[1]]
         end
         true
+      end
+    end
+
+    desc "dump_comment(user)", "dump_comment"
+    def dump_comment(user, *filter)
+      cli_wrap do
+        tdir    = _tdir_check(options[:data_dir])
+        content = SmuleDB.instance(user, tdir)
+
+        wset   = Comment.where(Sequel.lit "record_by like '%#{user}%'")
+        if filter.size > 0
+          wset = wset.where(Sequel.lit(filter.join(' ')))
+        end
+        wset.all.map{|r| r.values}.to_yaml
+        wset.each do |sinfo|
+          puts "\n%-60.60s %s" % [sinfo[:stitle], sinfo[:record_by]]
+          JSON.parse(sinfo[:comments]).each do |cuser, msg|
+            puts "  %-14.14s | %s" % [cuser, msg]
+          end
+        end
+        true
+      end
+    end
+
+    desc "star_singers(count, singers)", "star_singers"
+    option :top,  type: :numeric
+    option :days, type: :numeric, default:30
+    def star_singers(user, count, *singers)
+      cli_wrap do
+        tdir    = _tdir_check(options[:data_dir])
+        content = SmuleDB.instance(user, tdir)
+        if topc = options[:top]
+          singers = content.top_partners(topc, options).map{|k, v| k}
+          Plog.dump_info(singers:singers)
+        end
+        limit   = options[:limit]
+        days    = options[:days]
+        sapi    = API.new(options)
+        scanner = Scanner.new(user, options)
+        count   = count.to_i
+        singers.each do |asinger|
+          perfset = sapi.get_performances(asinger, limit:limit, days:days)
+          scanner.star_set(perfset, count)
+        end
       end
     end
   end

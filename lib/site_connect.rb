@@ -63,9 +63,9 @@ class SelPage
     end
   end
 
-  def goto(link)
+  def goto(link, wait=2)
     @sdriver.goto(link)
-    sleep(2)
+    sleep(wait)
     refresh
   end
 

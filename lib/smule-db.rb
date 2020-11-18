@@ -47,6 +47,7 @@ module SmuleAuto
       create_db unless test(?f, DBNAME)
       @user     = user
       @DB       = Sequel.sqlite(DBNAME)
+      Sequel::Model.plugin :insert_conflict
       YAML.load_file('etc/db_models.yml').each do |model, minfo|
         klass = Class.new(Sequel::Model)
         klass.dataset = @DB[minfo['table'].to_sym]
@@ -290,6 +291,38 @@ module SmuleAuto
       end
       wset.count
     end
+
+    def top_partners(limit, options={})
+      days  = options[:days] || 30
+      odate = (Time.now - days*24*3600).strftime("%Y-%m-%d")
+      query = Performance.group_and_count(:record_by).
+        select_append{sum(loves).as(loves)}.
+        select_append{sum(listens).as('listens')}.
+        select_append{sum(stars).as('stars')}.
+        select_append{sum(isfav+oldfav).as(favs)}.
+        order(:listens).reverse.
+        limit(limit*4).
+        where(Sequel.lit 'record_by like ?', "%#{@user}%").
+        where(Sequel.lit 'created > ?', odate)
+      Plog.info(query)
+      rank = {}
+      query.each do |r|
+        key = r[:record_by].sub(/,?#{@user},?/, '')
+        rank[key] ||= { count: 0, loves:0, listens:0, favs:0, stars:0}
+        rank[key][:count] += r[:count]
+        rank[key][:loves] += r[:loves]
+        rank[key][:listens] += r[:listens]
+        rank[key][:stars] += r[:stars].to_i
+        rank[key][:favs]  += r[:favs].to_i
+      end
+      rank.each do |singer, sinfo|
+        score = sinfo[:count] + sinfo[:favs]*10 + sinfo[:loves]*0.3 +
+          sinfo[:listens]/20.0 + sinfo[:stars]*0.1
+        sinfo[:score] = score
+      end
+      rank.to_a.select{|k, v| !k.empty? && k != @user}.
+        sort_by{|singer, sinfo| sinfo[:score] * -1}[0..limit-1]
+    end
   end
 
   class Main < Thor
@@ -299,11 +332,11 @@ module SmuleAuto
       def _edit_file(records, format='json')
         require 'tempfile'
 
-        wset    = records.map{|r| r.values.to_json}.join("\n")
+        wset    = records.map{|r| r.to_json}.join("\n")
         newfile = Tempfile.new('new')
         bakfile = Tempfile.new('bak')
 
-        bakfile.puts(records.map{|r| r.values.to_json}.join("\n"))
+        bakfile.puts(records.map{|r| r.to_json}.join("\n"))
 
         case format
         when /^y/i
@@ -311,9 +344,9 @@ module SmuleAuto
           system("vim #{newfile.path}")
           newrecs = YAML.load_file(newfile.path)
           editout = Tempfile.new('edit')
-          editout.puts(newrecs.map{|r| r.values.to_json}.join("\n"))
+          editout.puts(newrecs.map{|r| r.to_json}.join("\n"))
         else
-          newfile.puts(records.map{|r| r.values.to_json}.join("\n"))
+          newfile.puts(records.map{|r| r.to_json}.join("\n"))
           system("vim #{newfile.path}")
           editout = newfile
         end
@@ -397,6 +430,31 @@ changes back into the database
       end
     end
 
+    desc "rank_singer(user)", "rank_singer"
+    option :days,  type: :numeric, default:180, alias:'-d',
+      desc:'Look back the specified number of days only'
+    def rank_singer(user)
+      cli_wrap do
+        tdir    = _tdir_check(options[:data_dir])
+        content = SmuleDB.instance(user, tdir)
+        days    = options[:days]
+        limit   = options[:limit] || 100
+        rank    = content.top_partners(limit, options)
+        puts "Ranking in last #{days} days"
+        line = 0
+        output = []
+        output << %w(. Singer Count Loves Listens Favs Stars Score)
+        rank.each do |singer, sinfo|
+          line += 1
+          output << [line, singer, sinfo[:count], sinfo[:loves],
+		     sinfo[:listens], sinfo[:favs], sinfo[:stars],
+		     sinfo[:score].to_i]
+        end
+        print_table(output)
+        rank.map{|k, v| "@#{k}"}.
+          sort_by {|v| v.downcase.gsub(/_/, '')}.join(' ')
+      end
+    end
   end
 end
 

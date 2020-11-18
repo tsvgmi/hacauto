@@ -7,3 +7,9 @@ Singer:
 
 SongTag:
   table: song_tags
+
+Comment:
+  table: comments
+
+Love:
+  table: loves
