@@ -150,6 +150,7 @@ module SmuleAuto
                                     format: :pulse_2)
       spinner.auto_spin      
       spage.goto(href)
+      Plog.info("At #{href}")
       %w(div.error-gone div.page-error).each do |acss|
         if spage.css(acss).size > 0
           Plog.info("#{@info[:title]} is gone")
@@ -157,10 +158,13 @@ module SmuleAuto
           return :deleted
         end
       end
-      spage.click_and_wait('button._1oqc74f')
+      Plog.info("Click play")
+      spage.click_and_wait('div.sc-pdjNk.byqAKZ')
 
-      1.upto(15) do
-        duration_s = spage.css("._vln25l")[0]
+      Plog.info("Wait for time to show up")
+      1.upto(5) do
+        #duration_s = spage.css("._vln25l")[0]
+        duration_s = spage.css('.sc-pkIrX.hKjnPC')[1]
         if duration_s && duration_s.text != "00:00"
           break
         end
@@ -172,6 +176,9 @@ module SmuleAuto
       # Should pickup for joined file where info was not picked up
       # at first
       asset = get_asset
+      unless asset
+        return 0
+      end
       if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s == ""
         @info[:other_city] = asset[:other_city]
       end
@@ -210,26 +217,39 @@ module SmuleAuto
       end
       true
     end
-
-    def is_mp4_tagged?(excuser=nil)
+    
+    def mp4_tags
       sfile = @info[:sfile]
       if !sfile || !test(?s, sfile)
         Plog.error("#{@info[:stitle]}:#{sfile} empty or not exist")
-        return false
+        return nil
       end
       wset = `atomicparsley #{sfile} -t`.split("\n").map {|l|
         key, value = l.split(/\s+contains:\s+/)
         key = key.split[-1].gsub(/[^a-z0-9_]/i, '').to_sym
         [key, value]
       }
-      wset    = Hash[wset]
+      Hash[wset]
+    end
+
+    def media_size(sfile)
+      output = `set -x; atomicparsley #{sfile} -T 1`.split("\n").
+        grep(/Media data:/)
+      output[0].split[2].to_i
+    end
+
+    def is_mp4_tagged?(excuser=nil)
+      wset    = mp4_tags
       album   = @info[:created].strftime("Smule-%Y.%m")
       year    = @info[:created].strftime("%Y")
+      release = @info[:created].iso8601
       aartist = @info[:record_by].gsub(/(,?)#{excuser}(,?)/, '')
       if wset[:nam] == 'ver:1' || wset[:alb] != album || \
-          wset[:day] != year || wset[:aART] != aartist
+          (wset[:day] != year && wset[:day] != release) || \
+          wset[:aART] != aartist
         wset.delete(:lyr)
-        Plog.dump_info(msg:"Tagging #{sfile}", wset:wset, title:@info[:title],
+        Plog.dump_info(msg:"Tagging #{@info[:sfile]}",
+                       wset:wset, title:@info[:title],
                        record_by:@info[:record_by])
         return false
       end
@@ -246,7 +266,7 @@ module SmuleAuto
         date    = @info[:created].strftime("%Y-%m-%d")
         album   = @info[:created].strftime("Smule-%Y.%m")
         artist  = @info[:record_by].gsub(',', ', ')
-        year    = @info[:created].strftime("%Y")
+        release = @info[:created].iso8601
         comment = "#{date} - #{href}"
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
 
@@ -265,7 +285,7 @@ module SmuleAuto
           aartist = @info[:record_by].gsub(/(,?)#{excuser}(,?)/, '')
           command += " --albumArtist '#{aartist}'"
         end
-        command += " --year '#{year}'"
+        command += " --year '#{release}'"
         command += " --comment '#{comment}'"
 
         if lyric = @info[:lyrics] || self.get_asset[:lyrics]

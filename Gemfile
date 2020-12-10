@@ -27,3 +27,4 @@ group "music" do
   gem "mp4info", :git => "https://github.com/arbarlow/ruby-mp4info.git"
   gem "ruby-mp3info"
 end
+

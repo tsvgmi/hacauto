@@ -31,8 +31,9 @@ module SmuleAuto
       @filter ||= {}
       @order  ||= 'play'
       @played_set = []
-      @scanner = Scanner.new(user, @options)
-      @sapi    = API.new(options)
+      @scanner    = Scanner.new(user, @options)
+      @sapi       = API.new(options)
+      @csong_file = options[:csong_file] || "./cursong.yml"
       at_exit {
         _save_state(true)
         exit 0
@@ -149,7 +150,12 @@ EOM
 
     def play_asong(sitem, prompt)
       res = {duration:0}
+
+      File.open(@csong_file, 'w') do |fod|
+        fod.puts sitem.to_yaml
+      end
       psecs = SmuleSong.new(sitem).play(@scanner.spage)
+
       if psecs == :deleted
         @content.delete_song(sitem)
         return res
@@ -167,12 +173,18 @@ EOM
 
       spage = @scanner.spage
       res[:duration] = duration
-      res[:snote]    = spage.page.css('div._1ck56r8').text
-      res[:msgs]     = spage.css('div._bmkhah').reverse.map do |acmt|
-        user = acmt.css('div._1b9o6jw').text
-        msg  = acmt.css('div._1822wnk').text
+      res[:snote]    = spage.page.css('p.sc-pRTZB').text
+
+      #spage.click_and_wait('button.sc-oTmZL ', 2, 2)
+      spage.click_and_wait('button.sc-oTmZL.nHlJq',0,-1)
+      spage.refresh
+      res[:msgs] = spage.css('div.sc-qcrOD').reverse.map do |acmt|
+        user = acmt.css('span.sc-fzqMdD.irdzyp')[0].text.strip
+        msg  = acmt.css('span.sc-fzqMdD.ixdbBq')[0].text.strip
+        #p user,msg
         [user, msg]
       end
+      spage.click_and_wait('div.sc-psQdR')
       res
     end
 
@@ -184,19 +196,17 @@ EOM
       remain = 0
       spage  = @scanner.spage
       spage.refresh
-      if spage.css('button._1oqc74f').size > 0       # Is stopped
-        spage.click_and_wait('button._1oqc74f', 0)
-        curtime   = spage.css("span._1guzb8h").text.split(':')
+      @paused   = !@paused
+      if @paused
+        remain = 0
+      else
+        curtime   = spage.css("span.sc-pkIrX")[0].text.split(':')
         curtime_s = curtime[0].to_i*60 + curtime[1].to_i
         remain    = psitem[:duration] - curtime_s
-        Plog.dump_info(msg:"Was stopped.  Playing", remain:remain)
-        #Plog.dump_info(curtime:curtime, curtime_s:curtime_s, remain:remain)
-      elsif spage.css('button._1s30tn4h').size > 0   # Is playing
-        Plog.info("Was playing.  Stopping")
-        spage.click_and_wait('button._1s30tn4h', 0)
-      else
-        Plog.error("Unknown state to toggle")
       end
+      Plog.error("Blind toggle.  Think pause:#{@paused}")
+      spage.click_and_wait('div.sc-pIjat', 0)
+      spage.click_and_wait('div.sc-pdjNk.byqAKZ', 1)
       remain
     end
 
@@ -222,20 +232,10 @@ EOM
 
     def _set_favorite(sitem)
       spage = @scanner.spage
-      spage.click_and_wait("button._13ryz2x")
-      content = spage.refresh
-      unless fav = spage.page.css("div._8hpz8v")[0]
-        Plog.error("Cannot locate fav element")
-        return
-      end
-      fav = fav.text
-      if fav != 'Favorite'
-        Plog.info "Song is already favorite"
-        spage.click_and_wait("._6ha5u0", 1)
-        return false
-      end
+      spage.click_and_wait("button.sc-pcYTN", 1, 1)
+      spage.refresh
       sitem[:isfav] = true
-      spage.click_and_wait("div._8hpz8v", 1, 0)
+      spage.click_and_wait('span.sc-pCOPB.eDrnHs',1,5)
     end
 
     def _set_smule_song_tag(sitem, tag)
@@ -352,7 +352,7 @@ EOH
           @played_set << sitem
           # Turn off autoplay
           if pcount == 0
-            @scanner.spage.click_and_wait("div._1jmbcz6h")
+            @scanner.spage.click_and_wait("div.sc-qWfkp")
           end
           pcount  += 1
           if (pcount % 10) == 0
@@ -363,11 +363,11 @@ EOH
           endt = Time.now + 1
         end
 
-        paused  = false
+        @paused = false
         refresh = true
         while true
           begin
-            if sitem && !paused
+            if sitem && !@paused
               if refresh
                 _list_show(sitem, psitem, @clist, 0, 10)
                 _show_msgs(sitem, psitem)
@@ -385,30 +385,31 @@ EOH
             else
               key = prompt.keypress("#{@prompt} [#{@clist.size}]")
             end
-          rescue => errrmsg
+          rescue => errmsg
             Plog.error(errmsg)
             next
           end
-          hc, refresh = handle_user_input(key, sitem, psitem)
-          case hc
-          when :pausing
-            remain = browser_pause(sitem, psitem)
-            if remain > 0
-              endt   = Time.now + remain
-              paused = false
+          begin
+            hc, refresh = handle_user_input(key, sitem, psitem)
+            case hc
+            when :pausing
+              remain = browser_pause(sitem, psitem)
+              if remain > 0
+                endt = Time.now + remain
+              end
+              refresh = false
+            when :quit
+              return
+            when :next
+              break
             else
-              paused = true
+              refresh = true
             end
-            refresh = false
-          when :quit
-            return
-          when :next
-            break
-          else
-            refresh = true
+            #Plog.dump(now:Time.now, endt:endt)
+            break if (Time.now >= endt)
+          rescue => errmsg
+            p errmsg
           end
-          #Plog.dump(now:Time.now, endt:endt)
-          break if (Time.now >= endt)
         end
       end
     end
@@ -429,7 +430,7 @@ EOH
         return [:next, true]
       when /^[\+=\/]/i                # Add/replace list
         choices = %w(favs recent record_by star title query)
-        ftype   = prompt.enum_select('Filter type?', choices)
+        ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
         param   = (ftype == 'favs') ? '' : prompt.ask("#{ftype} value ?")
         if param
           newset  = @content.select_set(ftype.to_sym, param)
@@ -524,6 +525,15 @@ EOH
           song:   sitem,
         }.to_yaml)
         prompt.keypress("Press any key to continue ...")
+      when 'I'
+        if param = prompt.ask('SID(s):')
+          newsong = @content.select_set(:sid, param)
+          if newsong && newsong.size > 0
+            sleep(3)
+            @clist.unshift(*newsong)
+            return [:next, true]
+          end
+        end
       when 'l'                            # List playlist
         offset = 10
         while offset < @clist.size
@@ -564,8 +574,9 @@ EOH
       when 'S'
         _menu_eval do
           perfset   = @sapi.get_performances(@user, limit:50, days:1)
-          perfset.concat(SmuleSong.collect_collabs(@user, 7))
           new_count = @content.add_new_songs(perfset, false)
+          perfset.concat(SmuleSong.collect_collabs(@user, 10))
+          new_count += @content.add_new_songs(perfset, false)
           prompt.keypress("#{new_count} songs added [:countdown]",
                           timeout:3)
         end

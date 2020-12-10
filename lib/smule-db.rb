@@ -113,6 +113,8 @@ module SmuleAuto
         newset = @content.where(Sequel.ilike(:stitle, "%#{value}%"))
       when :recent
         newset = @content.where(created: ldate..edate)
+      when :sid
+        newset = @content.where(sid:value.split(/[, ]+/))
       when :star
         newset = @content.where{stars >= value.to_i}
       else
@@ -299,7 +301,8 @@ module SmuleAuto
         select_append{sum(loves).as(loves)}.
         select_append{sum(listens).as('listens')}.
         select_append{sum(stars).as('stars')}.
-        select_append{sum(isfav+oldfav).as(favs)}.
+        select_append{sum(isfav).as(isfavs)}.
+        select_append{sum(oldfav).as(oldfavs)}.
         order(:listens).reverse.
         limit(limit*4).
         where(Sequel.lit 'record_by like ?', "%#{@user}%").
@@ -308,15 +311,17 @@ module SmuleAuto
       rank = {}
       query.each do |r|
         key = r[:record_by].sub(/,?#{@user},?/, '')
-        rank[key] ||= { count: 0, loves:0, listens:0, favs:0, stars:0}
-        rank[key][:count] += r[:count]
-        rank[key][:loves] += r[:loves]
+        rank[key] ||= { count: 0, loves:0, listens:0, isfavs:0, oldfavs:0, stars:0}
+        rank[key][:count]   += r[:count]
+        rank[key][:loves]   += r[:loves]
         rank[key][:listens] += r[:listens]
-        rank[key][:stars] += r[:stars].to_i
-        rank[key][:favs]  += r[:favs].to_i
+        rank[key][:stars]   += r[:stars].to_i
+        rank[key][:isfavs]  += r[:isfavs].to_i
+        rank[key][:oldfavs] += r[:oldfavs].to_i
       end
       rank.each do |singer, sinfo|
-        score = sinfo[:count] + sinfo[:favs]*10 + sinfo[:loves]*0.3 +
+        score = sinfo[:count] + sinfo[:isfavs]*10 + sinfo[:oldfavs]*5 +
+          sinfo[:loves]*0.2 +
           sinfo[:listens]/20.0 + sinfo[:stars]*0.1
         sinfo[:score] = score
       end
@@ -447,8 +452,8 @@ changes back into the database
         rank.each do |singer, sinfo|
           line += 1
           output << [line, singer, sinfo[:count], sinfo[:loves],
-		     sinfo[:listens], sinfo[:favs], sinfo[:stars],
-		     sinfo[:score].to_i]
+		     sinfo[:listens], sinfo[:isfavs] + sinfo[:oldfavs],
+                     sinfo[:stars], sinfo[:score].to_i]
         end
         print_table(output)
         rank.map{|k, v| "@#{k}"}.

@@ -198,15 +198,19 @@ module SmuleAuto
     end
 
     def star_set(song_set, count)
+      stars = []
       song_set.each do |sinfo|
         href = sinfo[:href]
         next if href =~ /ensembles$/
         next if sinfo[:record_by].include?(@user)
         next if Love.first(sid:sinfo[:sid], user:@user)
         @spage.goto(href, 5)
-        if @spage.css("div._1v7cqsk").size > 0
+        if @spage.css("div.sc-pBlxj.dGgbmN").size <= 0
+        #if @spage.css("div._1v7cqsk").size > 0
           Plog.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
-          @spage.click_and_wait("div._1v7cqsk", 1)
+          @spage.click_and_wait("div.sc-pBlxj", 1)
+          #@spage.click_and_wait("div._1v7cqsk", 1)
+          stars << sinfo
           count -= 1
           if count <= 0
             break
@@ -214,6 +218,7 @@ module SmuleAuto
         end
         Love.insert(sid:sinfo[:sid], user:@user)
       end
+      stars
     end
 
     def scan_collab_list(collab_links)
@@ -312,9 +317,14 @@ module SmuleAuto
       prompt = TTY::Prompt.new
       songs.each do |asong|
         @spage.goto(asong[:href])
-        @spage.click_and_wait('._13ryz2x')
-        @spage.click_and_wait('._117spsl')
-        if marking
+        @spage.click_and_wait("button.sc-pcYTN", 1, 1)
+        
+        cpos = @spage.find_elements(:css, 'span.sc-pCOPB.eDrnHs').size / 2
+        @spage.click_and_wait('span.sc-pCOPB.eDrnHs', 1, cpos)
+        #@spage.click_and_wait('._13ryz2x')
+        #@spage.click_and_wait('._117spsl')
+        Plog.dump_info(msg:'Unfav', stitle:asong[:stitle], record_by:asong[:record_by])
+        if false && marking
           tag = '#thvfavs'
           if asong[:record_by].start_with?(@user)
             msg = @spage.page.css('div._1ck56r8').text
@@ -835,6 +845,12 @@ it left off from the previous run.
             stitle = to_search_str(r[:title])
             r.update(stitle:stitle)
           end
+        when :favs
+          query   = Performance.where(isfav:1, oldfav:1)
+          ccount  = query.count
+          query.each do |r|
+            r.update(oldfav:0)
+          end
         when :sfile
           query   = Performance.where(sfile:nil)
           ccount  = query.count
@@ -984,14 +1000,19 @@ Filters is the list of SQL's into into DB.
     end
 
     desc "star_singers(count, singers)", "star_singers"
-    option :top,  type: :numeric
-    option :days, type: :numeric, default:30
+    option :top,     type: :numeric
+    option :days,    type: :numeric, default:30
+    option :exclude, type: :string
     def star_singers(user, count, *singers)
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
         content = SmuleDB.instance(user, tdir)
         if topc = options[:top]
           singers = content.top_partners(topc, options).map{|k, v| k}
+          if exclude = options[:exclude]
+            exclude = exclude.split(',')
+            singers = singers.select{|r| !exclude.include?(r)}
+          end
           Plog.dump_info(singers:singers)
         end
         limit   = options[:limit]
@@ -999,10 +1020,69 @@ Filters is the list of SQL's into into DB.
         sapi    = API.new(options)
         scanner = Scanner.new(user, options)
         count   = count.to_i
+        allsets = []
         singers.each do |asinger|
-          perfset = sapi.get_performances(asinger, limit:limit, days:days)
-          scanner.star_set(perfset, count)
+          perfset = sapi.get_performances(asinger, limit:[limit, 30].min,
+                                          days:days)
+          starred = scanner.star_set(perfset, count)
+          allsets.concat(starred)
         end
+        count = {}
+        allsets.each do |sinfo|
+          sinfo[:record_by].split(',').each do |singer|
+            count[singer] ||= 0
+            count[singer] += 1
+          end
+        end
+        count.to_a.sort_by{|u, c| c}.each do |u, c|
+          puts "%20s: %3d" % [u, c]
+        end
+      end
+    end
+
+    desc "watch_mp4(dir)", "watch_mp4"
+    option :verify, type: :boolean
+    def watch_mp4(dir, user, csong_file='cursong.yml')
+      require 'listen'
+
+      cli_wrap do
+        listener = Listen.to(dir) do |modified, added, removed|
+          if added.size > 0
+            sleep(2)
+            added.each do |f|
+              begin
+                fsize = File.size(f)
+                next unless fsize >= 1_000_000
+                next unless `file #{f}` =~ /Apple.*Audio/
+                puts "%-40.40s %12d" % [File.basename(f), fsize]
+                sinfo = YAML.load_file(csong_file)
+                puts "%-40.40s %s" % [sinfo[:stitle], sinfo[:record_by]]
+
+                song = SmuleSong.new(sinfo, options)
+                if test(?f, sinfo[:sfile])
+                  next unless options[:verify] 
+                  csize  = song.media_size(sinfo[:sfile])
+                  fmsize = song.media_size(f)
+                  if csize == fmsize
+                    Plog.info("Verify same size: #{csize}")
+                    next
+                  end
+                  Plog.info("Diff size: #{csize} <> #{fmsize}")
+                end
+
+                Plog.info("Song missing on local disk.  Create")
+                FileUtils.cp(f, sinfo[:sfile], verbose:true)
+                song.update_mp4tag(user)
+
+                _open_song(sinfo)
+              rescue => errmsg
+                p errmsg
+              end
+            end
+          end
+        end
+        listener.start
+        sleep
       end
     end
   end
