@@ -1043,45 +1043,8 @@ Filters is the list of SQL's into into DB.
     desc "watch_mp4(dir)", "watch_mp4"
     option :verify, type: :boolean
     def watch_mp4(dir, user, csong_file='cursong.yml')
-      require 'listen'
-
       cli_wrap do
-        listener = Listen.to(dir) do |modified, added, removed|
-          if added.size > 0
-            sleep(2)
-            added.each do |f|
-              begin
-                fsize = File.size(f)
-                next unless fsize >= 1_000_000
-                next unless `file #{f}` =~ /Apple.*Audio/
-                puts "%-40.40s %12d" % [File.basename(f), fsize]
-                sinfo = YAML.load_file(csong_file)
-                puts "%-40.40s %s" % [sinfo[:stitle], sinfo[:record_by]]
-
-                song = SmuleSong.new(sinfo, options)
-                if test(?f, sinfo[:sfile])
-                  next unless options[:verify] 
-                  csize  = song.media_size(sinfo[:sfile])
-                  fmsize = song.media_size(f)
-                  if csize == fmsize
-                    Plog.info("Verify same size: #{csize}")
-                    next
-                  end
-                  Plog.info("Diff size: #{csize} <> #{fmsize}")
-                end
-
-                Plog.info("Song missing on local disk.  Create")
-                FileUtils.cp(f, sinfo[:sfile], verbose:true)
-                song.update_mp4tag(user)
-
-                _open_song(sinfo)
-              rescue => errmsg
-                p errmsg
-              end
-            end
-          end
-        end
-        listener.start
+        FirefoxWatch.new(user, dir, 'cursong.yml', options).start
         sleep
       end
     end

@@ -58,7 +58,7 @@ module SmuleAuto
       tags   = @content.tags
       table  = TTY::Table.new
       cursor = TTY::Cursor
-      print cursor.clear_screen
+      print cursor.move_to
       if sitem
         if avatar = sitem[:avatar]
           lfile = "cache/" + File.basename(avatar)
@@ -96,6 +96,7 @@ EOM
       puts table.render(:unicode, multiline:true,
                         width:TTY::Screen.width,
              alignments:[:right, :left, :left, :left, :right, :right])
+      print cursor.clear_screen_down
     end
 
     def box_msg(msg, options={})
@@ -178,11 +179,13 @@ EOM
       #spage.click_and_wait('button.sc-oTmZL ', 2, 2)
       spage.click_and_wait('button.sc-oTmZL.nHlJq',0,-1)
       spage.refresh
-      res[:msgs] = spage.css('div.sc-qcrOD').reverse.map do |acmt|
+      res[:msgs] = []
+      #spage.css('div.sc-qcrOD').reverse.each do |acmt|
+      spage.css('div.sc-qOiPt.gmsogG').reverse.each do |acmt|
+        next if acmt.css('span.sc-fzqMdD.irdzyp').size <= 0
         user = acmt.css('span.sc-fzqMdD.irdzyp')[0].text.strip
         msg  = acmt.css('span.sc-fzqMdD.ixdbBq')[0].text.strip
-        #p user,msg
-        [user, msg]
+        res[:msgs] << [user, msg]
       end
       spage.click_and_wait('div.sc-psQdR')
       res
@@ -200,13 +203,13 @@ EOM
       if @paused
         remain = 0
       else
-        curtime   = spage.css("span.sc-pkIrX")[0].text.split(':')
+        curtime   = spage.css("span.sc-oUOMp")[0].text.split(':')
         curtime_s = curtime[0].to_i*60 + curtime[1].to_i
         remain    = psitem[:duration] - curtime_s
       end
-      Plog.error("Blind toggle.  Think pause:#{@paused}")
+      Plog.info("Blind toggle.  Think pause:#{@paused}")
       spage.click_and_wait('div.sc-pIjat', 0)
-      spage.click_and_wait('div.sc-pdjNk.byqAKZ', 1)
+      spage.click_and_wait('div.sc-pYNsO', 1)
       remain
     end
 
@@ -409,6 +412,7 @@ EOH
             break if (Time.now >= endt)
           rescue => errmsg
             p errmsg
+            sleep(3)
           end
         end
       end
@@ -586,6 +590,12 @@ EOH
         end
       when 'x'                            # Quit
         return [:quit, true]
+      when 'W'
+        if dir = prompt.ask('Firefox cache dir (about:cache):')
+          @listener.stop if @listener
+          @listener = FirefoxWatch.new(@user, dir,
+                                       'cursong.yml', verify:true).start
+        end
       when 'Z'                            # Quit
         require 'byebug'
 

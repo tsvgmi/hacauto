@@ -8,6 +8,67 @@
 #++
 
 module SmuleAuto
+  class FirefoxWatch
+    def initialize(user, watch_dir, csong_file='cursong.yml', options={})
+      @user       = user
+      @watch_dir  = watch_dir
+      @csong_file = csong_file
+      @options    = options
+    end
+
+    def change_handler(added)
+      return if added.size <= 0
+      STDERR.print('.'); STDERR.flush
+      added.each do |f|
+        begin
+          fsize = File.size(f)
+          next unless fsize >= 1_000_000
+          next unless `file #{f}` =~ /Apple.*Audio/
+          puts "%-40.40s %12d" % [File.basename(f), fsize]
+          sinfo = YAML.load_file(@csong_file)
+          puts "%-40.40s %s" % [sinfo[:stitle], sinfo[:record_by]]
+
+          song = SmuleSong.new(sinfo)
+          if test(?f, sinfo[:sfile])
+            next unless @options[:verify] 
+            csize  = song.media_size(sinfo[:sfile])
+            fmsize = song.media_size(f)
+            if csize == fmsize
+              Plog.info("Verify same size: #{csize}")
+              next
+            end
+            Plog.info("Diff size: #{csize} <> #{fmsize}")
+          end
+
+          Plog.info("Song missing on local disk.  Create")
+          FileUtils.cp(f, sinfo[:sfile], verbose:true)
+          song.update_mp4tag(@user)
+
+          if @options[:open]
+            system("set -x; open -g #{sinfo[:sfile]}")
+            sleep(2)
+          end
+
+        rescue Errno::ENOENT
+          # Ignore this error.  Just glitch b/c I could not see fast
+          # enough.  Likely non-mp4 file anyway
+        rescue => errmsg
+          p errmsg
+        end
+      end
+    end
+
+    def start
+      require 'listen'
+
+      @listener = Listen.to(@watch_dir) do |modified, added, removed|
+        change_handler(added) if added.size > 0
+      end
+      @listener.start
+      @listener
+    end
+  end
+
   class SmuleSong
     def initialize(sinfo, options={})
       @info          = sinfo
@@ -150,7 +211,6 @@ module SmuleAuto
                                     format: :pulse_2)
       spinner.auto_spin      
       spage.goto(href)
-      Plog.info("At #{href}")
       %w(div.error-gone div.page-error).each do |acss|
         if spage.css(acss).size > 0
           Plog.info("#{@info[:title]} is gone")
@@ -158,10 +218,9 @@ module SmuleAuto
           return :deleted
         end
       end
-      Plog.info("Click play")
-      spage.click_and_wait('div.sc-pdjNk.byqAKZ')
+      spage.click_and_wait('div.sc-pIjat', 0)
+      spage.click_and_wait('div.sc-pYNsO', 1)
 
-      Plog.info("Wait for time to show up")
       1.upto(5) do
         #duration_s = spage.css("._vln25l")[0]
         duration_s = spage.css('.sc-pkIrX.hKjnPC')[1]
@@ -233,7 +292,8 @@ module SmuleAuto
     end
 
     def media_size(sfile)
-      output = `set -x; atomicparsley #{sfile} -T 1`.split("\n").
+      output = `atomicparsley #{sfile} -T 1`.
+        encode("UTF-8", invalid: :replace).split("\n").
         grep(/Media data:/)
       output[0].split[2].to_i
     end
