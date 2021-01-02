@@ -120,8 +120,14 @@ class SDriver
 
   def click_and_wait(selector, wtime=2, index=0)
     begin
-      Plog.info "Click on #{selector}" if @options[:verbose]
-      @driver.find_elements(:css, selector)[index].click
+      elements = @driver.find_elements(:css, selector)
+      Plog.info "Click on #{selector}[#{index}] (of #{elements.size})" if @options[:verbose]
+      if elements[index]
+        elements[index].click
+      else
+        Plog.info "Element #{selector}[#{index}] not found" if @options[:verbose]
+        return
+      end
       sleep(wtime) if wtime > 0
     rescue => errmsg
       errmsg

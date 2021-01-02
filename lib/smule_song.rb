@@ -9,9 +9,12 @@
 
 module SmuleAuto
   class FirefoxWatch
-    def initialize(user, watch_dir, csong_file='cursong.yml', options={})
+    def initialize(user, tmpdir, csong_file='cursong.yml', options={})
       @user       = user
+      watch_dir   = `find #{tmpdir}/*/T -name 'rust_mozprofile.*'`.split("\n").
+        sort_by{|d| File.mtime(d)}[-1]
       @watch_dir  = watch_dir
+      Plog.info("Watching #{@watch_dir}")
       @csong_file = csong_file
       @options    = options
     end
@@ -21,34 +24,7 @@ module SmuleAuto
       STDERR.print('.'); STDERR.flush
       added.each do |f|
         begin
-          fsize = File.size(f)
-          next unless fsize >= 1_000_000
-          next unless `file #{f}` =~ /Apple.*Audio/
-          puts "%-40.40s %12d" % [File.basename(f), fsize]
-          sinfo = YAML.load_file(@csong_file)
-          puts "%-40.40s %s" % [sinfo[:stitle], sinfo[:record_by]]
-
-          song = SmuleSong.new(sinfo)
-          if test(?f, sinfo[:sfile])
-            next unless @options[:verify] 
-            csize  = song.media_size(sinfo[:sfile])
-            fmsize = song.media_size(f)
-            if csize == fmsize
-              Plog.info("Verify same size: #{csize}")
-              next
-            end
-            Plog.info("Diff size: #{csize} <> #{fmsize}")
-          end
-
-          Plog.info("Song missing on local disk.  Create")
-          FileUtils.cp(f, sinfo[:sfile], verbose:true)
-          song.update_mp4tag(@user)
-
-          if @options[:open]
-            system("set -x; open -g #{sinfo[:sfile]}")
-            sleep(2)
-          end
-
+          SmuleSong.check_and_download(@csong_file, f, @user, @options)
         rescue Errno::ENOENT
           # Ignore this error.  Just glitch b/c I could not see fast
           # enough.  Likely non-mp4 file anyway
@@ -58,10 +34,15 @@ module SmuleAuto
       end
     end
 
+    def dirchange_handler(added)
+      Plog.info("Dir is added: #{added.inspect}")
+    end
+
     def start
       require 'listen'
 
-      @listener = Listen.to(@watch_dir) do |modified, added, removed|
+      @listener = Listen.to(@watch_dir + '/cache2') do
+        |modified, added, removed|
         change_handler(added) if added.size > 0
       end
       @listener.start
@@ -69,7 +50,142 @@ module SmuleAuto
     end
   end
 
+  class SmulePage < SelPage
+    def initialize(sdriver)
+      super
+    end
+
+    def set_song_favorite(setit=true)
+      # Click on the selector to expose
+      click_and_wait("button.sc-pcYTN", 1, 1)
+
+      # This is actually toggle blindly.  So caller need to know/guess the current
+      # before calling
+      locator = 'span.sc-ptfmh.gtVEMN'
+      cpos    = find_elements(:css, locator).size / 2
+      click_and_wait(locator, 1, cpos)
+      find_element(:xpath, "//html").click
+    end
+
+    def star_song(href)
+      goto(href, 3)
+      if css("div.sc-pBlxj.dGgbmN").size > 0
+        Elog.eror("Already starred")
+        return false
+      end
+      click_and_wait("div.sc-oTNDV.jzKNzB", 1)
+      return true
+    end
+
+    # Play or pause song
+    def play_song(doplay=true, options={})
+      remain = 0
+      refresh
+
+      goto(options[:href]) if options[:href]
+      if options[:href]
+        %w(div.error-gone div.page-error).each do |acss|
+          if css(acss).size > 0
+            Plog.info("Song is gone")
+            return :deleted
+          end
+        end
+      end
+
+      if doplay
+        locator = 'span.sc-pYNsO'
+        # First time I wait until song is loaded
+        if options[:href]
+          1.upto(5) do
+            duration_s = css(locator)[1]
+            if duration_s && duration_s.text != "00:00"
+              break
+            end
+            sleep 2
+            refresh
+          end
+        end
+        curtime   = css(locator)[0].text.split(':')
+        curtime_s = curtime[0].to_i*60 + curtime[1].to_i
+
+        endtime   = css(locator)[1].text.split(':')
+        endtime_s = endtime[0].to_i*60 + endtime[1].to_i
+
+        remain    = endtime_s - curtime_s
+      else
+        remain = 0
+      end
+      Plog.info("Blind toggle.  Think play = #{doplay}, remain: #{remain}")
+      click_and_wait('div.sc-pZCuu', 0)
+      remain
+    end
+
+    def get_comments
+      click_and_wait("div.sc-oTNDV.jzKNzB",0,2)
+      refresh
+      res = []
+      css('div.sc-pLyGp.hIGHoI').reverse.each do |acmt|
+        comment = acmt.css('div.sc-pDboM.deGaYK').text.split
+        user = comment[0]
+        msg  = comment[1..-1].join(' ')
+        res << [user, msg]
+      end
+      click_and_wait('div.sc-pBzUF.jfMcol', 0)
+
+      # Show player up again
+      click_and_wait('div.sc-pZCuu', 0)
+      click_and_wait('div.sc-pZCuu', 0)
+      res
+    end
+
+    def toggle_autoplay
+      click_and_wait("div.sc-qWfkp")
+    end
+
+    def get_song_note
+      css('p.sc-pRTZB').text
+    end
+  end
+
   class SmuleSong
+    def self.check_and_download(info_file, media_file, user, options={})
+      fsize = File.size(media_file)
+      if fsize < 1_000_000 || `file #{media_file}` !~ /Apple.*Audio/
+        return
+      end
+      if info_file.is_a?(Hash)
+        sinfo = info_file
+      else
+        sinfo = YAML.load_file(info_file)
+      end
+      SmuleSong.new(sinfo, options).
+        check_and_download(media_file, user)
+    end
+
+    def self.update_from_url(url, options)
+      sid   = File.basename(url)
+      sinfo = Performance.first(sid:sid) || Performance.new(sid:sid)
+      song  = SmuleSong.new(sinfo, options)
+      if url =~ /ensembles$/
+        result = song.get_ensemble_asset
+      else
+        result = [song.get_asset]
+      end
+      if options[:update]
+        result.each do |sdata|
+          sdata.delete(:lyrics)
+          Plog.dump_info(title:sdata[:title], record_by:sdata[:record_by])
+          sinfo = Performance.first(sid:sdata[:sid]) ||
+                  Performance.new(sid:sdata[:sid])
+          Plog.dump_info(data:sdata[:href], info:sinfo[:href],
+                         sid:sinfo[:sid])
+          sinfo.update(sdata)
+          sinfo.save
+        end
+      end
+      result
+    end
+
     def initialize(sinfo, options={})
       @info          = sinfo
       @options       = options
@@ -79,6 +195,37 @@ module SmuleAuto
       if @info[:created].is_a?(String)
         @info[:created] = Date.parse(@info[:created])
       end
+    end
+
+    TDIR = '/Volumes/Voice/SMULE'
+
+    def ssfile
+      File.join(TDIR, 'STORE', @info[:sid] + '.m4a')
+    end
+
+    def sofile
+      odir  = TDIR + "/#{@info[:record_by].split(',').sort.join('-')}"
+      FileUtils.mkdir_p(odir, verbose:true) unless test(?d, odir)
+      title = @info[:title].strip.gsub(/[\/\"]/, '-')
+      ofile = File.join(odir, title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
+      sfile = ssfile
+      if File.exist?(sfile) && !File.symlink?(ofile)
+        FileUtils.remove(ofile, verbose:true, force:true)
+        FileUtils.ln_s(sfile, ofile, verbose:true, force:true)
+      end
+      ofile
+    end
+
+    def move_song(new_name)
+      cur_record = @info[:record_by]
+      new_record = cur_record.gsub(old_name, new_name)
+      if new_record == cur_record
+        Plog.info("No change in data")
+        return false
+      end
+      @info[:record_by] = new_record
+      sofile
+      true
     end
 
     def [](key)
@@ -210,25 +357,9 @@ module SmuleAuto
       spinner = TTY::Spinner.new("[:spinner] Loading ...",
                                     format: :pulse_2)
       spinner.auto_spin      
-      spage.goto(href)
-      %w(div.error-gone div.page-error).each do |acss|
-        if spage.css(acss).size > 0
-          Plog.info("#{@info[:title]} is gone")
-          spinner.stop('Done!')
-          return :deleted
-        end
-      end
-      spage.click_and_wait('div.sc-pIjat', 0)
-      spage.click_and_wait('div.sc-pYNsO', 1)
-
-      1.upto(5) do
-        #duration_s = spage.css("._vln25l")[0]
-        duration_s = spage.css('.sc-pkIrX.hKjnPC')[1]
-        if duration_s && duration_s.text != "00:00"
-          break
-        end
-        sleep 2
-        spage.refresh
+      if spage.play_song(true, href:href) == :deleted
+        spinner.stop('Done!')
+        return :deleted
       end
       spinner.stop('Done!')
 
@@ -245,45 +376,16 @@ module SmuleAuto
       # Click on play
       @info.update(listens:asset[:listens], loves:asset[:loves],
                    psecs:asset[:psecs])
-      @info[:listens] += 1
       @info[:psecs]
     end
-    
-    def download_from_singsalon(ssconnect=nil, coptions={})
-      begin
-        if @options[:force] || !test(?f, @info[:sfile])
-          if ssconnect
-            Plog.info("Downloading for #{@info[:title]}")
-            get_audio_from_singsalon(@info[:sfile], ssconnect)
-          else
-            Plog.error("Need to download #{@info[:stitle]}/#{@info[:record_by]}, but there is no connection")
-            return false
-          end
-        end
-        if test(?s, @info[:sfile])
-          update_mp4tag(coptions[:excuser])
-        end
-        unless test(?l, @info[:ofile])
-          unless test(?d, File.dirname(@info[:ofile]))
-            FileUtils.mkdir_p(File.dirname(@info[:ofile]), verbose:true)
-          end
-          FileUtils.symlink(@info[:sfile], @info[:ofile],
-                            verbose:true, force:true)
-        end
-      rescue => errmsg
-        Plog.dump_error(errmsg:errmsg)
-        return false
-      end
-      true
-    end
-    
+
     def mp4_tags
-      sfile = @info[:sfile]
+      sfile = ssfile
       if !sfile || !test(?s, sfile)
         Plog.error("#{@info[:stitle]}:#{sfile} empty or not exist")
         return nil
       end
-      wset = `atomicparsley #{sfile} -t`.split("\n").map {|l|
+      wset = `set -x; atomicparsley #{sfile} -t`.split("\n").map {|l|
         key, value = l.split(/\s+contains:\s+/)
         key = key.split[-1].gsub(/[^a-z0-9_]/i, '').to_sym
         [key, value]
@@ -292,7 +394,7 @@ module SmuleAuto
     end
 
     def media_size(sfile)
-      output = `atomicparsley #{sfile} -T 1`.
+      output = `set -x; atomicparsley #{sfile} -T 1`.
         encode("UTF-8", invalid: :replace).split("\n").
         grep(/Media data:/)
       output[0].split[2].to_i
@@ -306,9 +408,9 @@ module SmuleAuto
       aartist = @info[:record_by].gsub(/(,?)#{excuser}(,?)/, '')
       if wset[:nam] == 'ver:1' || wset[:alb] != album || \
           (wset[:day] != year && wset[:day] != release) || \
-          wset[:aART] != aartist
+          wset[:aART].to_s != aartist
         wset.delete(:lyr)
-        Plog.dump_info(msg:"Tagging #{@info[:sfile]}",
+        Plog.dump_info(msg:"Tagging #{ssfile}",
                        wset:wset, title:@info[:title],
                        record_by:@info[:record_by])
         return false
@@ -320,7 +422,7 @@ module SmuleAuto
       if is_mp4_tagged?(excuser)
         return :was_tagged
       end
-      ofile = @info[:sfile]
+      ofile = ssfile
       if ofile && test(?f, ofile)
         href    = 'https://www.smule.com' + @info[:href]
         date    = @info[:created].strftime("%Y-%m-%d")
@@ -330,7 +432,7 @@ module SmuleAuto
         comment = "#{date} - #{href}"
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
 
-        command = "atomicparsley #{ofile}"
+        command = "set -x; atomicparsley #{ofile}"
 
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
@@ -357,7 +459,7 @@ module SmuleAuto
           l_flag = ''
         end
 
-        output = `(set -x; #{command} --overWrite #{l_flag}) | tee /dev/tty`.
+        output = `(#{command} --overWrite #{l_flag}) | tee /dev/tty`.
           encode("UTF-8", invalid: :replace, replace: "")
         if output =~ /insufficient space to retag the source file/io
           return :error
@@ -410,21 +512,33 @@ module SmuleAuto
       true
     end
 
-    def get_audio_from_singsalon(ofile, ssconnect)
-      olink   = 'https://www.smule.com/' + @info[:href].sub(/\/ensembles$/, '')
-      ssconnect.goto('/smule-downloader')
-      ssconnect.type('input.downloader-input', olink)
-      ssconnect.click_and_wait('input.ipsButton[value~=Fetch]')
+    def check_and_download(f, user)
+      puts "\n%-40.40s %12d" % [File.basename(f), File.size(f)]
+      puts "%s %-40.40s %s" % [@info[:sid], @info[:stitle], @info[:record_by]]
 
-      # This open up new window
-      handles    = ssconnect.window_handles
-      cur_handle = ssconnect.window_handle
-      begin
-        wait_for_last_file(Dir.pwd, ofile)
-      rescue => errmsg
-        Plog.dump_error(errmsg:errmsg)
+      sfile = ssfile
+      sofile
+      if test(?f, sfile)
+        unless @options[:verify] 
+          return
+        end
+        csize  = self.media_size(sfile)
+        fmsize = self.media_size(f)
+        if (csize == fmsize) && self.is_mp4_tagged?(user)
+          Plog.info("Verify same media size and tags: #{csize}")
+          return
+        end
+        Plog.info("Size: #{csize} <>? #{fmsize}")
       end
-      test(?s, ofile)
+
+      Plog.info("Song missing or bad tag on local disk.  Create")
+      FileUtils.cp(f, sfile, verbose:true)
+      self.update_mp4tag(user)
+
+      if @options[:open]
+        system("set -x; open -g #{sfile}")
+        sleep(2)
+      end
     end
 
     def self.collect_collabs(user, days)
@@ -433,7 +547,7 @@ module SmuleAuto
       collab_list = Performance.
         where(Sequel.like(:record_by, user)).
         where(Sequel.like(:href, '%/ensembles')).
-        where(created:Date.today-days..Date.today).
+        where(created:Date.today-days..(Date.today + 1)).
         reverse(:created)
       if collab_list.count <= 0
         Plog.info("No collabs found in last #{days} days")
@@ -446,6 +560,5 @@ module SmuleAuto
       end
       result
     end
-
   end
 end

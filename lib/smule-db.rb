@@ -101,7 +101,7 @@ module SmuleAuto
           newset = []
         end
       when :url
-        newset = @content.where(href:value)
+        newset = @content.where(sid:File.basename(value))
       when :isfav
         newset = @content.where(isfav:true)
       when :favs
@@ -209,19 +209,6 @@ module SmuleAuto
       Plog.info("Loading db complete")
     end
 
-    def set_file_loc(sinfo)
-      if !sinfo[:sfile] || !sinfo[:ofile]
-        tdir  = '/Volumes/Voice/SMULE'
-        odir  = tdir + "/#{sinfo[:record_by].split(',').sort.join('-')}"
-        title = sinfo[:title].strip.gsub(/[\/\"]/, '-')
-        ofile = File.join(odir,
-                          title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
-
-        sfile = File.join(tdir, "STORE", sinfo[:sid] + '.m4a')
-        sinfo[:ofile], sinfo[:sfile] = ofile, sfile
-      end
-    end
-
     def add_new_songs(block, isfav=false)
       require 'time'
 
@@ -234,7 +221,6 @@ module SmuleAuto
 
       newcount = 0
       block.each do |r|
-        set_file_loc(r)
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
         if c = @all_content.where(sid:r[:sid]).first
@@ -245,8 +231,6 @@ module SmuleAuto
             isfav:     r[:isfav],
             orig_city: r[:orig_city],
             avatar:    r[:avatar],
-            sfile:     r[:sfile] || c[:sfile],
-            ofile:     r[:ofile] || c[:ofile],
           }
           updset[:oldfav] = true if updset[:isfav]
           @all_content.where(sid:r[:sid]).update(updset)

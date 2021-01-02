@@ -53,11 +53,14 @@ module SmuleAuto
       end
     end
 
-    def _list_show(sitem, psitem, cselect, start, limit)
+    def _list_show(sitem, psitem, cselect, start, limit, clear=true)
       bar    = '*' * 10
       tags   = @content.tags
       table  = TTY::Table.new
       cursor = TTY::Cursor
+      if clear
+        print cursor.clear_screen
+      end
       print cursor.move_to
       if sitem
         if avatar = sitem[:avatar]
@@ -174,43 +177,13 @@ EOM
 
       spage = @scanner.spage
       res[:duration] = duration
-      res[:snote]    = spage.page.css('p.sc-pRTZB').text
-
-      #spage.click_and_wait('button.sc-oTmZL ', 2, 2)
-      spage.click_and_wait('button.sc-oTmZL.nHlJq',0,-1)
-      spage.refresh
-      res[:msgs] = []
-      #spage.css('div.sc-qcrOD').reverse.each do |acmt|
-      spage.css('div.sc-qOiPt.gmsogG').reverse.each do |acmt|
-        next if acmt.css('span.sc-fzqMdD.irdzyp').size <= 0
-        user = acmt.css('span.sc-fzqMdD.irdzyp')[0].text.strip
-        msg  = acmt.css('span.sc-fzqMdD.ixdbBq')[0].text.strip
-        res[:msgs] << [user, msg]
-      end
-      spage.click_and_wait('div.sc-psQdR')
+      res[:snote]    = spage.get_song_note
+      res[:msgs]     = spage.get_comments
       res
     end
 
     def text_wrap(msg, width)
       msg.gsub(/(.{1,#{width}})(\s+|\Z)/, "\\1\n")
-    end
-
-    def browser_pause(sitem, psitem)
-      remain = 0
-      spage  = @scanner.spage
-      spage.refresh
-      @paused   = !@paused
-      if @paused
-        remain = 0
-      else
-        curtime   = spage.css("span.sc-oUOMp")[0].text.split(':')
-        curtime_s = curtime[0].to_i*60 + curtime[1].to_i
-        remain    = psitem[:duration] - curtime_s
-      end
-      Plog.info("Blind toggle.  Think pause:#{@paused}")
-      spage.click_and_wait('div.sc-pIjat', 0)
-      spage.click_and_wait('div.sc-pYNsO', 1)
-      remain
     end
 
     def _show_msgs(sitem, psitem)
@@ -234,11 +207,8 @@ EOM
     end
 
     def _set_favorite(sitem)
-      spage = @scanner.spage
-      spage.click_and_wait("button.sc-pcYTN", 1, 1)
-      spage.refresh
+      @scanner.spage.set_song_favorite
       sitem[:isfav] = true
-      spage.click_and_wait('span.sc-pCOPB.eDrnHs',1,5)
     end
 
     def _set_smule_song_tag(sitem, tag)
@@ -354,9 +324,7 @@ EOH
           end
           @played_set << sitem
           # Turn off autoplay
-          if pcount == 0
-            @scanner.spage.click_and_wait("div.sc-qWfkp")
-          end
+          @scanner.spage.toggle_autoplay if pcount == 0
           pcount  += 1
           if (pcount % 10) == 0
             _save_state(false)
@@ -372,7 +340,7 @@ EOH
           begin
             if sitem && !@paused
               if refresh
-                _list_show(sitem, psitem, @clist, 0, 10)
+                _list_show(sitem, psitem, @clist, 0, 10, false)
                 _show_msgs(sitem, psitem)
                 if sitem[:isfav] || sitem[:oldfav]
                   if sitem[:record_by] =~ /^THV_13,/
@@ -396,7 +364,8 @@ EOH
             hc, refresh = handle_user_input(key, sitem, psitem)
             case hc
             when :pausing
-              remain = browser_pause(sitem, psitem)
+              @paused = !@paused
+              remain  = @scanner.spage.play_song(!@paused)
               if remain > 0
                 endt = Time.now + remain
               end
@@ -493,6 +462,7 @@ EOH
           # It pulls list_length+1 item because that matches the menu
           # so simpler to use
           @clist = @clist[0..list_length]
+          print TTY::Cursor.clear_screen
         end
       when 'D'
         if prompt.keypress('Are you sure? ') =~ /^y/i
@@ -512,15 +482,14 @@ EOH
           _set_favorite(sitem)
           _set_smule_song_tag(sitem, '#thvfavs')
         end
+
       when 'h'
-        if param = prompt.ask('URL:')
-          param   = param.sub(%r(^https://www.smule.com), '')
-          newsong = @content.select_set(:url, param)
-          if newsong && newsong.size > 0
-            @clist.unshift(newsong[0])
-            return [:next, true]
-          end
+        if url = prompt.ask('URL:')
+          newsongs = SmuleSong.update_from_url(url, update:true)
+          @clist.unshift(*newsongs)
+          return [:next, true]
         end
+
       when 'i'                            # Song Info
         puts({
           filter: @filter,
@@ -544,10 +513,11 @@ EOH
           _list_show(nil, nil, @clist, offset, 10)
           key = prompt.keypress("Press any key to continue ...")
           if key == 'q'
-            return [:next, true]
+            break
           end
           offset += 10
         end
+        print TTY::Cursor.clear_screen
       when 'L'
         play_length = prompt.ask('Max Play Length: ').to_i
         @roptions[:play_length] = play_length if play_length >= 15
@@ -558,8 +528,9 @@ EOH
         return [:next, true]
       when /p/i                           # List history
         offset = (key == 'P') ? prompt.ask('Prev track offset?').to_i : 0
-        _list_show(nil, nil, @played_set.reverse, offset.to_i, 10)
+        _list_show(nil, nil, @played_set.reverse, offset.to_i, 10, true)
         prompt.keypress("Press any key [:countdown]", timeout:3)
+        print TTY::Cursor.clear_screen
       when 'R'                             # Reload script
         _menu_eval do
           [__FILE__, "lib/smule*rb"]. each do |ptn|
@@ -579,7 +550,7 @@ EOH
         _menu_eval do
           perfset   = @sapi.get_performances(@user, limit:50, days:1)
           new_count = @content.add_new_songs(perfset, false)
-          perfset.concat(SmuleSong.collect_collabs(@user, 10))
+          perfset   = SmuleSong.collect_collabs(@user, 10)
           new_count += @content.add_new_songs(perfset, false)
           prompt.keypress("#{new_count} songs added [:countdown]",
                           timeout:3)
@@ -593,10 +564,13 @@ EOH
       when 'W'
         if dir = prompt.ask('Firefox cache dir (about:cache):')
           @listener.stop if @listener
-          @listener = FirefoxWatch.new(@user, dir,
+          @listener = FirefoxWatch.new(@user, dir.strip,
                                        'cursong.yml', verify:true).start
+        else
+          @listener.stop if @listener
+          Plog.info("Stop watching")
         end
-      when 'Z'                            # Quit
+      when 'Z'                            # Debug
         require 'byebug'
 
         byebug
