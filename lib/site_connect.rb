@@ -63,9 +63,9 @@ class SelPage
     end
   end
 
-  def goto(link)
+  def goto(link, wait=2)
     @sdriver.goto(link)
-    sleep(2)
+    sleep(wait)
     refresh
   end
 
@@ -120,8 +120,14 @@ class SDriver
 
   def click_and_wait(selector, wtime=2, index=0)
     begin
-      Plog.info "Click on #{selector}" if @options[:verbose]
-      @driver.find_elements(:css, selector)[index].click
+      elements = @driver.find_elements(:css, selector)
+      Plog.info "Click on #{selector}[#{index}] (of #{elements.size})" if @options[:verbose]
+      if elements[index]
+        elements[index].click
+      else
+        Plog.info "Element #{selector}[#{index}] not found" if @options[:verbose]
+        return
+      end
       sleep(wtime) if wtime > 0
     rescue => errmsg
       errmsg
@@ -193,7 +199,7 @@ class SiteConnect
         identity, password = auth.split(':')
         sdriver.click_and_wait('a[data-test-id="login-type-btn-login-acc"]') # email
         sdriver.type('input[name="snp-username"]', identity + "\n")
-        sleep 1
+        sleep 3
         sdriver.type('input[name="snp-password"]', password + "\n")
         sdriver.click_and_wait('a[data-test-id="email-login-ctalogin-acc"]') # login
       end

@@ -37,7 +37,7 @@ module SmuleAuto
   class SmuleDB
     DBNAME = "smule.db"
 
-    attr_reader :content
+    attr_reader :content, :singers, :DB
 
     def self.instance(user, cdir='.')
       @_db ||= SmuleDB.new(user, cdir)
@@ -47,15 +47,18 @@ module SmuleAuto
       create_db unless test(?f, DBNAME)
       @user     = user
       @DB       = Sequel.sqlite(DBNAME)
+      Sequel::Model.plugin :insert_conflict
       YAML.load_file('etc/db_models.yml').each do |model, minfo|
         klass = Class.new(Sequel::Model)
         klass.dataset = @DB[minfo['table'].to_sym]
         Object.const_set model, klass
       end
 
-      @content  = @DB[:performances]
-      @singers  = @DB[:singers]
-      @songtags = @DB[:song_tags]
+      @all_content = @DB[:performances]
+      @content     = @all_content.where(Sequel.lit('record_by like ?',
+                                                     "%#{user}%"))
+      @singers     = @DB[:singers]
+      @songtags    = @DB[:song_tags]
     end
 
     def tags
@@ -90,19 +93,27 @@ module SmuleAuto
         end
       end
       case ftype
+      when :query
+        begin
+          newset = @content.where(Sequel.lit(value))
+        rescue => errmsg
+          Plog.dump_error(errmsg:errmsg, value:value, trace:errmsg.backtrace)
+          newset = []
+        end
       when :url
-        newset = @content.where(href:value)
+        newset = @content.where(sid:File.basename(value))
       when :isfav
         newset = @content.where(isfav:true)
       when :favs
-        newset = @content.where(isfav:true) + @content.where(oldfav:true)
-        newset = @content.where{(isfav=true) or (oldfav=true)}
+        newset = @content.where(Sequel.lit('isfav=1 or oldfav=1'))
       when :record_by
-        newset = @content.where(Sequel.like(:record_by, "%#{value}%"))
+        newset = @content.where(Sequel.ilike(:record_by, "%#{value}%"))
       when :title
-        newset = @content.where(Sequel.like(:stitle, "%#{value}%"))
+        newset = @content.where(Sequel.ilike(:stitle, "%#{value}%"))
       when :recent
         newset = @content.where(created: ldate..edate)
+      when :sid
+        newset = @content.where(sid:value.split(/[, ]+/))
       when :star
         newset = @content.where{stars >= value.to_i}
       else
@@ -115,7 +126,8 @@ module SmuleAuto
     end
 
     def each(options={})
-      recs = @content.where(Sequel.lit(options[:filter])).
+      filters = options[:filter].split('/').map{|r| "(#{r})"}.join(' OR ')
+      recs = @content.where(Sequel.lit(filters)).
         order(:record_by, :created)
       Plog.dump_info(options:options, rcount:recs.count)
       progress_set(recs) do |r, bar|
@@ -206,10 +218,11 @@ module SmuleAuto
         @content.update(isfav:nil)
       end
 
+      newcount = 0
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
-        if c = @content.where(sid:r[:sid]).first
+        if c = @all_content.where(sid:r[:sid]).first
           updset = {
             listens:   r[:listens],
             loves:     r[:loves],
@@ -217,17 +230,16 @@ module SmuleAuto
             isfav:     r[:isfav],
             orig_city: r[:orig_city],
             avatar:    r[:avatar],
-            sfile:     r[:sfile] || c[:sfile],
-            ofile:     r[:ofile] || c[:ofile],
           }
           updset[:oldfav] = true if updset[:isfav]
-          @content.where(sid:r[:sid]).update(updset)
+          @all_content.where(sid:r[:sid]).update(updset)
         else
           r.delete(:lyrics)
-          @content.insert(r)
+          @all_content.insert(r)
+          newcount += 1
         end
       end
-      self
+      newcount
     end
 
     def set_follows(followings, followers)
@@ -264,10 +276,88 @@ module SmuleAuto
       end
       wset.count
     end
+
+    def top_partners(limit, options={})
+      days  = options[:days] || 30
+      odate = (Time.now - days*24*3600).strftime("%Y-%m-%d")
+      query = Performance.group_and_count(:record_by).
+        select_append{sum(loves).as(loves)}.
+        select_append{sum(listens).as('listens')}.
+        select_append{sum(stars).as('stars')}.
+        select_append{sum(isfav).as(isfavs)}.
+        select_append{sum(oldfav).as(oldfavs)}.
+        order(:listens).reverse.
+        limit(limit*4).
+        where(Sequel.lit 'record_by like ?', "%#{@user}%").
+        where(Sequel.lit 'created > ?', odate)
+      Plog.info(query)
+      rank = {}
+      query.each do |r|
+        key = r[:record_by].sub(/,?#{@user},?/, '')
+        rank[key] ||= { count: 0, loves:0, listens:0, isfavs:0, oldfavs:0, stars:0}
+        rank[key][:count]   += r[:count]
+        rank[key][:loves]   += r[:loves]
+        rank[key][:listens] += r[:listens]
+        rank[key][:stars]   += r[:stars].to_i
+        rank[key][:isfavs]  += r[:isfavs].to_i
+        rank[key][:oldfavs] += r[:oldfavs].to_i
+      end
+      rank.each do |singer, sinfo|
+        score = sinfo[:count] + sinfo[:isfavs]*10 + sinfo[:oldfavs]*5 +
+          sinfo[:loves]*0.2 +
+          sinfo[:listens]/20.0 + sinfo[:stars]*0.1
+        sinfo[:score] = score
+      end
+      rank.to_a.select{|k, v| !k.empty? && k != @user}.
+        sort_by{|singer, sinfo| sinfo[:score] * -1}[0..limit-1]
+    end
   end
 
   class Main < Thor
     include ThorAddition
+
+    no_commands do
+      def _edit_file(records, format='json')
+        require 'tempfile'
+
+        wset    = records.map{|r| r.to_json}.join("\n")
+        newfile = Tempfile.new('new')
+        bakfile = Tempfile.new('bak')
+
+        bakfile.puts(records.map{|r| r.to_json}.join("\n"))
+
+        case format
+        when /^y/i
+          newfile.puts(records.to_yaml)
+          system("vim #{newfile.path}")
+          newrecs = YAML.load_file(newfile.path)
+          editout = Tempfile.new('edit')
+          editout.puts(newrecs.map{|r| r.to_json}.join("\n"))
+        else
+          newfile.puts(records.map{|r| r.to_json}.join("\n"))
+          system("vim #{newfile.path}")
+          editout = newfile
+        end
+
+        diff = `set -x; diff #{bakfile.path} #{editout.path}`
+        puts diff
+        delset, addset = [], []
+        diff.split("\n").each do |l|
+          begin
+            if l =~ />/
+              data = JSON.parse(l[2..-1], symbolize_names:true)
+              addset << data
+            elsif l =~ /</
+              data = JSON.parse(l[2..-1], symbolize_names:true)
+              delset << data
+            end
+          rescue => errmsg
+            Plog.error(errmsg:errmsg, l:l)
+          end
+        end
+        [addset, delset]
+      end
+    end
 
     desc "load_db user", "load_db"
     def load_db_for_user(user, cdir='.')
@@ -276,10 +366,81 @@ module SmuleAuto
       end
     end
 
-    desc "dump_db", "dump_db"
+    desc "dump_db user [dir]", "dump_db"
+    long_desc <<-LONGDESC
+Dump the database into yaml file (for backup)
+    LONGDESC
     def dump_db(user, cdir='.')
       cli_wrap do
         SmuleDB.instance(user, cdir).dump_db
+      end
+    end
+
+    desc "edit_tag", "Edit tag of existing song"
+    long_desc <<-LONGDESC
+Dump the tag data into a text file.  Allow user to edit and update with any
+changes back into the database
+    LONGDESC
+    option :format, type: :string, default:'json'
+    def edit_tag(user)
+      cli_wrap do
+        tdir           = _tdir_check(options[:data_dir])
+        content        = SmuleDB.instance(user, tdir)
+        records        = SongTag.all.sort_by{|r| r[:name]}.map{|r| r.values}
+        insset, delset = _edit_file(records, options[:format])
+        if delset.size > 0
+          SongTag.where(id:delset.map{|r| r[:id]}).destroy
+        end
+        insset.each do |r|
+          r.delete(:id)
+          SongTag.new(r).save
+        end
+        true
+      end
+    end
+
+    desc "edit_singer", "edit_singer"
+    option :format, type: :string, default:'json'
+    def edit_singer(user)
+      cli_wrap do
+        tdir    = _tdir_check(options[:data_dir])
+        content = SmuleDB.instance(user, tdir)
+        records = Singer.all.sort_by{|r| r[:name]}.map{|r| r.values}
+        insset, delset = _edit_file(records, options[:format])
+        if delset.size > 0
+          Singer.where(id:delset.map{|r| r[:id]}).destroy
+        end
+        insset.each do |r|
+          r.delete(:id)
+          Singer.new(r).save
+        end
+        true
+      end
+    end
+
+    desc "rank_singer(user)", "rank_singer"
+    option :days,  type: :numeric, default:180, alias:'-d',
+      desc:'Look back the specified number of days only'
+    def rank_singer(user)
+      cli_wrap do
+        tdir    = _tdir_check(options[:data_dir])
+        content = SmuleDB.instance(user, tdir)
+        days    = options[:days]
+        limit   = options[:limit] || 100
+        rank    = content.top_partners(limit, options)
+        puts "Ranking in last #{days} days"
+        line = 0
+        output = []
+        output << %w(. Singer Count Loves Listens Favs Stars Score)
+        rank.each do |singer, sinfo|
+          line += 1
+          output << [line, singer, sinfo[:count], sinfo[:loves],
+		     sinfo[:listens], sinfo[:isfavs] + sinfo[:oldfavs],
+                     sinfo[:stars], sinfo[:score].to_i]
+        end
+        print_table(output)
+        rank.map{|k, v| "@#{k}"}.
+          sort_by {|v| v.downcase.gsub(/_/, '')}.join(' ')
       end
     end
   end

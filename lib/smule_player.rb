@@ -15,47 +15,188 @@ require 'tty-pager'
 module SmuleAuto
   StateFile = "splayer.state"
 
-  class SmulePlayer
-    def initialize(user, tdir, options={})
-      @options  = options
-      @roptions = {}
-      @content  = SmuleDB.instance(user, tdir)
-      if test(?f, StateFile)
-        config  = YAML.load_file(StateFile)
-        @clist  = @content.select_sids(config[:sids])
-        @filter = config[:filter]
-        @order  = config[:order]
+  class PlayList
+    attr :clist, :filter, :listpos
+
+    def initialize(state_file, content)
+      @state_file = state_file
+      @content    = content
+      if test(?f, @state_file)
+        config      = YAML.load_file(@state_file)
+        if config[:clist]
+          @clist      = @content.select_sids(config[:clist])
+        end
+        @filter     = config[:filter]
+        @order      = config[:order]
+        @listpos    = config[:listpos]
       end
-      @clist  ||= {}
-      @filter ||= {}
-      @order  ||= 'play'
-      @played_set = []
-      @scanner = Scanner.new(user, @options)
-      at_exit {
-        _save_state(true)
-        exit 0
-      }
-      Plog.info("Playing #{@clist.size} songs")
+      @clist      ||= []
+      @filter     ||= {}
+      @order      ||= 'play'
+      @listpos    ||= 0
     end
-    
-    def _save_state(backup=false)
+
+    def toplay_list
+      @clist[@listpos..-1]
+    end
+
+    def done_list
+      @clist[0..@listpos]
+    end
+
+    def order=(value)
+      @order = value
+      # This have issue, the listpos is hanging here.
+      @clist = sort_selection(@clist)
+    end
+
+    def save
       data = {
-        filter: @filter,
-        order:  @order,
-        sids:   @clist.map{|r| r[:sid]},
-      }.to_yaml
-      open(StateFile, "w") do |fod|
-        fod.puts(data)
-        Plog.info("Updating #{StateFile}")
+        filter:  @filter,
+        order:   @order,
+        listpos: @listpos,
+        clist:   @clist.map{|r| r[:sid]},
+      }
+      open(@state_file, "w") do |fod|
+        fod.puts(data.to_yaml)
+        Plog.info("Updating #{@state_file}")
       end
     end
 
-    def _list_show(sitem, psitem, cselect, start, limit)
+    def playable?(sitem)
+      if (sitem[:stars].to_i == 1) || sitem[:deleted] ||
+         (sitem[:href] =~ /\/ensembles$/)
+        return false
+      end
+
+      state = :play
+      @filter.each do |k, v|
+        case k
+        when '*'
+          state = :skip unless sitem[:stars].to_i == v.to_i
+        when '>'
+          state = :skip unless sitem[:stars].to_i >= v.to_i
+        when 's'
+          state = :skip unless sitem[:record_by].downcase.include?(v.downcase)
+        when 'S'
+          state = :skip unless sitem[:record_by].downcase.start_with?(v.downcase)
+        when 't'
+          state = :skip unless sitem[:stitle].include?(v)
+        end
+      end
+      if state == :skip
+        Plog.info("Skipping #{sitem[:title]}")
+        return false
+      end
+      true
+    end
+
+    def next_song(increment=1, nextinc=1)
+      if @clist.size <= 0
+        return nil
+      end
+      count = 0
+      while (count <= @clist.size)
+        @cursong = @clist[@listpos]
+        @listpos = (@listpos + increment) % @clist.size
+        if playable?(@cursong)
+          return @cursong
+        end
+        count += 1
+        increment = nextinc
+      end
+      Plog.error("No matching song in list")
+      nil
+    end
+
+    def insert(*songs)
+      @clist.insert(@listpos, *songs)
+    end
+
+    def remains
+      @clist.size - @listpos
+    end
+
+    def add_to_list(newset, replace=false)
+      newset = sort_selection(newset)
+      if replace
+        @clist   = newset
+        @listpos = 0
+      else
+        @clist.concat(newset)
+      end
+    end
+
+    # Chop list to a new list only
+    def chop(size)
+      endpos   = [@listpos+size, @clist.size-1].min
+      @clist   = @clist[@listpos..endpos]
+      @listpos = 0
+    end
+
+    def cur_info
+      {
+        filter: @filter,
+        order:  @order,
+        count:  @clist.size,
+        song:   @cursong,
+      }
+    end
+
+    def sort_selection(cselect)
+      Plog.info("Resort based on #{@order}")
+      cselect = case @order
+      when /^random/
+        cselect.shuffle
+      when /^play/
+        cselect.sort_by{|v| v[:listens]}
+      when /^love/
+        cselect.sort_by{|v| v[:loves]}.reverse
+      when /^star/
+        cselect.sort_by{|v| v[:stars].to_i}.reverse
+      when /^date/
+        cselect.sort_by{|v| created_value(v[:created])}.reverse
+      when /^title/
+        cselect.sort_by{|v| v[:stitle]}
+      else
+        Plog.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
+        cselect
+      end
+      if @order =~ /\.d$/
+        cselect = cselect.reverse
+      end
+      Plog.info("Sorted #{cselect.size} entries")
+      cselect
+    end
+  end
+
+  class SmulePlayer
+    def initialize(user, tdir, options={})
+      @user       = user
+      @options    = options
+      @roptions   = {}
+      @content    = SmuleDB.instance(user, tdir)
+      @tdir       = tdir
+      @scanner    = Scanner.new(user, @options)
+      @sapi       = API.new(options)
+      @csong_file = options[:csong_file] || "./cursong.yml"
+      @playlist   = PlayList.new(File.join(@tdir, StateFile), @content)
+      at_exit {
+        @playlist.save
+        exit 0
+      }
+      Plog.info("Playing #{@playlist.clist.size} songs")
+    end
+
+    def _list_show(sitem, psitem, cselect, start, limit, clear=true)
       bar    = '*' * 10
       tags   = @content.tags
       table  = TTY::Table.new
       cursor = TTY::Cursor
-      print cursor.clear_screen
+      if clear
+        print cursor.clear_screen
+      end
+      print cursor.move_to
       if sitem
         if avatar = sitem[:avatar]
           lfile = "cache/" + File.basename(avatar)
@@ -65,7 +206,6 @@ module SmuleAuto
           print cursor.move_to(0,0)
           system "imgcat -r 5 <#{lfile}"
         end
-        #ptags = (tags[sitem[:stitle]] || []).join(', ')
         ptags = tags[sitem[:stitle]] || ''
         isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ' '
         box   = TTY::Box.frame(top: 0, left: 15,
@@ -93,6 +233,7 @@ EOM
       puts table.render(:unicode, multiline:true,
                         width:TTY::Screen.width,
              alignments:[:right, :left, :left, :left, :right, :right])
+      print cursor.clear_screen_down
     end
 
     def box_msg(msg, options={})
@@ -105,49 +246,17 @@ EOM
     end
 
     def _setprompt
-      @prompt = "lnswx*+= (#{@filter.inspect})>"
-    end
-
-    def _filter_song(sitem)
-      state = :play
-      @filter.each do |k, v|
-        case k
-        when '*'
-          state = :skip unless sitem[:stars].to_i == v.to_i
-        when '>'
-          state = :skip unless sitem[:stars].to_i >= v.to_i
-        when 's'
-          state = :skip unless sitem[:record_by].downcase.include?(v.downcase)
-        when 'S'
-          state = :skip unless sitem[:record_by].downcase.start_with?(v.downcase)
-        when 't'
-          state = :skip unless sitem[:stitle].include?(v)
-        end
-      end
-      if state == :skip
-        Plog.info("Skipping #{sitem[:title]}")
-      end
-      state
-    end
-
-    def _song_playable?(sitem)
-      if (sitem[:stars] && sitem[:stars] <= 1)
-        return false
-      end
-      if sitem[:deleted]
-        return false
-      end
-      unless @options[:myopen]
-        if (sitem[:href] =~ /\/ensembles$/)
-          return false
-        end
-      end
-      _filter_song(sitem) == :play
+      @prompt = "lnswx*+= (#{@playlist.filter.inspect})>"
     end
 
     def play_asong(sitem, prompt)
       res = {duration:0}
+
+      File.open(@csong_file, 'w') do |fod|
+        fod.puts sitem.to_yaml
+      end
       psecs = SmuleSong.new(sitem).play(@scanner.spage)
+
       if psecs == :deleted
         @content.delete_song(sitem)
         return res
@@ -165,12 +274,8 @@ EOM
 
       spage = @scanner.spage
       res[:duration] = duration
-      res[:snote]    = spage.page.css('div._1ck56r8').text
-      res[:msgs]     = spage.css('div._bmkhah').reverse.map do |acmt|
-        user = acmt.css('div._1b9o6jw').text
-        msg  = acmt.css('div._1822wnk').text
-        [user, msg]
-      end
+      res[:snote]    = spage.song_note
+      res[:msgs]     = spage.get_comments
       res
     end
 
@@ -178,88 +283,42 @@ EOM
       msg.gsub(/(.{1,#{width}})(\s+|\Z)/, "\\1\n")
     end
 
-    def browser_pause(sitem, psitem)
-      remain = 0
-      spage  = @scanner.spage
-      spage.refresh
-      if spage.css('button._1oqc74f').size > 0       # Is stopped
-        spage.click_and_wait('button._1oqc74f', 0)
-        curtime   = spage.css("span._1guzb8h").text.split(':')
-        curtime_s = curtime[0].to_i*60 + curtime[1].to_i
-        remain    = psitem[:duration] - curtime_s
-        Plog.dump_info(msg:"Was stopped.  Playing", remain:remain)
-        #Plog.dump_info(curtime:curtime, curtime_s:curtime_s, remain:remain)
-      elsif spage.css('button._1s30tn4h').size > 0   # Is playing
-        Plog.info("Was playing.  Stopping")
-        spage.click_and_wait('button._1s30tn4h', 0)
-      else
-        Plog.error("Unknown state to toggle")
-      end
-      remain
-    end
-
-    def _show_msgs(psitem)
+    def _show_msgs(sitem, psitem)
       table  = TTY::Table.new
       psitem[:msgs].each do |usr, msg|
         table << [usr, text_wrap(msg, 80)]
+      end
+      data = {
+        sid:       sitem[:sid],
+        stitle:    sitem[:stitle],
+        record_by: sitem[:record_by],
+        comments:  psitem[:msgs].to_json,
+      }
+      if rec = Comment.first(sid:sitem[:sid])
+        rec.update(data)
+        rec.save_changes
+      else
+        Comment.insert(data)
       end
       puts table.render(multiline:true)
     end
 
     def _set_favorite(sitem)
-      spage = @scanner.spage
-      spage.click_and_wait("button._13ryz2x")
-      content = spage.refresh
-      fav     = spage.page.css("div._8hpz8v")[0].text
-      if fav != 'Favorite'
-        Plog.info "Song is already favorite"
-        spage.click_and_wait("._6ha5u0", 1)
-        return false
-      end
+      @scanner.spage.set_song_favorite
       sitem[:isfav] = true
-      spage.click_and_wait("div._8hpz8v", 1, 0)
     end
 
-    def _set_smule_song_tag(sitem, tag)
-      spage   = @scanner.spage
-      content = spage.refresh
-      msg     = spage.page.css('div._1ck56r8').text
-      if msg =~ /#{tag}/
-        Plog.info "Message already containing #{tag}"
-        return false
-      end
-      text = ' ' + tag
-      spage.click_and_wait("button._13ryz2x", 1)   # ...
-      content  = spage.refresh
-      editable = spage.page.css("div._8hpz8v")[2].text
-      if editable == 'Edit'
-        spage.click_and_wait("a._117spsl", 1, 1)  # Edit
-        spage.type("textarea#message", text, append:true)  # Enter tag
-        spage.click_and_wait("input#recording-save")
-      else
-        Plog.info "Song is not editable"
-        spage.click_and_wait("._6ha5u0", 1)
-      end
-      spage.click_and_wait('button._1oqc74f', 0)
-    end
-
-    def _refresh_content
-      Plog.info("Refresh content")
-      @content.refresh
-      @clist      = []
-      @played_set = []
-    end
-
+    # These are for test hooks mostly where could could not test code due to it
+    # being in run loop.  Code could be copied here for testing as the function
+    # is redefineable at runtime with 'R' option
     def browser_op(sitem, psitem, *operations)
       spage = @scanner.spage
       operations.each do |data|
         case data
         when 'M'
-          _show_msgs(psitem)
+          _show_msgs(sitem, psitem)
         when 'F'                                # Set favorite song
           _set_favorite(sitem)
-        when /^t/i                              # Set a tag in msg
-          _set_smule_song_tag(sitem, $')
         end
       end
     end
@@ -270,7 +329,7 @@ EOM
         yield *args
       rescue => errmsg
         prompt = TTY::Prompt.new
-        Plog.dump_error(errmsg:errmsg.to_s, args:args)
+        Plog.dump_error(errmsg:errmsg, args:args, trace:errmsg.backtrace)
         prompt.keypress("[ME] Press any key to continue ...")
       end
     end
@@ -280,8 +339,8 @@ Command:
 ? Help
 b Browser   command (see below)
   t#tagname Adding tag name (only for songs started by you)
-  F         Mark the song as favorite
-C           Reload content (if external app update it)
+C           Cut current playlist to the set
+F           Mark the song as favorite
 f           Filter existing song list
   *=0       Filter songs w/o star
   >=4       Filter song with >= 4 stars
@@ -295,8 +354,8 @@ n           Goto next (1) song
 p           List played (previous) songs
 R           Reload script
 s           Sort order
+S           Sync with smule (update new songs, collab)
 t           Give new tags to current song
-w           Write database
 x           Exit
 *           Give stars to current song
 
@@ -318,235 +377,234 @@ EOH
       prompt = TTY::Prompt.new
       sitem  = nil
       while true
-        # Replay the same list again if exhausted
-        if @clist.size <= 0
-          @clist = @played_set.uniq.select{|s| _filter_song(s) != :skip}
-        end
-        if sitem
-          @content.update_song(sitem)
-        end
-        if sitem = @clist.shift
-          unless _song_playable?(sitem)
-            next
-          end
-          _list_show(sitem, nil, @clist, 0, 10)
+        # Update into db last one played
+        @content.update_song(sitem) if sitem
+        if sitem = @playlist.next_song
+          _list_show(sitem, nil, @playlist.toplay_list, 0, 10)
           psitem = play_asong(sitem, prompt)
           if (duration = psitem[:duration]) <= 0
             next
           end
-          @played_set << sitem
           # Turn off autoplay
-          if pcount == 0
-            @scanner.spage.click_and_wait("div._1jmbcz6h")
-          end
+          @scanner.spage.toggle_autoplay if pcount == 0
           pcount  += 1
           if (pcount % 10) == 0
-            _save_state(false)
+            @playlist.save
           end
           endt = Time.now + duration
         else
           endt = Time.now + 1
         end
 
-        paused = false
+        @paused = false
+        refresh = true
         while true
-          if sitem && !paused
-            _list_show(sitem, psitem, @clist, 0, 10)
-            _show_msgs(psitem)
-            if sitem[:isfav] || sitem[:oldfav]
-              if sitem[:record_by] =~ /^THV_13,/
-                _menu_eval do
-                  _set_smule_song_tag(sitem, '#thvfavs')
+          begin
+            if sitem && !@paused
+              if refresh
+                _list_show(sitem, psitem, @playlist.toplay_list, 0, 10, false)
+                _show_msgs(sitem, psitem)
+                if sitem[:isfav] || sitem[:oldfav]
+                  if sitem[:record_by] =~ /^THV_13,/
+                    _menu_eval do
+                      @scanner.spage.set_song_tag('#thvfavs')
+                    end
+                  end
                 end
               end
+              wait_t = endt - Time.now
+              key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
+                                       timeout:wait_t)
+            else
+              key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
             end
-            wait_t = endt - Time.now
-            key    = prompt.keypress("#{@prompt} [#{@clist.size}.:countdown]",
-                                     timeout:wait_t)
-          else
-            key    = prompt.keypress("#{@prompt} [#{@clist.size}]")
+          rescue => errmsg
+            Plog.error(errmsg)
+            next
           end
-          if key
-            case key
-            when ' '
-              remain = browser_pause(sitem, psitem)
+          begin
+            hc, refresh = handle_user_input(key, sitem, psitem)
+            case hc
+            when :pausing
+              @paused = !@paused
+              remain  = @scanner.spage.play_song(!@paused)
               if remain > 0
-                paused = false
-                endt   = Time.now + remain
-              else
-                paused = true
+                endt = Time.now + remain
               end
-            when '?'
-              TTY::Pager.new.page(HelpScreen)
-              prompt.keypress("Press any key [:countdown]", timeout:3)
-            when '.'
-              @clist.unshift(sitem) if sitem
-              break
-            when /^[\+=\/]/i                # Add/replace list
-              choices = %w(favs recent record_by star title)
-              ftype   = prompt.enum_select('Filter type?', choices)
-              param   = (ftype == 'favs') ? '' : prompt.ask("#{ftype} value ?")
-              if param
-                newset  = @content.select_set(ftype.to_sym, param)
-                case key
-                when '+'
-                  @clist.concat(sort_selection(newset))
-                when '='
-                  @clist      = sort_selection(newset)
-                  @played_set = []                # Clear current played list
-                when '/'
-                  offset = 0
-                  while offset < newset.size
-                    _list_show(nil, nil, newset, offset, 10)
-                    key = prompt.keypress("Press any key to continue ...")
-                    break if key == 'q'
-                    offset += 10
-                  end
-                end
-              end
-            when '-'                   # Remove from list
-              choices = %w(singer star)
-              ftype   = prompt.enum_select('Filter type?', choices)
-              if param = prompt.ask('Removing filter Value?')
-                newset  = @clist.reject {|v|
-                  case ftype
-                  when 'singer'
-                    v[:record_by].downcase.include?(param)
-                  when 'star'
-                    v[:stars].to_i >= param.to_i
-                  else
-                    false
-                  end
-                }
-                @clist = sort_selection(newset)
-              end
-            when '*'                            # Set stars
-              if sitem
-                sitem[:stars] = prompt.keypress('Value?').to_i
-              end
-            when 'b'
-              if param = prompt.ask('Browser Op alue?')
-                _menu_eval do
-                  browser_op(sitem, psitem, param)
-                  prompt.keypress("Press any key [:countdown]", timeout:3)
-                end
-              end
-            when 'C'
-              _refresh_content
-            when 'D'
-              if prompt.keypress('Are you sure? ') =~ /^y/i
-                @content.delete_song(sitem)
-                sitem = nil
-                prompt.keypress("Press any key [:countdown]", timeout:3)
-                break
-              end
-            when 'f'                            # Set filter
-              param = prompt.ask('Filter value?', default:'')
-              _menu_eval do
-                @filter = Hash[param.split.map{|fs| fs.split('=')}]
-              end
-              _setprompt
-            when 'F'                              # Set as favorite and tag
-              _menu_eval do
-                _set_favorite(sitem)
-                _set_smule_song_tag(sitem, '#thvfavs')
-              end
-            when 'h'
-              if param = prompt.ask('URL:')
-                param   = param.sub(%r(^https://www.smule.com), '')
-                newsong = @content.select_set(:url, param)
-                if newsong && newsong.size > 0
-                  @clist.unshift(newsong[0])
-                  break
-                end
-              end
-            when 'i'                            # Song Info
-              puts({
-                filter: @filter,
-                order:  @order,
-                count:  @clist.size,
-                song:   sitem,
-              }.to_yaml)
-              prompt.keypress("Press any key to continue ...")
-            when 'l'                            # List playlist
-              offset = 10
-              while offset < @clist.size
-                _list_show(nil, nil, @clist, offset, 10)
-                key = prompt.keypress("Press any key to continue ...")
-                break if key == 'q'
-                offset += 10
-              end
-            when 'L'
-              play_length = prompt.ask('Max Play Length?').to_i
-              @roptions[:play_length] = play_length if play_length >= 15
-            when /n/i                            # Next n songs
-              offset = (key == 'N') ? prompt.ask('Next track offset?').to_i : 0
-              Plog.info("Skip #{offset} songs")
-              @clist.shift(offset)
-              break
-            when /p/i                           # List history
-              offset = (key == 'P') ? prompt.ask('Prev track offset?').to_i : 0
-              _list_show(nil, nil, @played_set.reverse, offset.to_i, 10)
-              prompt.keypress("Press any key [:countdown]", timeout:3)
-            when 'R'                             # Reload script
-              _menu_eval do
-                [__FILE__, "lib/smule*rb"]. each do |ptn|
-                  Dir.glob(ptn).each do |script|
-                    Plog.info("Loading #{script}")
-                    eval "load '#{script}'", TOPLEVEL_BINDING
-                  end
-                end
-                prompt.keypress("Press any key [:countdown]", timeout:3)
-              end
-            when 's'                            # Sort current list
-              choices = %w(random play love star date title
-                           play.d love.d star.d date.d title.d)
-              @order  = prompt.enum_select('Order?', choices)
-              @clist  = sort_selection(@clist)
-            when 't'                             # Set tag
-              if tag = prompt.ask('Tag value ?')
-                @content.add_tag(sitem, tag)
-              end
-            when 'w'                            # Write content out
-              _save_state(false)
-            when 'x'                            # Quit
+              refresh = false
+            when :quit
               return
-            when 'Z'                            # Quit
-              require 'byebug'
-
-              byebug
+            when :next
+              break
+            else
+              refresh = true
             end
+            #Plog.dump(now:Time.now, endt:endt)
+            break if (Time.now >= endt)
+          rescue => errmsg
+            p errmsg
+            sleep(3)
           end
-          #Plog.dump(now:Time.now, endt:endt)
-          break if (Time.now >= endt)
         end
       end
     end
 
-    def sort_selection(cselect)
-      Plog.info("Resort based on #{@order}")
-      cselect = case @order
-      when /^random/
-        cselect.shuffle
-      when /^play/
-        cselect.sort_by{|v| v[:listens]}
-      when /^love/
-        cselect.sort_by{|v| v[:loves]}.reverse
-      when /^star/
-        cselect.sort_by{|v| v[:stars].to_i}.reverse
-      when /^date/
-        cselect.sort_by{|v| created_value(v[:created])}.reverse
-      when /^title/
-        cselect.sort_by{|v| v[:stitle]}
-      else
-        Plog.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
-        cselect
+    # Return 2 parameters
+    # 1. How to handle: :pausing, :quit, :next
+    # 2. Whether to refresh display (display content change)
+    def handle_user_input(key, sitem, psitem)
+      prompt = TTY::Prompt.new
+      case key
+      when ' '
+        return [:pausing, 0]
+      when '?'
+        TTY::Pager.new.page(HelpScreen)
+        prompt.keypress("Press any key [:countdown]", timeout:3)
+      when '.'
+        @playlist.next_song(-1)
+        return [:next, true]
+      when /^[\+=]/i                # Add/replace list
+        choices = %w(favs isfav recent record_by star title query)
+        ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
+        param   = (ftype =~ /fav/) ? '' : prompt.ask("#{ftype} value ?")
+        if param
+          newset  = @content.select_set(ftype.to_sym, param)
+          @playlist.add_to_list(newset, key == '=')
+        end
+      when '*'                            # Set stars
+        if sitem
+          sitem[:stars] = prompt.keypress('Value?').to_i
+        end
+      when /\d/                               # Set stars also
+        if sitem
+          sitem[:stars] = key.to_i
+        end
+      when 'b'
+        if param = prompt.ask('Browser Op alue?')
+          _menu_eval do
+            browser_op(sitem, psitem, param)
+            prompt.keypress("Press any key [:countdown]", timeout:3)
+          end
+        end
+      when 'C'
+        list_length = prompt.ask('List Length to cut: ').to_i
+        if list_length > 0
+          @playlist.chop(list_length)
+          print TTY::Cursor.clear_screen
+        end
+      when 'D'
+        if prompt.keypress('Are you sure? ') =~ /^y/i
+          @content.delete_song(sitem)
+          sitem = nil
+          prompt.keypress("Press any key [:countdown]", timeout:3)
+          return [:next, true]
+        end
+      when 'f'                            # Set filter
+        param = prompt.ask('Filter value?', default:'')
+        _menu_eval do
+          @playlist.filter = Hash[param.split.map{|fs| fs.split('=')}]
+        end
+        _setprompt
+      when 'F'                              # Set as favorite and tag
+        _menu_eval do
+          _set_favorite(sitem)
+          @scanner.spage.set_song_tag('#thvfavs')
+        end
+
+      when 'h'
+        if url = prompt.ask('URL:')
+          newsongs = SmuleSong.update_from_url(url, update:true)
+          @playlist.insert(*newsongs)
+          return [:next, true]
+        end
+
+      when 'H'
+        @scanner.spage.set_like
+
+      when 'i'                            # Song Info
+        puts @playlist.cur_info.to_yaml
+        prompt.keypress("Press any key to continue ...")
+      when 'l'                            # List playlist
+        offset      = 10
+        toplay_list = @playlist.toplay_list
+        while offset < toplay_list.size
+          _list_show(nil, nil, toplay_list, offset, 10)
+          key = prompt.keypress("Press any key to continue ...")
+          if key == 'q'
+            break
+          end
+          offset += 10
+        end
+        print TTY::Cursor.clear_screen
+      when 'L'
+        play_length = prompt.ask('Max Play Length: ').to_i
+        @roptions[:play_length] = play_length if play_length >= 15
+      when /[>n]/                          # Play next song
+        @playlist.next_song(0)
+        return [:next, true]
+      when 'N'                            # Next n songs
+        offset = (key == 'N') ? prompt.ask('Next track offset?').to_i : 0
+        Plog.info("Skip #{offset} songs")
+        @playlist.next_song(offset)
+        return [:next, true]
+      when '<'                            # Play prev song
+        @playlist.next_song(-2, -1)
+        return [:next, true]
+      when /p/i                           # List history
+        offset = (key == 'P') ? prompt.ask('Prev track offset?').to_i : 0
+        _list_show(nil, nil, @playlist.done_list.reverse, offset.to_i, 10, true)
+        prompt.keypress("Press any key [:countdown]", timeout:3)
+        print TTY::Cursor.clear_screen
+      when 'R'                             # Reload script
+        _menu_eval do
+          begin
+            [__FILE__, "lib/smule*rb"]. each do |ptn|
+              Dir.glob(ptn).each do |script|
+                Plog.info("Loading #{script}")
+                eval "load '#{script}'", TOPLEVEL_BINDING
+              end
+            end
+          rescue => errmsg
+            p errmsg
+          end
+          prompt.keypress("Press any key [:countdown]", timeout:3)
+        end
+      when 's'                            # Sort current list
+        choices = %w(random play love star date title
+                     play.d love.d star.d date.d title.d)
+                     # TBD what if I don't select anything
+        @playlist.order = prompt.enum_select('Order?', choices)
+      when 'S'
+        _menu_eval do
+          perfset   = @sapi.get_performances(@user, limit:50, days:1)
+          new_count = @content.add_new_songs(perfset, false)
+          perfset   = SmuleSong.collect_collabs(@user, 10)
+          new_count += @content.add_new_songs(perfset, false)
+          prompt.keypress("#{new_count} songs added [:countdown]",
+                          timeout:3)
+        end
+      when 't'                             # Set tag
+        if tag = prompt.ask('Tag value ?')
+          @content.add_tag(sitem, tag)
+        end
+      when 'x'                            # Quit
+        return [:quit, true]
+      when 'W'
+        if dir = prompt.ask('Firefox cache dir (about:cache):')
+          @listener.stop if @listener
+          @listener = FirefoxWatch.
+            new(@user, dir.strip, 'cursong.yml', verify:true, open:true).
+            start
+        else
+          @listener.stop if @listener
+          Plog.info("Stop watching")
+        end
+      when 'Z'                            # Debug
+        require 'byebug'
+
+        byebug
       end
-      if @order =~ /\.d$/
-        cselect = cselect.reverse
-      end
-      Plog.info("Sorted #{cselect.size} entries")
-      cselect
+      [true, true]
     end
   end
 end

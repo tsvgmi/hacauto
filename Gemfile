@@ -7,8 +7,9 @@ gem "webdrivers"
 gem "nokogiri"
 gem "sequel"
 gem "sqlite3"
+gem "mysql2"
 gem "http"
-gem "ruby-progressbar"
+gem "tty-progressbar"
 gem "activesupport"
 gem "tty-prompt"
 gem "tty-spinner"
@@ -26,3 +27,4 @@ group "music" do
   gem "mp4info", :git => "https://github.com/arbarlow/ruby-mp4info.git"
   gem "ruby-mp3info"
 end
+

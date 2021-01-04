@@ -51,13 +51,32 @@ case $oper in
     else
       mv $wfile $ofile
     fi
-    echo "Final file is $ofile.  Open in Sonic Visualizer"
+    echo "Final file is $ofile - Open in Sonic Visualizer"
     open -a "Sonic Visualiser" "$ofile"
+    ;;
+
+  transpose)
+    [ $# -ge 2 ] || exit 1
+    wfile=$1
+    offset=$2
+    ofile=transpose-$$.mp3
+    set -x
+    sox "$wfile" $ofile pitch ${offset}00
+    set +x
+    echo "Final file is $ofile - Open in Sonic Visualizer"
+    open -a "Sonic Visualiser" "$ofile"
+    ;;
+
+  trim)
+    ofile=${ifile%.mp3}
+    ofile=${ofile}-new.mp3
+    sox $ifile $ofile trim 
     ;;
 
   smule-*)
     roper=$(echo ${oper#smule-} | tr '-' '_')
     set -x
+    #export RUBYOPT="--jit --jit-verbose=15 --jit-max-cache=1000 --jit-min-calls=50"
     exec smuleauto.rb $roper "$@"
     ;;
 
