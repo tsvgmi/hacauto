@@ -592,8 +592,9 @@ EOH
       when 'W'
         if dir = prompt.ask('Firefox cache dir (about:cache):')
           @listener.stop if @listener
-          @listener = FirefoxWatch.new(@user, dir.strip,
-                                       'cursong.yml', verify:true).start
+          @listener = FirefoxWatch.
+            new(@user, dir.strip, 'cursong.yml', verify:true, open:true).
+            start
         else
           @listener.stop if @listener
           Plog.info("Stop watching")

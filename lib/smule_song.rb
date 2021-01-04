@@ -439,7 +439,9 @@ module SmuleAuto
         Plog.error("#{@info[:stitle]}:#{sfile} empty or not exist")
         return nil
       end
-      wset = `set -x; atomicparsley #{sfile} -t`.split("\n").map {|l|
+      wset = `set -x; atomicparsley #{sfile} -t`.
+        encode("UTF-8", invalid: :replace, replace: "").
+        split("\n").map {|l|
         key, value = l.split(/\s+contains:\s+/)
         key = key.split[-1].gsub(/[^a-z0-9_]/i, '').to_sym
         [key, value]
