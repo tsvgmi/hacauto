@@ -1,8 +1,9 @@
 #!/usr/bin/env ruby
 #---------------------------------------------------------------------------
-# File:        hacauto.rb
+# File:        smuleauto.rb
+# Date:        2021-01-01 22:13:22 -0800
+# $Id$
 #---------------------------------------------------------------------------
-#++
 require_relative "../etc/toolenv"
 require 'nokogiri'
 require 'yaml'
@@ -153,7 +154,6 @@ module SmuleAuto
               loves:       stats['total_loves'],
               gifts:       stats['total_gifts'],
               avatar:      info['cover_url'],
-              is_ensemble: info['child_count'].to_i > 0,
               sid:         info['key'],
               created:     created,
               orig_city:   (info['orig_track_city'] || {}).values.join(', '),
@@ -275,11 +275,17 @@ module SmuleAuto
         end
       end
 
-      def _tdir_check(tdir)
-        unless test(?d, tdir)
-          raise "Target dir #{tdir} not accessible to download music to"
+      def _tdir_check
+        sdir = options[:song_dir]
+        unless test(?d, sdir)
+          raise "Target dir #{sdir} not accessible to download music to"
         end
-        tdir
+        SmuleSong.song_dir = sdir
+
+        ddir = options[:data_dir]
+        unless test(?d, ddir)
+          raise "Target dir #{ddir} not accessible to keep database in"
+        end
       end
 
       def _collect_songs(user, content)
@@ -294,27 +300,25 @@ module SmuleAuto
 
     class_option :browser,  type: :string, default:'firefox',
       desc:'Browser to use (firefox|chrome)'
+    class_option :data_dir, type: :string, default:'./data',
+      desc:'Data directory to keep database'
+    class_option :days,     type: :numeric, default:7,
+      desc:'Days to look back'
+    class_option :force,    type: :boolean
     class_option :skip_auth,  type: :boolean, 
       desc:'Login account from browser (not anonymous)'
-    class_option :data_dir, type: :string, default:'./data',
-      desc:'Data directory to keep data base and file'
     class_option :limit,    type: :numeric, desc:'Max # of songs to process',
       default:10_000
     class_option :song_dir, type: :string, default:'/Volumes/Voice/SMULE',
       desc:'Data directory to keep songs (m4a)'
-    class_option :force,    type: :boolean
-    class_option :pages,    type: :numeric, default:10,
-      desc:'Pages to scan'
     class_option :verbose,  type: :boolean
-    class_option :days,     type: :numeric, default:7,
-      desc:'Days to look back'
 
     desc "collect_songs user", "Collect all songs and collabs of user"
     option :with_collabs,  type: :boolean
     def collect_songs(user)
       cli_wrap do
-        tdir     = _tdir_check(options[:data_dir])
-        content  = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content  = SmuleDB.instance(user, options[:data_dir])
         newsongs = _collect_songs(user, content)
         content.add_new_songs(newsongs, false)
         if options[:with_collabs]
@@ -328,8 +332,8 @@ module SmuleAuto
     desc "scan_favs user", "Scan list of favorites for user"
     def scan_favs(user)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
         favset  = API.new.get_favs(user)
         content.add_new_songs(favset, true)
         true
@@ -345,8 +349,8 @@ module SmuleAuto
     LONGDESC
     def unfavs_old(user, count=10)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
         favset  = API.new.get_favs(user)
         result  = Scanner.new(user, writable_options).
           unfavs_old(count.to_i, favset)
@@ -358,7 +362,7 @@ module SmuleAuto
     desc "scan_follows user", "Scan the follower/following list"
     def scan_follows(user)
       cli_wrap do
-        tdir = _tdir_check(options[:data_dir])
+        _tdir_check
         fset = []
         %w(following followers).each do |agroup|
           users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
@@ -371,7 +375,7 @@ module SmuleAuto
           }
           fset << users
         end
-        SmuleDB.instance(user, tdir).set_follows(fset[0], fset[1])
+        SmuleDB.instance(user, options[:data_dir]).set_follows(fset[0], fset[1])
         true
       end
     end
@@ -402,9 +406,9 @@ Filters is the list of SQL's into into DB.
     LONGDESC
     def open_on_itune(user, *filters)
       cli_wrap do
-        tdir     = _tdir_check(options[:data_dir])
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
         to_download = []
-        content  = SmuleDB.instance(user, tdir)
         content.each(filter:filters.join('/')) do |sid, sinfo|
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
@@ -422,7 +426,6 @@ Filters is the list of SQL's into into DB.
 
     desc "play user", "Play songs from user"
     option :myopen,      type: :boolean, desc:'Play my opens also'
-    option :update_favs, type: :boolean, default:false
     long_desc <<-LONGDESC
 Start a CLI player to play songs from user.  Player support various command to
 control the song and how to play.
@@ -432,21 +435,16 @@ it left off from the previous run.
     LONGDESC
     def play(user)
       cli_wrap do
-        tdir = _tdir_check(options[:data_dir])
-        if options[:update_favs]
-          content  = SmuleDB.instance(user, tdir)
-          favset = API.new.get_favs(user)
-          content.add_new_songs(favset, true)
-        end
-        SmulePlayer.new(user, tdir, options).play_all
+        _tdir_check
+        SmulePlayer.new(user, options[:data_dir], options).play_all
       end
     end
 
     desc "show_following user", "Show the activities for following list"
     def show_following(user)
       cli_wrap do
-        tdir      = _tdir_check(options[:data_dir])
-        content   = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content   = SmuleDB.instance(user, options[:data_dir])
         following = content.singers.where(following:true).as_hash(:name)
         bar = TTY::ProgressBar.new("Following [:bar] :percent",
                                    total:Performance.count)
@@ -492,8 +490,8 @@ it left off from the previous run.
     LONGDESC
     def fix_content(user, fix_type, *data)
       cli_wrap do
-        tdir     = _tdir_check(options[:data_dir])
-        content  = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
         ccount   = 0
         SmuleDB.instance(user)
         case fix_type.to_sym
@@ -523,7 +521,7 @@ it left off from the previous run.
           end
         when :slink
           query  = Performance.where(created:Time.now-80*24*3600..Time.now).
-            where(Sequel.ilike(:record_by, "%{user}%"))
+            where(Sequel.ilike(:record_by, "%#{user}%"))
           ccount = query.count
           progress_set(query.all, "symlink") do |r|
             SmuleSong.new(r).sofile
@@ -541,8 +539,8 @@ it left off from the previous run.
     LONGDESC
     def move_singer(user, old_name, new_name)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content  = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content  = SmuleDB.instance(user, options[:data_dir])
         moptions = writable_options
         moptions.update(
           pbar:   "Move content from #{old_name}",
@@ -585,11 +583,10 @@ Filters is the list of SQL's into into DB.
     LONGDESC
     def to_open(user, *filter)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = SmuleDB.instance(user, tdir)
-
-        wset   = Performance.where(record_by:user)
-        opened = {}
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
+        wset    = Performance.where(record_by:user)
+        opened  = {}
         wset.all.each do |r|
           opened[r[:stitle]] = true
         end
@@ -622,10 +619,9 @@ Filters is the list of SQL's into into DB.
     desc "dump_comment(user)", "dump_comment"
     def dump_comment(user, *filter)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = SmuleDB.instance(user, tdir)
-
-        wset   = Comment.where(Sequel.lit "record_by like '%#{user}%'")
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
+        wset    = Comment.where(Sequel.lit "record_by like '%#{user}%'")
         if filter.size > 0
           wset = wset.where(Sequel.lit(filter.join(' ')))
         end
@@ -648,8 +644,8 @@ Filters is the list of SQL's into into DB.
     BannedList = %w[Joseph_TN]
     def star_singers(user, count, *singers)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
         if topc = options[:top]
           singers = content.top_partners(topc, options).map{|k, v| k}
           if exclude = options[:exclude]
@@ -699,8 +695,8 @@ Filters is the list of SQL's into into DB.
     desc "check_and_download(media_file, sid, user)", "check_and_download"
     def check_and_download(media_file, sid, user)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
-        content = SmuleDB.instance(user, tdir)
+        _tdir_check
+        content = SmuleDB.instance(user, options[:data_dir])
         sinfo   = Performance.first(sid:sid).values
         SmuleSong.check_and_download(sinfo, media_file, user, options)
       end

@@ -105,8 +105,7 @@ module SmuleAuto
       when :isfav
         newset = @content.where(isfav:true)
       when :favs
-        newset = @content.where(isfav:true) + @content.where(oldfav:true)
-        newset = @content.where{(isfav=true) or (oldfav=true)}
+        newset = @content.where(Sequel.lit('isfav=1 or oldfav=1'))
       when :record_by
         newset = @content.where(Sequel.ilike(:record_by, "%#{value}%"))
       when :title
