@@ -18,9 +18,11 @@ module SmuleAuto
   class PlayList
     attr :clist, :filter, :listpos
 
-    def initialize(state_file, content)
+    def initialize(state_file, content, options={})
       @state_file = state_file
       @content    = content
+      @options    = options
+      @logger     = options[:logger] || PLogger.new(STDERR)
       if test(?f, @state_file)
         config      = YAML.load_file(@state_file)
         if config[:clist]
@@ -59,7 +61,7 @@ module SmuleAuto
       }
       open(@state_file, "w") do |fod|
         fod.puts(data.to_yaml)
-        Plog.info("Updating #{@state_file}")
+        @logger.info("Updating #{@state_file}")
       end
     end
 
@@ -85,7 +87,7 @@ module SmuleAuto
         end
       end
       if state == :skip
-        Plog.info("Skipping #{sitem[:title]}")
+        @logger.info("Skipping #{sitem[:title]}")
         return false
       end
       true
@@ -105,7 +107,7 @@ module SmuleAuto
         count += 1
         increment = nextinc
       end
-      Plog.error("No matching song in list")
+      @logger.error("No matching song in list")
       nil
     end
 
@@ -144,7 +146,7 @@ module SmuleAuto
     end
 
     def sort_selection(cselect)
-      Plog.info("Resort based on #{@order}")
+      @logger.info("Resort based on #{@order}")
       cselect = case @order
       when /^random/
         cselect.shuffle
@@ -159,13 +161,13 @@ module SmuleAuto
       when /^title/
         cselect.sort_by{|v| v[:stitle]}
       else
-        Plog.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
+        @logger.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
         cselect
       end
       if @order =~ /\.d$/
         cselect = cselect.reverse
       end
-      Plog.info("Sorted #{cselect.size} entries")
+      @logger.info("Sorted #{cselect.size} entries")
       cselect
     end
   end
@@ -181,11 +183,29 @@ module SmuleAuto
       @sapi       = API.new(options)
       @csong_file = options[:csong_file] || "./cursong.yml"
       @playlist   = PlayList.new(File.join(@tdir, StateFile), @content)
+      @logger     = options[:logger] || PLogger.new(STDERR)
       at_exit {
         @playlist.save
         exit 0
       }
-      Plog.info("Playing #{@playlist.clist.size} songs")
+      listen_for_download if @options[:download]
+      @logger.info("Playing #{@playlist.clist.size} songs")
+    end
+
+    def listen_for_download(enable=true)
+      dir = '/var/folders/vh'
+      if enable
+        @listener.stop if @listener
+        @listener = FirefoxWatch.
+          new(@user, dir.strip, 'cursong.yml',
+              verify:true, open:true, logger:PLogger.new('watcher.log')).
+          start
+      else
+        if @listener
+          @listener.stop
+          @listener = nil
+        end
+      end
     end
 
     def _list_show(sitem, psitem, cselect, start, limit, clear=true)
@@ -329,7 +349,7 @@ EOM
         yield *args
       rescue => errmsg
         prompt = TTY::Prompt.new
-        Plog.dump_error(errmsg:errmsg, args:args, trace:errmsg.backtrace)
+        @logger.dump_error(errmsg:errmsg, args:args, trace:errmsg.backtrace)
         prompt.keypress("[ME] Press any key to continue ...")
       end
     end
@@ -419,7 +439,7 @@ EOH
               key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
             end
           rescue => errmsg
-            Plog.error(errmsg)
+            @logger.error(errmsg)
             next
           end
           begin
@@ -439,7 +459,6 @@ EOH
             else
               refresh = true
             end
-            #Plog.dump(now:Time.now, endt:endt)
             break if (Time.now >= endt)
           rescue => errmsg
             p errmsg
@@ -544,7 +563,7 @@ EOH
         return [:next, true]
       when 'N'                            # Next n songs
         offset = (key == 'N') ? prompt.ask('Next track offset?').to_i : 0
-        Plog.info("Skip #{offset} songs")
+        @logger.info("Skip #{offset} songs")
         @playlist.next_song(offset)
         return [:next, true]
       when '<'                            # Play prev song
@@ -560,7 +579,7 @@ EOH
           begin
             [__FILE__, "lib/smule*rb"]. each do |ptn|
               Dir.glob(ptn).each do |script|
-                Plog.info("Loading #{script}")
+                @logger.info("Loading #{script}")
                 eval "load '#{script}'", TOPLEVEL_BINDING
               end
             end
@@ -590,15 +609,11 @@ EOH
       when 'x'                            # Quit
         return [:quit, true]
       when 'W'
-        if dir = prompt.ask('Firefox cache dir (about:cache):')
-          @listener.stop if @listener
-          @listener = FirefoxWatch.
-            new(@user, dir.strip, 'cursong.yml', verify:true, open:true).
-            start
-        else
-          @listener.stop if @listener
-          Plog.info("Stop watching")
-        end
+        listen_for_download(true)
+        prompt.keypress("Start watching [:countdown]", timeout:3)
+      when 'w'
+        listen_for_download(false)
+        prompt.keypress("Stop watching [:countdown]", timeout:3)
       when 'Z'                            # Debug
         require 'byebug'
 

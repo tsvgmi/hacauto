@@ -117,6 +117,7 @@ module SmuleAuto
   class API
     def initialize(options={})
       @options = options
+      @logger  = options[:logger] || PLogger.new(STDERR)
     end
 
     def get_songs(url, options)
@@ -175,12 +176,12 @@ module SmuleAuto
     end
 
     def get_performances(user, options)
-      Plog.info("Getting performances for #{user}")
+      @logger.info("Getting performances for #{user}")
       get_songs("https://www.smule.com/#{user}/performances/json", options)
     end
 
     def get_favs(user)
-      Plog.info("Getting favorites for #{user}")
+      @logger.info("Getting favorites for #{user}")
       options = {limit:10_000, days:365*10}
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
@@ -194,6 +195,7 @@ module SmuleAuto
       @options   = options
       @connector = SiteConnect.new(:smule, @options)
       @spage     = SmulePage.new(@connector.driver)
+      @logger    = options[:logger] || PLogger.new(STDERR)
       sleep(1)
       at_exit {
         @connector.close
@@ -208,7 +210,7 @@ module SmuleAuto
         next if sinfo[:record_by].include?(@user)
         next if Love.first(sid:sinfo[:sid], user:@user)
         if @spage.star_song(sinfo[:href])
-          Plog.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
+          @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
           stars << sinfo
           count -= 1
           if count <= 0
@@ -224,35 +226,14 @@ module SmuleAuto
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.set_song_favorite(false)
-        Plog.dump_info(msg:'Unfav', stitle:asong[:stitle], record_by:asong[:record_by])
-        if false && marking
-          tag = '#thvfavs'
-          if asong[:record_by].start_with?(@user)
-            msg = @spage.page.css('div._1ck56r8').text
-            if msg =~ /#{tag}/
-              Plog.info "Message already containing #{tag}"
-              next
-            end
-            text = ' ' + tag
-            @spage.click_and_wait("button._13ryz2x")   # ...
-            content  = @spage.refresh
-            editable = @spage.page.css("div._8hpz8v")[2]
-            if editable && editable.text == 'Edit'
-              @spage.click_and_wait("a._117spsl", 2, 1)  # Edit
-              @spage.type("textarea#message", text)  # Enter tag
-              @spage.click_and_wait("input#recording-save")
-            else
-              Plog.info "Song is not editable"
-              @spage.click_and_wait("._6ha5u0", 1)
-            end
-            @spage.click_and_wait('button._1oqc74f')
-          end
-        end
+        @spage.set_song_tag('#thvfavs') if marking
+        @logger.dump_info(msg:'Unfav', stitle:asong[:stitle], record_by:asong[:record_by])
       end
     end
 
     def unfavs_old(count, result)
-      set_unfavs(result[result.size-count..-1])
+      new_sise = result.size - count
+      set_unfavs(result[new_size..-1])
       result[0..new_size-1]
     end
   end
@@ -305,10 +286,11 @@ module SmuleAuto
     class_option :days,     type: :numeric, default:7,
       desc:'Days to look back'
     class_option :force,    type: :boolean
-    class_option :skip_auth,  type: :boolean, 
-      desc:'Login account from browser (not anonymous)'
     class_option :limit,    type: :numeric, desc:'Max # of songs to process',
       default:10_000
+    class_option :logfile,  type: :string
+    class_option :skip_auth,  type: :boolean, 
+      desc:'Login account from browser (not anonymous)'
     class_option :song_dir, type: :string, default:'/Volumes/Voice/SMULE',
       desc:'Data directory to keep songs (m4a)'
     class_option :verbose,  type: :boolean
@@ -350,10 +332,11 @@ module SmuleAuto
     def unfavs_old(user, count=10)
       cli_wrap do
         _tdir_check
-        content = SmuleDB.instance(user, options[:data_dir])
-        favset  = API.new.get_favs(user)
-        result  = Scanner.new(user, writable_options).
-          unfavs_old(count.to_i, favset)
+        content  = SmuleDB.instance(user, options[:data_dir])
+        favset   = API.new.get_favs(user)
+        woptions = writable_options
+        woptions[:logger] = @logger
+        result  = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
         content.add_new_songs(result, true) if tdir
         true
       end
@@ -391,7 +374,7 @@ module SmuleAuto
           fuser = r['handle']
           slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json", options)
           fset[fuser] = slist.size
-          Plog.info(user:fuser, size:slist.size)
+          @logger.info(user:fuser, size:slist.size)
           sleep(0.5)
         end
         fset.to_yaml
@@ -413,11 +396,11 @@ Filters is the list of SQL's into into DB.
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
           if sfile && test(?f, sfile)
-            Plog.dump_info(sinfo:sinfo, _ofmt:'Y')
+            @logger.dump_info(sinfo:sinfo, _ofmt:'Y')
             system("set -x; open -g #{sfile}")
             sleep(2)
           elsif sfile
-            Plog.info("#{sfile} not found.  Removing the stale name")
+            @logger.info("#{sfile} not found.  Removing the stale name")
           end
         end
         true
@@ -425,7 +408,7 @@ Filters is the list of SQL's into into DB.
     end
 
     desc "play user", "Play songs from user"
-    option :myopen,      type: :boolean, desc:'Play my opens also'
+    option :download,  type: :boolean, desc:'Download while playing'
     long_desc <<-LONGDESC
 Start a CLI player to play songs from user.  Player support various command to
 control the song and how to play.
@@ -497,7 +480,7 @@ it left off from the previous run.
         case fix_type.to_sym
         when :tags
           if data.size <= 1
-            Plog.error("No data specified for tag")
+            @logger.error("No data specified for tag")
             return false
           end
           recs   = []
@@ -527,7 +510,7 @@ it left off from the previous run.
             SmuleSong.new(r).sofile
           end
         end
-        Plog.info("#{ccount} records fixed")
+        @logger.info("#{ccount} records fixed")
         ccount
       end
     end
@@ -549,7 +532,7 @@ it left off from the previous run.
         Performance.
           where(Sequel.ilike(:record_by, "%#{old_name}%")).each do |v|
           if v[:record_by] =~ /,#{old_name}$|^#{old_name},/
-            SmuleSong.new(v, moptions).move_song(new_name)
+            SmuleSong.new(v, moptions).move_song(old_name, new_name)
             v.save
           end
         end
@@ -574,6 +557,7 @@ Filters is the list of SQL's into into DB.
     desc "to_open(user)", "Show list of potential to open songs"
     option :tags,  type: :string
     option :favs,  type: :boolean, default:true
+    option :title, type: :string
     long_desc <<-LONGDESC
 List the candidates for open from the matching filter.
 Filters is the list of SQL's into into DB.
@@ -604,14 +588,20 @@ Filters is the list of SQL's into into DB.
           wset = wset.where(Sequel.lit 'tags like ?', "%#{tags}%")
         end
 
+        if title = options[:title]
+          wset = wset.where(Sequel.lit 'stitle like ?', "%#{title}%")
+        end
+
         topen = {}
         wset.all.each do |r|
           next if opened[r[:stitle]]
           topen[r[:stitle]] = [r[:created], r[:tags]]
         end
+        table = []
         topen.sort_by{|k, v| v[0]}.each do |name, sinfo|
-          puts "%s %-40s %s" % [sinfo[0], name, sinfo[1]]
+          table << [sinfo[0], name, sinfo[1]]
         end
+        print_table(table)
         true
       end
     end
@@ -645,19 +635,23 @@ Filters is the list of SQL's into into DB.
     def star_singers(user, count, *singers)
       cli_wrap do
         _tdir_check
-        content = SmuleDB.instance(user, options[:data_dir])
-        if topc = options[:top]
-          singers = content.top_partners(topc, options).map{|k, v| k}
-          if exclude = options[:exclude]
+        woptions = writable_options
+        content = SmuleDB.instance(user, woptions[:data_dir])
+        if topc = woptions[:top]
+          singers = content.top_partners(topc, woptions).map{|k, v| k}
+          if exclude = woptions[:exclude]
             exclude = exclude.split(',')
             singers = singers.select{|r| !exclude.include?(r)}
           end
-          Plog.dump_info(singers:singers)
+          @logger.dump_info(singers:singers)
         end
-        limit   = options[:limit]
-        days    = options[:days]
-        sapi    = API.new(options)
-        scanner = Scanner.new(user, options)
+        limit    = woptions[:limit]
+        days     = woptions[:days]
+        sapi     = API.new(woptions)
+
+        woptions[:logger] = @logger
+        scanner  = Scanner.new(user, woptions)
+
         count   = count.to_i
         allsets = []
         singers.each do |asinger|
@@ -676,29 +670,28 @@ Filters is the list of SQL's into into DB.
             count[singer] += 1
           end
         end
+        table = []
         count.to_a.sort_by{|u, c| c}.each do |u, c|
-          puts "%20s: %3d" % [u, c]
+          table << [u, c]
         end
+        print_table(table)
       end
     end
 
     desc "watch_mp4(dir)", "watch_mp4"
-    option :verify, type: :boolean
-    option :open,   type: :boolean, desc: 'Opening mp4 after download'
+    option :verify,  type: :boolean
+    option :open,    type: :boolean, desc: 'Opening mp4 after download'
+    option :logfile, type: :string
     def watch_mp4(dir, user, csong_file='cursong.yml')
       cli_wrap do
-        FirefoxWatch.new(user, dir, 'cursong.yml', options).start
-        sleep
-      end
-    end
+        woptions = writable_options
+        logger   = nil
+        if value = woptions[:logfile]
+          woptions[:logger] = PLogger.new(value)
+        end
 
-    desc "check_and_download(media_file, sid, user)", "check_and_download"
-    def check_and_download(media_file, sid, user)
-      cli_wrap do
-        _tdir_check
-        content = SmuleDB.instance(user, options[:data_dir])
-        sinfo   = Performance.first(sid:sid).values
-        SmuleSong.check_and_download(sinfo, media_file, user, options)
+        FirefoxWatch.new(user, dir, 'cursong.yml', woptions).start
+        sleep
       end
     end
   end

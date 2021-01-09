@@ -14,14 +14,16 @@ module SmuleAuto
       watch_dir   = `find #{tmpdir}/*/T -name 'rust_mozprofile.*'`.split("\n").
         sort_by{|d| File.mtime(d)}[-1]
       @watch_dir  = watch_dir
-      Plog.info("Watching #{@watch_dir}")
       @csong_file = csong_file
+      @logger     = options[:logger] || PLogger.new(STDERR)
       @options    = options
+
+      @logger.info("Watching #{@watch_dir}")
+      @logger.dump_info(msg:"Watching #{@watch_dir}")
     end
 
     def change_handler(added)
       return if added.size <= 0
-      STDERR.print('.'); STDERR.flush
       added.each do |f|
         begin
           SmuleSong.check_and_download(@csong_file, f, @user, @options)
@@ -35,7 +37,7 @@ module SmuleAuto
     end
 
     def dirchange_handler(added)
-      Plog.info("Dir is added: #{added.inspect}")
+      logger.info("Dir is added: #{added.inspect}")
     end
 
     def start
@@ -65,9 +67,12 @@ module SmuleAuto
       locator = 'span.sc-ptfmh.gtVEMN'
 
       cval = css('div.sc-qPVvu.Irslq svg path')[0][:fill]
-      if cval == "#FFCE42"
+      if setit && cval == "#FFCE42"
         Plog.info("Already fav, skip it")
-        return
+        return false
+      elsif !setit && cval != "#FFCE42"
+        Plog.info("Already not-fav, skip it")
+        return false
       end
       cpos    = find_elements(:css, locator).size / 2
       click_and_wait(locator, 1, cpos)
@@ -104,8 +109,8 @@ module SmuleAuto
 
     def star_song(href)
       goto(href, 3)
-      if css("div.sc-pBlxj.dGgbmN").size > 0
-        Elog.eror("Already starred")
+      if css("div.sc-psDhf.kiYFSS").size > 0
+        Plog.error("Already starred")
         return false
       end
       click_and_wait("div.sc-oTNDV.jzKNzB", 1)
@@ -175,7 +180,7 @@ module SmuleAuto
       css('div.sc-pLyGp.hIGHoI').reverse.each do |acmt|
         comment = acmt.css('div.sc-pDboM.deGaYK').text.split
         user = comment[0]
-        msg  = comment[1..-1].join(' ')
+        msg  = (comment[1..-1] || []).join(' ')
         res << [user, msg]
       end
       click_and_wait('div.sc-pBzUF.jfMcol', 0)
@@ -248,6 +253,7 @@ module SmuleAuto
       @info          = sinfo
       @options       = options
       @surl          = "https://www.smule.com#{@info[:href]}"
+      @logger        = options[:logger] || PLogger.new(STDERR)
 
       @info[:created] ||= Date.today
       if @info[:created].is_a?(String)
@@ -266,7 +272,7 @@ module SmuleAuto
       title = @info[:title].strip.gsub(/[\/\"]/, '-')
       ofile = File.join(odir, title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
       sfile = ssfile
-      Plog.dump_info(sfile:sfile, ofile:ofile)
+      @logger.dump_info(sfile:sfile, ofile:ofile)
       if File.exist?(sfile) && !File.symlink?(ofile)
         FileUtils.remove(ofile, verbose:true, force:true)
         FileUtils.ln_s(sfile, ofile, verbose:true, force:true)
@@ -274,11 +280,11 @@ module SmuleAuto
       ofile
     end
 
-    def move_song(new_name)
+    def move_song(old_name, new_name)
       cur_record = @info[:record_by]
       new_record = cur_record.gsub(old_name, new_name)
       if new_record == cur_record
-        Plog.info("No change in data")
+        @logger.info("No change in data")
         return false
       end
       @info[:record_by] = new_record
@@ -365,7 +371,7 @@ module SmuleAuto
       end
       res = JSON.parse(asset_str, symbolize_names:true) || {}
       unless perf = res[:performance]
-        Plog.dump_error(msg:"No performance data found", olink:olink)
+        @logger.dump_error(msg:"No performance data found", olink:olink)
         return {}
       end
 
@@ -436,11 +442,10 @@ module SmuleAuto
     def mp4_tags
       sfile = ssfile
       if !sfile || !test(?s, sfile)
-        Plog.error("#{@info[:stitle]}:#{sfile} empty or not exist")
+        @logger.error("#{@info[:stitle]}:#{sfile} empty or not exist")
         return nil
       end
-      wset = `set -x; atomicparsley #{sfile} -t`.
-        encode("UTF-8", invalid: :replace, replace: "").
+      wset = _run_command("atomicparsley #{sfile} -t").
         split("\n").map {|l|
         key, value = l.split(/\s+contains:\s+/)
         key = key.split[-1].gsub(/[^a-z0-9_]/i, '').to_sym
@@ -450,9 +455,8 @@ module SmuleAuto
     end
 
     def media_size(sfile)
-      output = `set -x; atomicparsley #{sfile} -T 1`.
-        encode("UTF-8", invalid: :replace).split("\n").
-        grep(/Media data:/)
+      output = _run_command("atomicparsley #{sfile} -T 1").
+        split("\n").grep(/Media data:/)
       output[0].split[2].to_i
     end
 
@@ -466,12 +470,17 @@ module SmuleAuto
           (wset[:day] != year && wset[:day] != release) || \
           wset[:aART].to_s != aartist
         wset.delete(:lyr)
-        Plog.dump_info(msg:"Tagging #{ssfile}",
+        @logger.dump_info(msg:"Tagging #{ssfile}",
                        wset:wset, title:@info[:title],
                        record_by:@info[:record_by])
         return false
       end
       true
+    end
+
+    def _run_command(command)
+      @logger.info(command)
+      `#{command}`.chomp.encode("UTF-8", invalid: :replace, replace: "")
     end
 
     def update_mp4tag(excuser=nil)
@@ -488,7 +497,7 @@ module SmuleAuto
         comment = "#{date} - #{href}"
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
 
-        command = "set -x; atomicparsley #{ofile}"
+        command = "atomicparsley #{ofile}"
 
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
@@ -515,8 +524,7 @@ module SmuleAuto
           l_flag = ''
         end
 
-        output = `(#{command} --overWrite #{l_flag}) | tee /dev/tty`.
-          encode("UTF-8", invalid: :replace, replace: "")
+        output = _run_command("#{command} --overWrite #{l_flag}")
         if output =~ /insufficient space to retag the source file/io
           return :error
         end
@@ -527,50 +535,9 @@ module SmuleAuto
       end
     end
 
-    def wait_loop(limit, msg, sleep=1)
-      wait_time = 0
-      Plog.info("Waiting for #{msg}:#{limit}")
-      while true
-        if wait_time >= limit
-          Plog.error("Timeout waiting for operation")
-          return false
-        end
-        yield
-        sleep(sleep)
-        wait_time += sleep
-      end
-      Plog.info("found")
-      true
-    end
-
-    def wait_for_last_file(wdir, ofile, wtime=3600)
-      Plog.info("Right click and download to #{ofile} please")
-      m4file = nil
-      wait_loop(wtime, "see file") do
-        m4file = Dir.glob("#{wdir}/*.m4a").
-          sort_by{|r| File.mtime(r)}.last
-        break if (m4file && test(?f, m4file))
-      end
-      if !m4file || !test(?f, m4file)
-        return false
-      end
-
-      wait_loop(60, "see content") do
-        if (fsize = File.size(m4file)) > 1_000_000
-          break
-        end
-      end
-      File.open(ofile, 'wb') do |f|
-        f.write(File.read(m4file))
-      end
-      File.delete(m4file)
-      Plog.info("Wrote #{ofile}(#{File.size(ofile)} bytes)")
-      true
-    end
-
     def check_and_download(f, user)
-      puts "\n%-40.40s %12d" % [File.basename(f), File.size(f)]
-      puts "%s %-40.40s %s" % [@info[:sid], @info[:stitle], @info[:record_by]]
+      @logger.info "%s %d" % [File.basename(f), File.size(f)]
+      @logger.info "%s %s %s" % [@info[:sid], @info[:stitle], @info[:record_by]]
 
       sfile = ssfile
       if test(?f, sfile)
@@ -581,20 +548,20 @@ module SmuleAuto
         csize  = self.media_size(sfile)
         fmsize = self.media_size(f)
         if (csize == fmsize) && self.is_mp4_tagged?(user)
-          Plog.info("Verify same media size and tags: #{csize}")
+          @logger.info("Verify same media size and tags: #{csize}")
           sofile
           return
         end
-        Plog.info("Size: #{csize} <>? #{fmsize}")
+        @logger.info("Size: #{csize} <>? #{fmsize}")
       end
 
-      Plog.info("Song missing or bad tag on local disk.  Create")
+      @logger.info("Song missing or bad tag on local disk.  Create")
       FileUtils.cp(f, sfile, verbose:true)
       self.update_mp4tag(user)
       sofile
 
       if @options[:open]
-        system("set -x; open -g #{sfile}")
+        _run_command("open -g #{sfile}")
         sleep(2)
       end
     end

@@ -24,6 +24,12 @@ module ThorAddition
     Signal.trap('SIGINT')  { exit(1) }
     Signal.trap('SIGQUIT') { Elog.info "Quitting from signal."; exit(0) }
 
+    if options[:logfile]
+      @logger = PLogger.new(value)
+    else
+      @logger = PLogger.new(STDERR)
+    end
+
     result = yield
 
     if result.is_a?(FalseClass)
@@ -725,10 +731,10 @@ class PLogger < Logger
   @@__slevel = nil
   def format_message(severity, timestamp, progname, msg)
     # Look like this changes from diff versions.  So we need to detect
-    unless @@__slevel
-      @@__slevel = caller.index{|r| r =~ /`method_missing/} + 1
-    end
-    @@__slevel ||= 5
+    @@__slevel ||= 2
+    #caller.each_with_index do |line, index|
+      #STDERR.puts "#{index} #{@@__clevel} #{line} #{msg[0..10]}"
+    #end
     script = caller[@@__slevel+@@__clevel].sub(/:in .*$/, '').sub(/^.*\//, '')
     if timestamp.respond_to?(:strftime)
       Format2 % [severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg]
@@ -739,6 +745,21 @@ class PLogger < Logger
 
   def self.set_clevel(level)
     @@__clevel = level
+  end
+
+  def dump_info(obj)
+    msg = obj[:_ofmt] == 'Y' ? obj.to_yaml : obj.inspect
+    self.add(Logger::INFO, msg)
+  end
+
+  def dump_warn(obj)
+    msg = obj[:_ofmt] == 'Y' ? obj.to_yaml : obj.inspect
+    self.add(Logger::WARN, msg)
+  end
+
+  def dump_error(obj)
+    msg = obj[:_ofmt] == 'Y' ? obj.to_yaml : obj.inspect
+    self.add(Logger::ERROR, msg)
   end
 end
 
@@ -772,7 +793,6 @@ class Plog
 
     def addLogger(*args)
       if @@xglog.find {|alog, aname| aname == args[0]}
-        p "Repeat log"
         return alog
       end
       newlog = PLogger.new(*args)
@@ -816,26 +836,34 @@ class Plog
     end
 
     def dump_info(obj)
-      PLogger.set_clevel(1)
+      PLogger.set_clevel(3)
       if obj[:_ofmt] == 'Y'
-        Plog.info(obj.to_yaml)
+        msg = obj.to_yaml
       else
-        Plog.info(obj.inspect)
+        msg = obj.inspect
+      end
+      myLogs.each do |alog, tmp|
+	alog.error(msg)
       end
       PLogger.set_clevel(0)
     end
 
     def dump_error(obj)
-      PLogger.set_clevel(1)
-      Plog.error(obj.inspect)
+      PLogger.set_clevel(3)
+      msg = obj.inspect
+      myLogs.each do |alog, tmp|
+	alog.error(msg)
+      end
       PLogger.set_clevel(0)
     end
 
     def method_missing(symbol, *args)
       result = nil
+      PLogger.set_clevel(3)
       myLogs.each do |alog, tmp|
 	result = alog.send(symbol, *args)
       end
+      PLogger.set_clevel(0)
       result
     end
   end
