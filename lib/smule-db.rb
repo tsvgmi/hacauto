@@ -127,9 +127,11 @@ module SmuleAuto
 
     def each(options={})
       filters = options[:filter].split('/').map{|r| "(#{r})"}.join(' OR ')
-      recs = @content.where(Sequel.lit(filters)).
-        order(:record_by, :created)
-      Plog.dump_info(options:options, rcount:recs.count)
+      recs = @content.order(:record_by, :created)
+      unless filters.empty?
+        recs = recs.where(Sequel.lit(filters))
+      end
+      Plog.dump_info(recs:recs, options:options, rcount:recs.count)
       progress_set(recs) do |r, bar|
         yield r[:sid], r
         true

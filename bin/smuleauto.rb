@@ -209,9 +209,16 @@ module SmuleAuto
         next if href =~ /ensembles$/
         next if sinfo[:record_by].include?(@user)
         next if Love.first(sid:sinfo[:sid], user:@user)
+        if @options[:exclude]
+          next if @options[:exclude].find{|r| sinfo[:record_by] =~ /#{r}/}
+        end
         if @spage.star_song(sinfo[:href])
           @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
           stars << sinfo
+          if @options[:pause]
+            @spage.toggle_play(true)
+            sleep(@options[:pause])
+          end
           count -= 1
           if count <= 0
             break
@@ -398,9 +405,9 @@ Filters is the list of SQL's into into DB.
           if sfile && test(?f, sfile)
             @logger.dump_info(sinfo:sinfo, _ofmt:'Y')
             system("set -x; open -g #{sfile}")
-            sleep(2)
+            sleep(1)
           elsif sfile
-            @logger.info("#{sfile} not found.  Removing the stale name")
+            @logger.dump_error(msg:"#{sfile} not found", sinfo:sinfo)
           end
         end
         true
@@ -478,6 +485,13 @@ it left off from the previous run.
         ccount   = 0
         SmuleDB.instance(user)
         case fix_type.to_sym
+        when :mp3, :m4a
+          content.each(filter:data.join('/')) do |sid, sinfo|
+            asong = SmuleSong.new(sinfo)
+            if asong.update_mp4tag(user) == :updated
+              asong._run_command("open -g #{asong.ssfile}")
+            end
+          end
         when :tags
           if data.size <= 1
             @logger.error("No data specified for tag")
@@ -630,6 +644,8 @@ Filters is the list of SQL's into into DB.
     option :top,     type: :numeric
     option :days,    type: :numeric, default:30
     option :exclude, type: :string
+    option :pause,   type: :numeric, default:5
+    option :play,   type: :boolean
 
     BannedList = %w[Joseph_TN]
     def star_singers(user, count, *singers)
@@ -637,12 +653,16 @@ Filters is the list of SQL's into into DB.
         _tdir_check
         woptions = writable_options
         content = SmuleDB.instance(user, woptions[:data_dir])
+        if exclude = woptions[:exclude]
+          exclude = exclude.split(',')
+        else
+          exclude = []
+        end
+        woptions[:exclude] = exclude
         if topc = woptions[:top]
-          singers = content.top_partners(topc, woptions).map{|k, v| k}
-          if exclude = woptions[:exclude]
-            exclude = exclude.split(',')
-            singers = singers.select{|r| !exclude.include?(r)}
-          end
+          topc += exclude.size
+          singers = content.top_partners(topc, woptions).map{|k, v| k}.
+            select{|r| !exclude.include?(r)}
           @logger.dump_info(singers:singers)
         end
         limit    = woptions[:limit]

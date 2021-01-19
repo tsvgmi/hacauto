@@ -94,6 +94,12 @@ module SmuleAuto
     end
 
     def next_song(increment=1, nextinc=1)
+      req_file = 'toplay.dat'
+      if test(?f, req_file)
+        sids = File.read(req_file).split
+        @clist.insert(@listpos, *@content.select_sids(sids))
+        FileUtils.remove(req_file, verbose:true)
+      end
       if @clist.size <= 0
         return nil
       end
@@ -447,7 +453,7 @@ EOH
             case hc
             when :pausing
               @paused = !@paused
-              remain  = @scanner.spage.play_song(!@paused)
+              remain  = @scanner.spage.toggle_play(!@paused)
               if remain > 0
                 endt = Time.now + remain
               end

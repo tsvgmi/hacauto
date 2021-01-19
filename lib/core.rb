@@ -332,7 +332,7 @@ module Cli
   end
 
   def self.shellResult
-    if ENV['T_LOGSEVERITY'] && (ENV['T_LOGSEVERITY'] > "0")
+    if ENV['LOG_LEVEL'] && (ENV['LOG_LEVEL'] > "0")
       begin
 	result = yield
 	self.setShellResult(result)
@@ -796,8 +796,8 @@ class Plog
         return alog
       end
       newlog = PLogger.new(*args)
-      newlog.level = ENV['T_LOGSEVERITY'] ?
-	      ENV['T_LOGSEVERITY'].to_i : Logger::INFO
+      newlog.level = ENV['LOG_LEVEL'] ?
+	      ENV['LOG_LEVEL'].to_i : Logger::INFO
       newlog.datetime_format = @@timestampFmt
       @@xglog << [newlog, args[0]]
       newlog
@@ -835,24 +835,37 @@ class Plog
       @@dotrace = false
     end
 
+    def _fmt_obj(obj)
+      if obj[:_ofmt] == 'Y'
+        obj.to_yaml
+      else
+        obj.inspect
+      end
+    end
+
     def dump_info(obj)
       PLogger.set_clevel(3)
-      if obj[:_ofmt] == 'Y'
-        msg = obj.to_yaml
-      else
-        msg = obj.inspect
-      end
+      msg = _fmt_obj(obj)
       myLogs.each do |alog, tmp|
-	alog.error(msg)
+	alog.info(msg)
       end
       PLogger.set_clevel(0)
     end
 
     def dump_error(obj)
       PLogger.set_clevel(3)
-      msg = obj.inspect
+      msg = _fmt_obj(obj)
       myLogs.each do |alog, tmp|
 	alog.error(msg)
+      end
+      PLogger.set_clevel(0)
+    end
+
+    def dump(obj)
+      PLogger.set_clevel(3)
+      msg = _fmt_obj(obj)
+      myLogs.each do |alog, tmp|
+	alog.debug(msg)
       end
       PLogger.set_clevel(0)
     end

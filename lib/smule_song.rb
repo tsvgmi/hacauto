@@ -11,8 +11,8 @@ module SmuleAuto
   class FirefoxWatch
     def initialize(user, tmpdir, csong_file='cursong.yml', options={})
       @user       = user
-      watch_dir   = `find #{tmpdir}/*/T -name 'rust_mozprofile.*'`.split("\n").
-        sort_by{|d| File.mtime(d)}[-1]
+      watch_dir   = `find #{tmpdir} -name 'rust_mozprofile*' 2>/dev/null`.
+        split("\n").sort_by{|d| File.mtime(d)}[-1]
       @watch_dir  = watch_dir
       @csong_file = csong_file
       @logger     = options[:logger] || PLogger.new(STDERR)
@@ -53,14 +53,34 @@ module SmuleAuto
   end
 
   class SmulePage < SelPage
+    Locators = {
+      sc_auto_play:           ['div.sc-qWfkp', 0],
+      sc_comment_close:       ['div.sc-pBzUF.jfMcol',  0],
+      sc_comment_open:        ['div.sc-oTNDV.jzKNzB',  2],
+      sc_cont_after_arch:     ['a.sc-pciEQ.bQQUyY',    0],
+      sc_expose_play_control: ['div.sc-pZCuu',         0],
+      sc_favorite_toggle:     ['span.sc-ptfmh.gtVEMN', -1],
+      sc_like:                ['div.sc-oTNDV.jzKNzB',  0],
+      sc_play_toggle:         ['div.sc-pCPXO.dbhMVG',  0],
+      sc_song_menu:           ['button.sc-pcYTN',      1],
+      sc_star:                ['div.sc-oTNDV.jzKNzB',  0],
+    }
+
     def initialize(sdriver)
       super
     end
 
+    def click_smule_page(elem, delay=2, elno=0)
+      unless elem = Locators[elem]
+        raise "#{elem} not defined in Locators"
+      end
+      elem[1] ||= elno
+      click_and_wait(elem[0], delay, elem[1])
+      refresh if delay > 0
+    end
+
     def set_song_favorite(setit=true)
-      # Click on the selector to expose
-      click_and_wait("button.sc-pcYTN", 1, 1)
-      refresh
+      click_smule_page(:sc_song_menu, 1)
 
       # This is actually toggle blindly.  So caller need to know/guess the current
       # before calling
@@ -81,7 +101,7 @@ module SmuleAuto
     end
 
     def set_like
-      click_and_wait("div.sc-oTNDV.jzKNzB", 0, 0)
+      click_smule_page(:sc_like, 0, 0)
     end
 
     def set_song_tag(tag)
@@ -91,8 +111,7 @@ module SmuleAuto
       end
       text = ' ' + tag
 
-      click_and_wait("button.sc-pcYTN", 1, 1)
-      refresh
+      click_smule_page(:sc_song_menu)
       locator = 'span.sc-ptfmh.gtVEMN'
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, "//html").click
@@ -104,21 +123,21 @@ module SmuleAuto
       type("textarea#message", text, append:true)  # Enter tag
       click_and_wait("input#recording-save")
 
-      play_song(true)
+      toggle_play(true)
     end
 
     def star_song(href)
       goto(href, 3)
-      if css("div.sc-psDhf.kiYFSS").size > 0
+      if css('div.hCAOzL').size >= 1
         Plog.error("Already starred")
         return false
       end
-      click_and_wait("div.sc-oTNDV.jzKNzB", 1)
+      click_smule_page(:sc_star, 1)
       return true
     end
 
     # Play or pause song
-    def play_song(doplay=true, options={})
+    def toggle_play(doplay=true, options={})
       remain = 0
       refresh
 
@@ -132,67 +151,68 @@ module SmuleAuto
         end
       end
 
-      paths    = css('div.sc-pQsrT.bsHhNW svg path').size
+      paths    = css('div.sc-pCPXO.dbhMVG svg path').size
       toggling = true
       if doplay && paths == 2
-        Plog.info("Already playing.  Do nothing")
+        Plog.debug("Already playing.  Do nothing")
         toggling = false
       elsif !doplay && paths == 1
-        Plog.info("Already stopped.  Do nothing")
+        Plog.debug("Already stopped.  Do nothing")
         toggling = false
       end
 
-      if doplay
-        locator = 'span.sc-pYNsO'
-        # First time I wait until song is loaded
-        if options[:href]
-          1.upto(5) do
-            duration_s = css(locator)[1]
-            if duration_s && duration_s.text != "00:00"
-              break
+      play_locator = 'span.sc-pKMan.fdsIjn'
+
+      if toggling
+        Plog.debug("Think play = #{doplay}, remain: #{remain}")
+        click_smule_page(:sc_play_toggle, 0)
+        if doplay
+          while true
+            if endtime = css(play_locator)[1]
+              if endtime.text != "00:00"
+                click_smule_page(:sc_cont_after_arch)
+                break
+              end
             end
             sleep 2
             refresh
           end
         end
-        curtime   = css(locator)[0].text.split(':')
+      end
+
+      if doplay
+        curtime   = css(play_locator)[0].text.split(':')
         curtime_s = curtime[0].to_i*60 + curtime[1].to_i
 
-        endtime   = css(locator)[1].text.split(':')
+        endtime   = css(play_locator)[1].text.split(':')
         endtime_s = endtime[0].to_i*60 + endtime[1].to_i
 
         remain    = endtime_s - curtime_s
       else
         remain = 0
       end
-
-      if toggling
-        Plog.info("Think play = #{doplay}, remain: #{remain}")
-        click_and_wait('div.sc-pZCuu', 0)
-      end
       remain
     end
 
     def get_comments
-      click_and_wait("div.sc-oTNDV.jzKNzB",0,2)
-      refresh
+      click_smule_page(:sc_comment_open, 0.5)
       res = []
-      css('div.sc-pLyGp.hIGHoI').reverse.each do |acmt|
-        comment = acmt.css('div.sc-pDboM.deGaYK').text.split
+      css('div.sc-qWfCM.kcdDPY').reverse.each do |acmt|
+        comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..-1] || []).join(' ')
         res << [user, msg]
       end
-      click_and_wait('div.sc-pBzUF.jfMcol', 0)
+      click_smule_page(:sc_comment_close, 0)
 
       # Show player up again
-      click_and_wait('div.sc-pZCuu', 0)
-      click_and_wait('div.sc-pZCuu', 0)
+      click_smule_page(:sc_expose_play_control, 0)
+      click_smule_page(:sc_expose_play_control, 0)
       res
     end
 
     def toggle_autoplay
-      click_and_wait("div.sc-qWfkp")
+      click_smule_page(:sc_auto_play)
     end
 
     def song_note
@@ -412,12 +432,10 @@ module SmuleAuto
 
     def play(spage)
       href = @info[:href].sub(/\/ensembles$/, '')
-      # This will start playing
-      # Page was archived
       spinner = TTY::Spinner.new("[:spinner] Loading ...",
                                     format: :pulse_2)
       spinner.auto_spin      
-      if spage.play_song(true, href:href) == :deleted
+      if spage.toggle_play(true, href:href) == :deleted
         spinner.stop('Done!')
         return :deleted
       end
@@ -461,18 +479,18 @@ module SmuleAuto
     end
 
     def is_mp4_tagged?(excuser=nil)
-      wset    = mp4_tags
+      unless wset = mp4_tags
+        return false
+      end
       album   = @info[:created].strftime("Smule-%Y.%m")
-      year    = @info[:created].strftime("%Y")
       release = @info[:created].iso8601
       aartist = @info[:record_by].gsub(/(,?)#{excuser}(,?)/, '')
       if wset[:nam] == 'ver:1' || wset[:alb] != album || \
-          (wset[:day] != year && wset[:day] != release) || \
-          wset[:aART].to_s != aartist
+          wset[:day] != release || wset[:aART].to_s != aartist
         wset.delete(:lyr)
-        @logger.dump_info(msg:"Tagging #{ssfile}",
-                       wset:wset, title:@info[:title],
-                       record_by:@info[:record_by])
+        @logger.dump_info(msg:"Tagging not matched for #{ssfile}",
+                          wset:wset, title:@info[:title],
+                          record_by:@info[:record_by])
         return false
       end
       true
@@ -543,6 +561,7 @@ module SmuleAuto
       if test(?f, sfile)
         unless @options[:verify] 
           sofile
+          #_run_command("open -g #{sfile}") if @options[:open]
           return
         end
         csize  = self.media_size(sfile)
@@ -550,6 +569,7 @@ module SmuleAuto
         if (csize == fmsize) && self.is_mp4_tagged?(user)
           @logger.info("Verify same media size and tags: #{csize}")
           sofile
+          #_run_command("open -g #{sfile}") if @options[:open]
           return
         end
         @logger.info("Size: #{csize} <>? #{fmsize}")
