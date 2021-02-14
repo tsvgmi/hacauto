@@ -401,30 +401,6 @@ module Cli
     end
     option
   end
-
-  # Edit file - display mode if possible (detach editing)
-  def self.xedit(*files)
-    if ENV['DISPLAY']
-      xeditor = ENV['XEDITOR'] || File.execPath('gvim') || 'vim'
-    else
-      xeditor = ENV['EDITOR'] || 'vim'
-    end
-    case xeditor
-    when /vim/
-      tabcount = (files.size >= 6) ? 6 : files.size
-      Pf.system("#{xeditor} -p#{tabcount} #{files.join(' ')}", 1)
-    else
-      Pf.system("#{xeditor} #{files.join(' ')}", 1)
-    end
-  end
-
-  # Edit files - inline mode
-  def self.edit(*files)
-    display = ENV['DISPLAY']
-    ENV.delete('DISPLAY')
-    xedit(*files)
-    ENV['DISPLAY'] = display if display
-  end
 end
 
 module Pf
@@ -470,45 +446,6 @@ module Pf
     Kernel.exec(command)
   end
 
-  def self.etcDir(name)
-    "#{ENV['T_ETC_DIR']}/#{name}"
-  end
-
-  def self.userCfPath(name)
-    if ENV['T_PRIVATEDIR']
-      "#{ENV['T_PRIVATEDIR']}/#{name}"
-    else
-      "#{ENV['HOME']}/.tool/#{name}"
-    end
-  end
-
-  # Common data directory (guaranteed to be writable on all condition)
-  # So only writer could read back
-  def self.dataDir(name)
-    "#{ENV['T_DATA_DIR']}/#{name}"
-  end
-
-  # Common data directory (not guaranteed to be writable on all condition)
-  def self.dataDir0(name)
-    "#{ENV['T_DATA_DIR0']}/#{name}"
-  end
-
-  def self.tmpPath(name)
-    tmpdir = ENV['TMPDIR'] || "/usr/tmp"
-    "#{tmpdir}/#{name}"
-  end
-
-  def self.privatePath(name)
-    tmpdir = ENV['TMPDIR'] || "/usr/tmp"
-    "#{tmpdir}/#{ENV['USER']}-#{name}"
-  end
-
-  def self.pidFile(name, pid = nil)
-    pidfile = "#{ENV['TMPDIR']}/PIDS/#{name}.pid"
-    File.catto(pidfile, pid) if pid
-    pidfile
-  end
-
   # Run command as root (via sudo)
   def self.suRun(command, trace = 0)
     if Process.uid == 0
@@ -517,123 +454,10 @@ module Pf
       Pf.system("sudo #{command}", trace)
     end
   end
-
-  def self.runOnHost(host, *cmds)
-    if host != hostname(true)
-      cmd = "ssh -t #{host} #{cmds.join(' ')}"
-      Pf.exec(cmd, 1)
-    end
-  end
-
-  def self.resetEnv
-    ENV.keys.grep(/^T_/).each do |e|
-      ENV.delete(e)
-    end
-  end
-end
-
-# Xterm support functions
-class Xterm
-  def Xterm.run(program, config = {})
-    require 'yaml'
-
-    xtarg = config[:xtarg] || ""
-    name  = config[:name]  || program.split[0]
-    xtarg  += " -name #{name}"
-    if config[:title]
-      xtarg  += " -title #{config[:title]}"
-    else
-      xtarg  += " -title #{program.gsub(/ /, '.')}"
-    end
-    xtarg  += " -display #{config[:display]}" if config[:display]
-    yconfig = YAML.load(File.read(Pf.etcDir("xtprofile.yml")))
-    if test(?e, Pf.userCfPath("xtprofile.yml"))
-      yconfig.merge(YAML.load(File.read(Pf.userCfPath("xtprofile.yml"))))
-    end
-    xtargs += " "
-    xtargs += yconfig["xterm.#{name}"] || ""
-    if config[:foreground]
-      if config[:rhost] && (config[:rhost] != hostname())
-        xtarg += " -display #{ENV['DISPLAY']}"
-        cmd = "rsh -n #{config[:rhost]} /usr/openwin/bin/xterm \
-            #{xtarg} -e #{program}"
-      else
-        cmd = "xterm #{xtarg} #{program}"
-      end
-      Pf.system(cmd, 1)
-    else
-      cpid = Process::fork
-      if cpid
-        if config[:pidfile]
-          Plog.debug "Saving pid of #{cpid} to #{config[:pidfile]}\n"
-          File.catto(config[:pidfile], cpid)
-        end
-      else
-        Process::setpgrp
-        if config[:rhost] && (config[:rhost] != hostname())
-          xtarg += " -display #{ENV['DISPLAY']}"
-          exec("rsh -n #{config[:rhost]} /usr/openwin/bin/xterm \
-              #{xtarg} -e #{program}")
-        else
-          exec("xterm #{xtarg} -e #{program}")
-        end
-      end
-    end
-  end
-
-  def Xterm.runOnHost(host, program, config = {})
-    mconfig         = config.dup
-    mconfig[:rhost] = host
-    run(program, mconfig)
-  end
-
-  def Xterm.runForeground(program, config = {})
-    mconfig              = config.dup
-    mconfig[:foreground] = true
-    run(program, mconfig)
-  end
-
-=begin
---- Method: title=(msg)
-  Change the current xterm title
-*        msg: 
-=end
-  def Xterm.title=(msg)
-    $stderr.print("]0;#{msg}:#{hostname()}:#{ENV['TTY']}")
-  end
 end
 
 # Extension to normal File class
 class File
-  def File.catto(fname, content, openmode = "w")
-    File.deleteForce(fname)
-    File.open(fname, openmode) do |fid|
-      fid.print(content + "\n")
-    end
-  end
-
-  def File.deleteForce(*flist) 
-    flist.each do |file|
-      catcherr { File.delete(file) }
-    end
-  end
-
-  # Force a rename of a file to a new file
-  def File.renameForce(from, to) 
-    return unless File.file?(from)
-    File.file?(to) && File.delete(to)
-    File.rename(from, to)
-  end
-
-  # Search for the pattern in file.  Returns array of result
-  def File.grep(fname, pattern)
-    result = []
-    File.open(fname) do |fid|
-      result = fid.grep(pattern)
-    end
-    result
-  end
-
   # Equivalent perl method to check if file is text only
   def File.isText?(file, bsize=256)
     return true if File.extname(file) =~ /\.(java|c|h|m)/
@@ -648,29 +472,6 @@ class File
       end
     end
     text
-  end
-
-  # Change the last updated time on filelist
-  def self.touch(*flist)
-    flist.each do |afile|
-      if File.readable?(afile)
-        File.utime(Time.now, Time.now, afile)
-      else
-        fod = File.open(afile, "w")
-        fod.close
-      end
-    end
-  end
-
-  # Return the full path of a command - nil if not found
-  def self.execPath(command, pathvar = 'PATH')
-    ENV[pathvar].split(':').each do |apath|
-      cfile = "#{apath}/#{command}"
-      if executable?(cfile)
-        return cfile
-      end
-    end
-    nil
   end
 end
 
@@ -734,6 +535,29 @@ class PLogger < Logger
         Format2 % [severity[0..0], timestamp, script, progname]
       end
     end
+  end
+
+  def _fmt_obj(obj)
+    msg = if obj[:_ofmt] == 'Y'
+      obj.to_yaml
+    else
+      obj.inspect
+    end
+    @clevel = 3
+    yield msg
+    @clevel = 0
+  end
+
+  def dump_info(obj)
+    _fmt_obj(obj) {|msg| self.info(msg) }
+  end
+
+  def dump_error(obj)
+    _fmt_obj(obj) {|msg| self.error(msg) }
+  end
+
+  def dump(obj)
+    _fmt_obj(obj) {|msg| self.debug(msg) }
   end
 end
 
