@@ -106,7 +106,11 @@ module SmuleAuto
       count = 0
       while (count <= @clist.size)
         @cursong = @clist[@listpos]
-        @listpos = (@listpos + increment) % @clist.size
+        @listpos = (@listpos + increment)
+        # Should not do mod operation here.  Just start
+        if @listpos >= @clist.size
+          @listpos = 0
+        end
         if playable?(@cursong)
           return @cursong
         end
@@ -281,7 +285,7 @@ EOM
       File.open(@csong_file, 'w') do |fod|
         fod.puts sitem.to_yaml
       end
-      psecs = SmuleSong.new(sitem).play(@scanner.spage)
+      psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage)
 
       if psecs == :deleted
         @content.delete_song(sitem)
@@ -301,7 +305,7 @@ EOM
       spage = @scanner.spage
       res[:duration] = duration
       res[:snote]    = spage.song_note
-      res[:msgs]     = spage.get_comments
+      res[:msgs]     = msgs
       res
     end
 
@@ -454,6 +458,8 @@ EOH
             when :pausing
               @paused = !@paused
               remain  = @scanner.spage.toggle_play(!@paused)
+              # This is buggy.  If there is limit on playtime, it would
+              # be overritten by this
               if remain > 0
                 endt = Time.now + remain
               end

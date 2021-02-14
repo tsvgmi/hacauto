@@ -69,6 +69,7 @@ GEM
     rb-fsevent (0.10.4)
     rb-inotify (0.10.1)
       ffi (~> 1.0)
+    rb-readline (0.5.5)
     ruby-mp3info (0.8.10)
     rubyzip (2.3.0)
     selenium-webdriver (3.142.7)
@@ -138,6 +139,7 @@ DEPENDENCIES
   mp4info!
   mysql2
   nokogiri
+  rb-readline
   ruby-mp3info
   selenium-webdriver
   sequel

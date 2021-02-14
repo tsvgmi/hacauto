@@ -292,7 +292,7 @@ module SmuleAuto
         limit(limit*4).
         where(Sequel.lit 'record_by like ?', "%#{@user}%").
         where(Sequel.lit 'created > ?', odate)
-      Plog.info(query)
+      Plog.dump(sql:query.sql)
       rank = {}
       query.each do |r|
         key = r[:record_by].sub(/,?#{@user},?/, '')
@@ -425,7 +425,7 @@ changes back into the database
       desc:'Look back the specified number of days only'
     def rank_singer(user)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
+        tdir    = _tdir_check
         content = SmuleDB.instance(user, tdir)
         days    = options[:days]
         limit   = options[:limit] || 100

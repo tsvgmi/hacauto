@@ -216,7 +216,8 @@ module SmuleAuto
           @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
           stars << sinfo
           if @options[:pause]
-            @spage.toggle_play(true)
+            #sleep(1)
+            #@spage.toggle_play(true)
             sleep(@options[:pause])
           end
           count -= 1
@@ -239,7 +240,7 @@ module SmuleAuto
     end
 
     def unfavs_old(count, result)
-      new_sise = result.size - count
+      new_size = result.size - count
       set_unfavs(result[new_size..-1])
       result[0..new_size-1]
     end
@@ -344,7 +345,7 @@ module SmuleAuto
         woptions = writable_options
         woptions[:logger] = @logger
         result  = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
-        content.add_new_songs(result, true) if tdir
+        content.add_new_songs(result, true)
         true
       end
     end
@@ -546,7 +547,12 @@ it left off from the previous run.
         Performance.
           where(Sequel.ilike(:record_by, "%#{old_name}%")).each do |v|
           if v[:record_by] =~ /,#{old_name}$|^#{old_name},/
-            SmuleSong.new(v, moptions).move_song(old_name, new_name)
+            asong = SmuleSong.new(v, moptions)
+            if asong.move_song(old_name, new_name)
+              if asong.update_mp4tag(user) == :updated
+                asong._run_command("open -g #{asong.ssfile}")
+              end
+            end
             v.save
           end
         end
@@ -642,7 +648,7 @@ Filters is the list of SQL's into into DB.
 
     desc "star_singers(count, singers)", "star_singers"
     option :top,     type: :numeric
-    option :days,    type: :numeric, default:30
+    option :days,    type: :numeric, default:15
     option :exclude, type: :string
     option :pause,   type: :numeric, default:5
     option :play,   type: :boolean

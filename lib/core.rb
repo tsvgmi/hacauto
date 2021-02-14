@@ -352,24 +352,10 @@ module Cli
       exit(0)
     elsif result.kind_of?(FalseClass)
       exit(1)
-    elsif result.kind_of?(Array)
-      result.each { |row|
-	if row.kind_of?(Array)
-	  puts "#{row.join(sep)}"
-	else
-	  puts "#{row}"
-	end
-      }
-    elsif result.kind_of?(Hash)
-      result.each { |k, v|
-	if v.kind_of?(Array)
-	  puts "#{k}: #{v.join(sep)}"
-	else
-          puts "#{k}: #{v}"
-	end
-      }
+    elsif result.kind_of?(String)
+      puts result
     else
-      puts result if result
+      puts result.inspect
     end
     exit(0)
   end
@@ -727,39 +713,27 @@ end
 require 'logger'
 class PLogger < Logger
   Format2    = "%s %s - [%s] %s\n"
-  @@__clevel = 0
-  @@__slevel = nil
+  attr_accessor :simple, :clevel
+
+  def initialize(*args)
+    super
+    @simple = false
+    @slevel = 2
+    @clevel = 0
+  end
+
   def format_message(severity, timestamp, progname, msg)
     # Look like this changes from diff versions.  So we need to detect
-    @@__slevel ||= 2
-    #caller.each_with_index do |line, index|
-      #STDERR.puts "#{index} #{@@__clevel} #{line} #{msg[0..10]}"
-    #end
-    script = caller[@@__slevel+@@__clevel].sub(/:in .*$/, '').sub(/^.*\//, '')
-    if timestamp.respond_to?(:strftime)
-      Format2 % [severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg]
+    script = caller[@slevel+@clevel].sub(/:in .*$/, '').sub(/^.*\//, '')
+    if @simple
+      "%s - [%s] %s\n" % [severity[0..0], script, msg]
     else
-      Format2 % [severity[0..0], timestamp, script, progname]
+      if timestamp.respond_to?(:strftime)
+        Format2 % [severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg]
+      else
+        Format2 % [severity[0..0], timestamp, script, progname]
+      end
     end
-  end
-
-  def self.set_clevel(level)
-    @@__clevel = level
-  end
-
-  def dump_info(obj)
-    msg = obj[:_ofmt] == 'Y' ? obj.to_yaml : obj.inspect
-    self.add(Logger::INFO, msg)
-  end
-
-  def dump_warn(obj)
-    msg = obj[:_ofmt] == 'Y' ? obj.to_yaml : obj.inspect
-    self.add(Logger::WARN, msg)
-  end
-
-  def dump_error(obj)
-    msg = obj[:_ofmt] == 'Y' ? obj.to_yaml : obj.inspect
-    self.add(Logger::ERROR, msg)
   end
 end
 
@@ -768,7 +742,7 @@ class Plog
 --- Class: Plog
     Singleton class for application based global log
 =end
-  @@xglog        = []
+  @@xglog        = nil
   @@timestampFmt = "%Y-%m-%d %H:%M:%S"
   @@dotrace      = false
   class << self
@@ -778,105 +752,58 @@ class Plog
       # Beside singleton imp,  this is also done to defer log creation
       # to absolute needed to allow application to control addition
       # logger setting
-      unless @@xglog[0]
-	addLogger(STDERR)
-	addLogger(ENV['T_PROGRESSFILE']) if ENV['T_PROGRESSFILE']
-      end
-      @@xglog
+      @@xglog ||= setLogger
     end
 
     public
-
-    def setTimestampFmt(format)
-      @@timestampFmt = format
-    end
-
-    def addLogger(*args)
-      if @@xglog.find {|alog, aname| aname == args[0]}
-        return alog
-      end
-      newlog = PLogger.new(*args)
-      newlog.level = ENV['LOG_LEVEL'] ?
-	      ENV['LOG_LEVEL'].to_i : Logger::INFO
-      newlog.datetime_format = @@timestampFmt
-      @@xglog << [newlog, args[0]]
-      newlog
-    end
-
-    def rmLogger(logger)
-      i = 0
-      @@xglog.each do |alog, aname|
-        if aname == logger
-          @@xglog.delete_at(i)
-        end
-        i += 1
-      end
-    end
-
-    def trace(msg, level = 0)
-      if @@dotrace
-        if msg
-          loc = caller[0].sub(/:in .*$/, '').sub(/^.*\//, '')
-          info("#{loc} - #{msg}")
-        end
-        if level > 0
-          puts "\t" + caller[0...level].join("\n\t")
-        end
+    def setLogger(*args)
+      logspec = (ENV['LOG_LEVEL'] || '')
+      if logspec =~  /:f/
+        logger = PLogger.new($'.sub(/:.*$/, ''))
       else
-        info(msg)
+        logger = PLogger.new(STDERR)
       end
-    end
-
-    def traceon
-      @@dotrace = true
-    end
-
-    def traceoff
-      @@dotrace = false
+      log_level, *logopts = logspec.split(':')
+      logopts.each do |anopt|
+        oname  = anopt[0]
+        ovalue = anopt[1..-1]
+        case oname
+        when 's'
+          logger.simple = true
+        end
+      end
+      logger.level = log_level.empty? ? Logger::INFO : log_level.to_i
+      logger.datetime_format = @@timestampFmt
+      @@xglog = logger
     end
 
     def _fmt_obj(obj)
-      if obj[:_ofmt] == 'Y'
+      msg = if obj[:_ofmt] == 'Y'
         obj.to_yaml
       else
         obj.inspect
       end
+      myLogs.clevel = 3
+      yield msg
+      myLogs.clevel = 0
     end
 
     def dump_info(obj)
-      PLogger.set_clevel(3)
-      msg = _fmt_obj(obj)
-      myLogs.each do |alog, tmp|
-	alog.info(msg)
-      end
-      PLogger.set_clevel(0)
+      _fmt_obj(obj) {|msg| myLogs.info(msg) }
     end
 
     def dump_error(obj)
-      PLogger.set_clevel(3)
-      msg = _fmt_obj(obj)
-      myLogs.each do |alog, tmp|
-	alog.error(msg)
-      end
-      PLogger.set_clevel(0)
+      _fmt_obj(obj) {|msg| myLogs.error(msg) }
     end
 
     def dump(obj)
-      PLogger.set_clevel(3)
-      msg = _fmt_obj(obj)
-      myLogs.each do |alog, tmp|
-	alog.debug(msg)
-      end
-      PLogger.set_clevel(0)
+      _fmt_obj(obj) {|msg| myLogs.debug(msg) }
     end
 
     def method_missing(symbol, *args)
-      result = nil
-      PLogger.set_clevel(3)
-      myLogs.each do |alog, tmp|
-	result = alog.send(symbol, *args)
-      end
-      PLogger.set_clevel(0)
+      myLogs.clevel = 1
+      result = myLogs.send(symbol, *args)
+      myLogs.clevel = 0
       result
     end
   end
@@ -897,6 +824,7 @@ class Psyslog
       end
       @@glog
     end
+
     def method_missing(symbol, *args)
       myLog.send(symbol, *args)
     end

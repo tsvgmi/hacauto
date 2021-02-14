@@ -28,3 +28,4 @@ group "music" do
   gem "ruby-mp3info"
 end
 
+gem 'rb-readline'
