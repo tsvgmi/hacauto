@@ -629,6 +629,7 @@ EOH
       when 'Z'                            # Debug
         require 'byebug'
 
+        Plog.level = 0
         byebug
       end
       [true, true]

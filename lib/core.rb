@@ -580,7 +580,7 @@ class Plog
     end
 
     public
-    def setLogger(*args)
+    def setLogger
       logspec = (ENV['LOG_LEVEL'] || '')
       if logspec =~  /:f/
         logger = PLogger.new($'.sub(/:.*$/, ''))
@@ -596,7 +596,7 @@ class Plog
           logger.simple = true
         end
       end
-      logger.level = log_level.empty? ? Logger::INFO : log_level.to_i
+      logger.level = log_level && !log_level.empty? ? log_level.to_i : Logger::INFO
       logger.datetime_format = @@timestampFmt
       @@xglog = logger
     end

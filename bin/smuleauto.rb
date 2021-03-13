@@ -216,8 +216,8 @@ module SmuleAuto
           @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
           stars << sinfo
           if @options[:pause]
-            #sleep(1)
-            #@spage.toggle_play(true)
+            sleep(1)
+            @spage.toggle_play(true)
             sleep(@options[:pause])
           end
           count -= 1
@@ -578,6 +578,7 @@ Filters is the list of SQL's into into DB.
     option :tags,  type: :string
     option :favs,  type: :boolean, default:true
     option :title, type: :string
+    option :record_by, type: :string
     long_desc <<-LONGDESC
 List the candidates for open from the matching filter.
 Filters is the list of SQL's into into DB.
@@ -604,8 +605,11 @@ Filters is the list of SQL's into into DB.
         if options[:favs]
           wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1'))
         end
-        if tags = options[:tags]
-          wset = wset.where(Sequel.lit 'tags like ?', "%#{tags}%")
+        if value = options[:tags]
+          wset = wset.where(Sequel.lit 'tags like ?', "%#{value}%")
+        end
+        if value = options[:record_by]
+          wset = wset.where(Sequel.lit 'record_by like ?', "%#{value}%")
         end
 
         if title = options[:title]
@@ -701,6 +705,7 @@ Filters is the list of SQL's into into DB.
           table << [u, c]
         end
         print_table(table)
+        true
       end
     end
 

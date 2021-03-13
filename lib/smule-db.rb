@@ -433,7 +433,8 @@ changes back into the database
         puts "Ranking in last #{days} days"
         line = 0
         output = []
-        output << %w(. Singer Count Loves Listens Favs Stars Score)
+        output << %w(No. Singer Count Loves Listens Favs Stars Score)
+        output << %w[=== ====== ===== ===== ======= ==== ===== =====]
         rank.each do |singer, sinfo|
           line += 1
           output << [line, singer, sinfo[:count], sinfo[:loves],
@@ -441,8 +442,9 @@ changes back into the database
                      sinfo[:stars], sinfo[:score].to_i]
         end
         print_table(output)
-        rank.map{|k, v| "@#{k}"}.
-          sort_by {|v| v.downcase.gsub(/_/, '')}.join(' ')
+        true
+        #rank.map{|k, v| "@#{k}"}.
+          #sort_by {|v| v.downcase.gsub(/_/, '')}.join(' ')
       end
     end
   end

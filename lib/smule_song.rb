@@ -55,15 +55,16 @@ module SmuleAuto
   class SmulePage < SelPage
     Locators = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
-      sc_comment_close:       ['div.sc-cKZHah.iYAzYL',    0],
-      sc_comment_open:        ['div.sc-kmASHI',           2],
+      sc_comment_close:       ['div.sc-kiYtDG.hHYCJM',    0],
+      sc_comment_open:        ['div.sc-aKZfe.fDhUzj',     2],
       sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
       sc_expose_play_control: ['div.sc-pZCuu',            0],
       sc_favorite_toggle:     ['span.sc-ptfmh.gtVEMN',    -1],
       sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
-      sc_play_toggle:         ['div.sc-fnlXYz',           0],
-      sc_song_menu:           ['button.sc-dnWOup.iSIqZD', 1],
-      sc_star:                ['div.sc-kmASHI.eeGfwZ',    0],
+      sc_play_continue:       ['a.sc-kmASHI.hDOTch',      0],
+      sc_play_toggle:         ['div.sc-jfJzZe',           0],
+      sc_song_menu:           ['button.sc-jbiwVq.dqCLEx', 1],
+      sc_star:                ['div.sc-aKZfe.fDhUzj',     0],
     }
 
     def initialize(sdriver)
@@ -82,9 +83,9 @@ module SmuleAuto
     def set_song_favorite(setit=true)
       click_smule_page(:sc_song_menu, 1)
 
-      locator = 'div.sc-eTLWQi.gCjFlq'
+      locator = 'div.sc-hKKeuH.kXQUbk'
+      cval = css("#{locator} svg path")[0][:fill]
 
-      cval = css('div.sc-eTLWQi.gCjFlq svg path')[0][:fill]
       if setit && cval == "#FFCE42"
         Plog.info("Already fav, skip it")
         return false
@@ -110,13 +111,13 @@ module SmuleAuto
       text = ' ' + tag
 
       click_smule_page(:sc_song_menu)
-      locator = 'span.sc-hKKeuH.kXQUbk'
+      locator = 'span.sc-jgHCyG.jYOAjG'
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, "//html").click
         return false
       end
-      cpos    = find_elements(:css, locator).size / 2
-      click_and_wait(locator, 1, cpos+2)
+      cpos = (find_elements(:css, locator).size + 1)/2
+      click_and_wait(locator, 1, cpos)
 
       type("textarea#message", text, append:true)  # Enter tag
       click_and_wait("input#recording-save")
@@ -126,7 +127,11 @@ module SmuleAuto
 
     def star_song(href)
       goto(href, 3)
-      fill = css('div.sc-jCXOcT.envWXr svg path')[0][:fill]
+      unless elem = Locators[:sc_star]
+        raise "#{elem} not defined in Locators"
+      end
+
+      fill = css("#{elem[0]} svg path")[0][:fill]
       if fill == "#FD286E"
         Plog.error("Already starred")
         return false
@@ -150,24 +155,33 @@ module SmuleAuto
         toggling = false
       end
 
-      play_locator = 'span.sc-jcRDWI.kPwfsx'
+      #play_locator = 'span.sc-jcRDWI.kPwfsx'
+      play_locator = 'span.sc-fnlXYz.gmzLtL'
 
       if toggling
         Plog.debug("Think play = #{doplay}, remain: #{remain}")
         click_smule_page(:sc_play_toggle, 0)
         if doplay
           if css(play_locator).size == 2
+            sleep_round = 0
             while true
               if endtime = css(play_locator)[1]
                 if endtime.text != "00:00"
                   if options[:href]
-                    sleep(1)
-                    click_smule_page(:sc_play_toggle, 0)
+                    if sleep_round > 2
+                      sleep(1)
+                      click_smule_page(:sc_play_continue, 0)
+                      click_smule_page(:sc_play_continue, 0)
+                    else
+                      sleep(1)
+                      click_smule_page(:sc_play_toggle, 0)
+                    end
                   end
                   break
                 end
               end
               sleep 2
+              sleep_round += 1
               refresh
             end
           else
@@ -198,8 +212,8 @@ module SmuleAuto
     def get_comments
       click_smule_page(:sc_comment_open, 0.5)
       res = []
-      #css('div.sc-yMzwv.lezPrD').reverse.each do |acmt|
-      css('div.sc-cBYayr.eVPJDi').reverse.each do |acmt|
+      #css('div.sc-cBYayr.eVPJDi').reverse.each do |acmt|
+      css('div.sc-ksPlPm.fiBdLJ').reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..-1] || []).join(' ')
@@ -215,7 +229,7 @@ module SmuleAuto
     end
 
     def song_note
-      locator = 'span.sc-gTgzIj.dLCNLt'
+      locator = 'span.sc-jgHCyG.koUJIA'
       if css(locator).size > 0
         css(locator)[0].text
       else
@@ -285,6 +299,8 @@ module SmuleAuto
       if @info[:created].is_a?(String)
         @info[:created] = Date.parse(@info[:created])
       end
+      @ssl_context = OpenSSL::SSL::SSLContext.new
+      @ssl_context.verify_mode = OpenSSL::SSL::VERIFY_NONE
     end
 
     def ssfile
@@ -361,7 +377,7 @@ module SmuleAuto
     end
 
     def get_ensemble_asset
-      source    = HTTP.follow.get(@surl).to_s 
+      source    = HTTP.follow.get(@surl, ssl_context:@ssl_context).to_s 
       asset_str = (source.split("\n").grep(/DataStore.Pages.Duet/)[0] || "").
         sub(/^\s+DataStore.Pages.Duet = {/, '{').sub(/;$/, '')
       res = JSON.parse(asset_str, symbolize_names:true) || {}
@@ -381,7 +397,7 @@ module SmuleAuto
 
     def get_asset
       olink    = @surl.sub(/\/ensembles$/, '')
-      source   = HTTP.follow.get(olink).to_s 
+      source   = HTTP.follow.get(olink, ssl_context:@ssl_context).to_s 
       document = Nokogiri::HTML(source)
       asset_str    = nil
 

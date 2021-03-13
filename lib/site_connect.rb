@@ -222,6 +222,7 @@ class SiteConnect
       if !options[:skip_auth] && auth = options[:auth]
         sdriver.goto("/user/login")
         identity, password = auth.split(':')
+        sleep(3)
         sdriver.click_and_wait('a[data-test-id="login-type-btn-login-acc"]') # email
         sdriver.type('input[name="snp-username"]', identity + "\n")
         sleep 3
