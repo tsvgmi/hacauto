@@ -212,20 +212,24 @@ module SmuleAuto
         if @options[:exclude]
           next if @options[:exclude].find{|r| sinfo[:record_by] =~ /#{r}/}
         end
-        if @spage.star_song(sinfo[:href])
-          @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
-          stars << sinfo
-          if @options[:pause]
-            sleep(1)
-            @spage.toggle_play(true)
-            sleep(@options[:pause])
+        begin
+          if @spage.star_song(sinfo[:href])
+            @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
+            stars << sinfo
+            if @options[:pause]
+              sleep(1)
+              @spage.toggle_play(true)
+              sleep(@options[:pause])
+            end
+            count -= 1
+            if count <= 0
+              break
+            end
           end
-          count -= 1
-          if count <= 0
-            break
-          end
+          Love.insert(sid:sinfo[:sid], user:@user)
+        rescue => errmsg
+          Plog.error(errmsg)
         end
-        Love.insert(sid:sinfo[:sid], user:@user)
       end
       stars
     end
@@ -596,8 +600,9 @@ Filters is the list of SQL's into into DB.
           opened[r[:stitle]] = true
         end
 
-        wset = Performance.order(:created).
-          join_table(:inner, :song_tags, name: :stitle)
+        wset = Performance.where(Sequel.lit 'record_by like ?', "%#{user}%")
+        wset = wset.order(:created).
+          join_table(:left, :song_tags, name: :stitle)
 
         if filter.size > 0
           wset = wset.where(Sequel.lit(filter.join(' ')))
@@ -616,6 +621,7 @@ Filters is the list of SQL's into into DB.
           wset = wset.where(Sequel.lit 'stitle like ?', "%#{title}%")
         end
 
+        Plog.dump(wset:wset)
         topen = {}
         wset.all.each do |r|
           next if opened[r[:stitle]]
@@ -655,7 +661,8 @@ Filters is the list of SQL's into into DB.
     option :days,    type: :numeric, default:15
     option :exclude, type: :string
     option :pause,   type: :numeric, default:5
-    option :play,   type: :boolean
+    option :play,    type: :boolean
+    option :offset,  type: :numeric, default:0
 
     BannedList = %w[Joseph_TN]
     def star_singers(user, count, *singers)
@@ -671,7 +678,8 @@ Filters is the list of SQL's into into DB.
         woptions[:exclude] = exclude
         if topc = woptions[:top]
           topc += exclude.size
-          singers = content.top_partners(topc, woptions).map{|k, v| k}.
+          singers = content.top_partners(topc, woptions).
+            map{|k, v| k}[options[:offset]..-1].
             select{|r| !exclude.include?(r)}
           @logger.dump_info(singers:singers)
         end

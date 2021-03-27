@@ -55,16 +55,16 @@ module SmuleAuto
   class SmulePage < SelPage
     Locators = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
-      sc_comment_close:       ['div.sc-kiYtDG.hHYCJM',    0],
-      sc_comment_open:        ['div.sc-aKZfe.fDhUzj',     2],
+      sc_comment_close:       ['div.sc-gsBrbv.dgedbA',    0],
+      sc_comment_open:        ['div.sc-iitrsy',           2],
       sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
       sc_expose_play_control: ['div.sc-pZCuu',            0],
       sc_favorite_toggle:     ['span.sc-ptfmh.gtVEMN',    -1],
       sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
-      sc_play_continue:       ['a.sc-kmASHI.hDOTch',      0],
-      sc_play_toggle:         ['div.sc-jfJzZe',           0],
+      sc_play_continue:       ['a.sc-hYZPRl.gumLkx',      0],
+      sc_play_toggle:         ['div.sc-fiKUUL',           0],
       sc_song_menu:           ['button.sc-jbiwVq.dqCLEx', 1],
-      sc_star:                ['div.sc-aKZfe.fDhUzj',     0],
+      sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
     }
 
     def initialize(sdriver)
@@ -131,7 +131,10 @@ module SmuleAuto
         raise "#{elem} not defined in Locators"
       end
 
-      fill = css("#{elem[0]} svg path")[0][:fill]
+      fill = (css("#{elem[0]} svg path")[0] || {})[:fill]
+      unless fill
+        return false
+      end
       if fill == "#FD286E"
         Plog.error("Already starred")
         return false
@@ -145,7 +148,7 @@ module SmuleAuto
       remain = 0
       refresh
 
-      paths    = css('div.sc-fnlXYz svg path').size
+      paths    = css('div.sc-fiKUUL svg path').size
       toggling = true
       if doplay && paths == 2
         Plog.debug("Already playing.  Do nothing")
@@ -155,8 +158,7 @@ module SmuleAuto
         toggling = false
       end
 
-      #play_locator = 'span.sc-jcRDWI.kPwfsx'
-      play_locator = 'span.sc-fnlXYz.gmzLtL'
+      play_locator = 'span.sc-lgqmxq.FGHoO'
 
       if toggling
         Plog.debug("Think play = #{doplay}, remain: #{remain}")
@@ -212,8 +214,8 @@ module SmuleAuto
     def get_comments
       click_smule_page(:sc_comment_open, 0.5)
       res = []
-      #css('div.sc-cBYayr.eVPJDi').reverse.each do |acmt|
-      css('div.sc-ksPlPm.fiBdLJ').reverse.each do |acmt|
+      #css('div.sc-ksPlPm.fiBdLJ').reverse.each do |acmt|
+      css('div.sc-hBmvGb.gugxcI').reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..-1] || []).join(' ')
