@@ -29,3 +29,4 @@ group "music" do
 end
 
 gem 'rb-readline'
+gem 'code-scanning-rubocop'
