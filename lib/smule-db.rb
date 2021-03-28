@@ -48,7 +48,7 @@ module SmuleAuto
       @user  = user
       @DB    = Sequel.sqlite(dbname)
       Sequel::Model.plugin :insert_conflict
-      YAML.load_file('etc/db_models.yml').each do |model, minfo|
+      YAML.safe_load_file('etc/db_models.yml').each do |model, minfo|
         klass = Class.new(Sequel::Model)
         klass.dataset = @DB[minfo['table'].to_sym]
         Object.const_set model, klass
@@ -56,7 +56,7 @@ module SmuleAuto
 
       @all_content = @DB[:performances]
       @content     = @all_content.where(Sequel.lit('record_by like ?',
-                                                     "%#{user}%"))
+                                                   "%#{user}%"))
       @singers     = @DB[:singers]
       @songtags    = @DB[:song_tags]
     end
@@ -172,7 +172,7 @@ module SmuleAuto
     def load_db
       content_file  = "data/content-#{@user}.yml"
       songtags_file = "data/songtags2.yml"
-      ycontent      = YAML.load_file(content_file)
+      ycontent      = YAML.safe_load_file(content_file)
       bar           = TTY::ProgressBar.new("Content [:bar] :percent", total: ycontent.size)
       ycontent.each do |_sid, sinfo|
         irec = sinfo.dup
@@ -186,7 +186,7 @@ module SmuleAuto
         end
       end
 
-      ysingers = YAML.load_file("data/singers-#{@user}.yml")
+      ysingers = YAML.safe_load_file("data/singers-#{@user}.yml")
       bar      = TTY::ProgressBar.new("Singers [:bar] :percent", total: ysingers.size)
       ysingers.each do |singer, sinfo|
         irec = sinfo.dup
@@ -331,7 +331,7 @@ module SmuleAuto
         when /^y/i
           newfile.puts(records.to_yaml)
           system("vim #{newfile.path}")
-          newrecs = YAML.load_file(newfile.path)
+          newrecs = YAML.safe_load_file(newfile.path)
           editout = Tempfile.new('edit')
           editout.puts(newrecs.map { |r| r.to_json }.join("\n"))
         else

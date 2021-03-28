@@ -238,7 +238,7 @@ class SiteConnect
   
   def initialize(site, options={})
     Plog.info "Connect to site: #{site}"
-    config  = YAML.load_file("access.yml")[site.to_s]
+    config  = YAML.safe_load_file("access.yml")[site.to_s]
     unless config
       raise "Unsupported target: #{site}"
     end

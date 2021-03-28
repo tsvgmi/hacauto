@@ -377,7 +377,7 @@ class SongStore
     @songs   = []
     @files.each do |file|
       if test(?s, file)
-        songs = YAML.load_file(file)
+        songs = YAML.safe_load_file(file)
         Plog.info "Reading #{songs.size} entries from #{file}"
         @songs += songs
       else
@@ -435,7 +435,7 @@ class SongStore
         return {}
       end
       if test(?f, url)
-        @songs[@curptr] = YAML.load_file(url)
+        @songs[@curptr] = YAML.safe_load_file(url)
       elsif url =~ /hopamchuan/
         sinfo = {href:url}
         @hac_source ||= HacSource.new(@options)
@@ -528,16 +528,18 @@ class HACAuto
     def rate_today
       options = _getOptions
       _connect_site do |spage|
-        spage.find_and_click_links('a.hot-today-item-song',
-                          '#contribute-rating-control', options)
+        spage.
+          find_and_click_links('a.hot-today-item-song',
+                               '#contribute-rating-control', options)
       end
     end
 
     def rate_week
       options = _getOptions
       _connect_site do |spage|
-        spage.find_and_click_song_links('div#weekly-monthly-list',
-                          '#contribute-rating-control', options)
+        spage.
+          find_and_click_song_links('div#weekly-monthly-list',
+                                    '#contribute-rating-control', options)
       end
     end
 
@@ -548,9 +550,10 @@ class HACAuto
           spage.goto("/")
           spage.click_and_wait("#recent-list-pagination li:nth-child(#{page})")
           spage.refresh
-          spage.find_and_click_song_links('div#recent-list',
-                            "#contribute-rating-control li:nth-child(#{level})",
-                                    options)
+          spage.
+            find_and_click_song_links('div#recent-list',
+                                      "#contribute-rating-control li:nth-child(#{level})",
+                                      options)
         end
       end
     end
@@ -560,9 +563,10 @@ class HACAuto
       hac_source = HacSource.new(options)
       path       = path.sub(/#{hac_source.base_url}/i, '')
       _each_page(path) do |spage|
-        spage.find_and_click_song_links('div.song-list',
-                          "#contribute-rating-control li:nth-child(#{level})",
-                                  options)
+        spage.
+          find_and_click_song_links('div.song-list',
+                                    "#contribute-rating-control li:nth-child(#{level})",
+                                    options)
       end
     end
 
@@ -686,7 +690,7 @@ class HACAuto
 
     def hav_load_songs(sfile)
       options = _getOptions
-      slist   = YAML.load_file(sfile)
+      slist   = YAML.safe_load_file(sfile)
       bar     = TTY::ProgressBar.new('Loading song [:bar] :percent', slist.size)
       slist.each do |sinfo|
         unless sinfo[:lyric]
@@ -882,7 +886,7 @@ class HACAuto
     def hac_chords(sfile, minc, maxc=nil)
       minc    = minc.to_i
       maxc    = maxc ? maxc.to_i : minc
-      content = YAML.load_file(sfile).values
+      content = YAML.safe_load_file(sfile).values
       result = content.select do |r|
         csize = r[:chords].split.size
         (csize >= minc) && (csize <= maxc)
@@ -905,7 +909,7 @@ class HACAuto
     def hac_download_lyrics_for_slist(slfile)
       options    = _getOptions
       hac_source = HacSource.new(options)
-      YAML.load_file(slfile).each do |e|
+      YAML.safe_load_file(slfile).each do |e|
         hrefs = e[:href].split('/')
         sno, sname, suser = hrefs[4], hrefs[5], hrefs[6]
         if suser
@@ -1039,7 +1043,7 @@ class HACAuto
       options[:site_filter] = 'hac'
       options[:src_url]     = url
       if test(?f, url)
-        slist  = YAML.load_file(url)
+        slist  = YAML.safe_load_file(url)
       else
         source = MusicSource.mk_source(url)
         slist, _nlist = _collect_and_filter do
@@ -1065,7 +1069,7 @@ class HACAuto
 
     # Find list of matching songs from HAV.  List is normally from NCT
     def hav_matching_songs(cfile)
-      slist, _nlist = HavSource.new.find_matching_songs(YAML.load_file(cfile))
+      slist, _nlist = HavSource.new.find_matching_songs(YAML.safe_load_file(cfile))
       _output_data(slist, _getOptions)
     end
 
@@ -1094,7 +1098,7 @@ class HACAuto
     def mylist(dir='./SLIST')
       total = 0
       fentries = Dir.glob("#{dir}/*.yml").map do |f|
-        content = YAML.load_file(f)
+        content = YAML.safe_load_file(f)
         fsize   = File.size(f)
         total  += content.size
         {name:f, fsize:fsize, count:content.size}

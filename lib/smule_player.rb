@@ -24,7 +24,7 @@ module SmuleAuto
       @options    = options
       @logger     = options[:logger] || PLogger.new(STDERR)
       if test(?f, @state_file)
-        config      = YAML.load_file(@state_file)
+        config      = YAML.safe_load_file(@state_file)
         if config[:clist]
           @clist      = @content.select_sids(config[:clist])
         end
@@ -322,8 +322,7 @@ EOM
         record_by: sitem[:record_by],
         comments:  psitem[:msgs].to_json,
       }
-      if (rec = Comment.first(sid:sitem[:sid])).nil?
-      else
+      unless (rec = Comment.first(sid:sitem[:sid])).nil?
         rec.update(data)
         rec.save_changes
       end

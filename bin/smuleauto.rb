@@ -107,7 +107,7 @@ module SmuleAuto
     def initialize(cfile)
       @cfile = cfile
       if test(?f, @cfile)
-        @content = YAML.load_file(@cfile)
+        @content = YAML.safe_load_file(@cfile)
       else
         @content = {}
       end

@@ -250,7 +250,7 @@ module SmuleAuto
         if info_file.is_a?(Hash)
           sinfo = info_file
         else
-          sinfo = YAML.load_file(info_file)
+          sinfo = YAML.safe_load_file(info_file)
         end
         SmuleSong.new(sinfo, options).
           check_and_download(media_file, user)
@@ -460,7 +460,7 @@ module SmuleAuto
     def play(spage)
       href = @info[:href].sub(/\/ensembles$/, '')
       spinner = TTY::Spinner.new("[:spinner] Loading ...",
-                                    format: :pulse_2)
+                                 format: :pulse_2)
       spinner.auto_spin      
 
       spage.goto(href)

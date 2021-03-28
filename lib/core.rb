@@ -5,6 +5,16 @@
 # $Id: core.rb 6 2010-11-26 10:59:34Z tvuong $
 #---------------------------------------------------------------------------
 #++
+
+class YAML
+  class << self
+    def safe_load_file(file, options={})
+      options[:filename] = file
+      load(File.read(file), options)
+    end
+  end
+end
+
 module ThorAddition
   def self.included(klass)
     klass.class_eval do
@@ -649,7 +659,7 @@ class Psyslog
 
 	@@glog = Syslog
 	@@glog.open(File.basename($0), Syslog::LOG_PID|Syslog::LOG_CONS,
-		     Syslog::LOG_DAEMON)
+                    Syslog::LOG_DAEMON)
       end
       @@glog
     end
@@ -691,7 +701,7 @@ module YamlConfig
   def configLoad(cfile, index = nil)
     @_ycfile = cfile
     if File.readable?(cfile)
-      result = YAML.load(File.read(cfile))
+      result = YAML.safe_load_file(cfile)
       return index ? result[index] : result
     else
       nil
@@ -701,7 +711,7 @@ module YamlConfig
   def configSave(obj, index = nil)
     if index
       if File.readable?(@_ycfile)
-        config = YAML.load(File.read(@_ycfile))
+        config = YAML.safe_load_file(@_ycfile)
       else
         config = {}
       end
@@ -727,7 +737,7 @@ class YmlConfig
 
     @cfile  = cfile
     if File.readable?(cfile)
-      @config = YAML.load(File.read(cfile))
+      @config = YAML.safe_load(cfile)
     else
       @config = default
     end
