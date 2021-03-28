@@ -725,7 +725,7 @@ Filters is the list of SQL's into into DB.
       cli_wrap do
         woptions = writable_options
         logger   = nil
-        if value = woptions[:logfile]
+        if !(value = woptions[:logfile]).nil?
           woptions[:logger] = PLogger.new(value)
         end
 

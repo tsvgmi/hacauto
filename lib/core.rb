@@ -185,7 +185,6 @@ module Cli
     result
   end
 
-  public
   # Print the message on cli usage (flag/method) and exit script
   def cliUsage
     $stderr.puts "#{File.basename($0)} " +
@@ -217,7 +216,7 @@ module Cli
   def self.getInputTemplate(*template)
     maxprlen, maxdeflen = 0, 0
     template.each do |alist|
-      type, flag, prompt, defval = alist
+      _type, _flag, prompt, defval = alist
       maxprlen  = prompt.length if maxprlen < prompt.length
       maxdeflen = defval.length if maxdeflen < defval.length
     end
@@ -293,7 +292,6 @@ module Cli
   # Print the usage message for the class (instance and class methods)
   # to be used in display help
   def self.classUsage(klass)
-    mcmd = File.basename($0)
     defs = {}
     mlist = klass.instance_methods(false).grep(/^[^_]/).map do |amethod|
       ["", amethod, klass.instance_method(amethod).arity]
@@ -305,11 +303,12 @@ module Cli
       if defs[f]
         $stderr.puts "  - #{c}#{f}(#{defs[f]})"
       else
-        vlist = if (m < 0)
-          Array.new(-m, "v").join(", ") + ", ..."
-        else
-          Array.new(m, "v").join(", ")
-        end
+        vlist =
+          if (m < 0)
+            Array.new(-m, "v").join(", ") + ", ..."
+          else
+            Array.new(m, "v").join(", ")
+          end
         $stderr.puts "  - #{c}#{f}(#{vlist})"
       end
     end
@@ -347,7 +346,7 @@ module Cli
   end
 
   # Map output to shell (at exit) for ruby class output
-  def self.setShellResult(result, sep=' ')
+  def self.setShellResult(result)
     if result.kind_of?(TrueClass)
       exit(0)
     elsif result.kind_of?(FalseClass)
@@ -361,7 +360,7 @@ module Cli
   end
 
   def self.showOptions(options)
-    options.map do |long, short, type, default|
+    options.map do |long, short, type, _default|
       if type == 1
         "[#{long}|#{short} value]"
       else
@@ -503,7 +502,7 @@ module Kernel
 
   # Check if class is main CLI facing class and extend cli support
   # module to it
-  def extendCli(file)
+  def extendCli(_file)
     #if (file == $0)
       include Cli
       extend  Cli
@@ -538,11 +537,12 @@ class PLogger < Logger
   end
 
   def _fmt_obj(obj)
-    msg = if obj[:_ofmt] == 'Y'
-      obj.to_yaml
-    else
-      obj.inspect
-    end
+    msg =
+      if obj[:_ofmt] == 'Y'
+        obj.to_yaml
+      else
+        obj.inspect
+      end
     @clevel = 3
     yield msg
     @clevel = 0
@@ -596,17 +596,22 @@ class Plog
           logger.simple = true
         end
       end
-      logger.level = log_level && !log_level.empty? ? log_level.to_i : Logger::INFO
+      if log_level && !log_level.empty?
+        logger.level = log_level.to_i
+      else
+        logger.level = Logger::INFO
+      end
       logger.datetime_format = @@timestampFmt
       @@xglog = logger
     end
 
     def _fmt_obj(obj)
-      msg = if obj[:_ofmt] == 'Y'
-        obj.to_yaml
-      else
-        obj.inspect
-      end
+      msg =
+        if obj[:_ofmt] == 'Y'
+          obj.to_yaml
+        else
+          obj.inspect
+        end
       myLogs.clevel = 3
       yield msg
       myLogs.clevel = 0

@@ -91,29 +91,18 @@ class SDriver
     #capabilities = Selenium::WebDriver::Remote::W3C::Capabilities.firefox(accept_insecure_certs: true)
     capabilities = Selenium::WebDriver::Remote::Capabilities.firefox(accept_insecure_certs: true)
 
-    if true
-      foptions = Selenium::WebDriver::Firefox::Options.new(
-        prefs: {
-          "browser.download.folderList"            => 1,
-          "browser.download.dir"                   => Dir.pwd,
-          "browser.download.lastDir"               => Dir.pwd,
-          "browser.download.defaultFolder"         => Dir.pwd,
-          "browser.download.useDownloadDir"        => true,
-          "browser.helperApps.neverAsk.saveToDisk" => "audio/m4a",
-        }
-      )
-      @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
-                                      options:foptions)
-    else
-      profile = Selenium::WebDriver::Firefox::Profile.new
-      profile["browser.download.folderList"]               = 2
-      profile["browser.download.manager.showWhenStarting"] = false
-      profile["browser.download.dir"]                      = Dir.pwd
-      profile["browser.helperApps.alwaysAsk.force"]        = false
-      profile["browser.helperApps.neverAsk.saveToDisk"]    = "audio/m4a"
-      @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
-                                        profile:profile)
-    end
+    foptions = Selenium::WebDriver::Firefox::Options.new(
+      prefs: {
+        "browser.download.folderList"            => 1,
+        "browser.download.dir"                   => Dir.pwd,
+        "browser.download.lastDir"               => Dir.pwd,
+        "browser.download.defaultFolder"         => Dir.pwd,
+        "browser.download.useDownloadDir"        => true,
+        "browser.helperApps.neverAsk.saveToDisk" => "audio/m4a",
+      }
+    )
+    @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
+                                    options:foptions)
     @driver.navigate.to(@url)
     sleep(1)
   end
@@ -124,7 +113,7 @@ class SDriver
       index    = options[:index] ||= 0
       elements = @driver.find_elements(:css, selector)
       Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
-      unless element = elements[index]
+      if (element = elements[index]).nil?
         Plog.error "Element #{selector}[#{index}] not found"
         return false
       end
@@ -148,12 +137,10 @@ class SDriver
         Plog.error "Element #{selector}[#{index}] not found"
         return false
       end
-      #loc = element.location
-      #element.move_to_location(loc.x, loc.y)
       element.click
       sleep(wtime) if wtime > 0
     rescue => errmsg
-      errmsg
+      Elog.error(errmsg)
       return false
     end
     true
@@ -219,7 +206,7 @@ class SiteConnect
 
     def connect_smule(options)
       sdriver = SDriver.new(options[:url], options)
-      if !options[:skip_auth] && auth = options[:auth]
+      if !options[:skip_auth] && !(auth = options[:auth]).nil?
         sdriver.goto("/user/login")
         identity, password = auth.split(':')
         sleep(3)
@@ -234,7 +221,7 @@ class SiteConnect
 
     def connect_singsalon(options)
       sdriver = SDriver.new('https://sing.salon', options)
-      if !options[:skip_auth] && auth = options[:auth]
+      if !options[:skip_auth] && !(auth = options[:auth]).nil?
         identity, password = auth.split(':')
         sdriver.click_and_wait('#elUserSignIn')
         sdriver.type('input[name="auth"]', identity + "\n")

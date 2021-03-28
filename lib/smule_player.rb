@@ -157,23 +157,24 @@ module SmuleAuto
 
     def sort_selection(cselect)
       @logger.info("Resort based on #{@order}")
-      cselect = case @order
-      when /^random/
-        cselect.shuffle
-      when /^play/
-        cselect.sort_by{|v| v[:listens]}
-      when /^love/
-        cselect.sort_by{|v| v[:loves]}.reverse
-      when /^star/
-        cselect.sort_by{|v| v[:stars].to_i}.reverse
-      when /^date/
-        cselect.sort_by{|v| created_value(v[:created])}.reverse
-      when /^title/
-        cselect.sort_by{|v| v[:stitle]}
-      else
-        @logger.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
-        cselect
-      end
+      cselect = 
+        case @order
+        when /^random/
+          cselect.shuffle
+        when /^play/
+          cselect.sort_by{|v| v[:listens]}
+        when /^love/
+          cselect.sort_by{|v| v[:loves]}.reverse
+        when /^star/
+          cselect.sort_by{|v| v[:stars].to_i}.reverse
+        when /^date/
+          cselect.sort_by{|v| created_value(v[:created])}.reverse
+        when /^title/
+          cselect.sort_by{|v| v[:stitle]}
+        else
+          @logger.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
+          cselect
+        end
       if @order =~ /\.d$/
         cselect = cselect.reverse
       end
@@ -279,7 +280,7 @@ EOM
       @prompt = "lnswx*+= (#{@playlist.filter.inspect})>"
     end
 
-    def play_asong(sitem, prompt)
+    def play_asong(sitem)
       res = {duration:0}
 
       File.open(@csong_file, 'w') do |fod|
@@ -293,13 +294,13 @@ EOM
       elsif psecs <= 0
         return res
       end
-      if plength = @roptions[:play_length] 
+      if !(plength = @roptions[:play_length] ).nil?
         plength = plength.to_i
       end
-      duration = if plength = @roptions[:play_length] 
-        [plength.to_i, psecs].min
+      if !(plength = @roptions[:play_length] ).nil?
+        duration = [plength.to_i, psecs].min
       else
-        psecs
+        duration = psecs
       end
 
       spage = @scanner.spage
@@ -324,7 +325,7 @@ EOM
         record_by: sitem[:record_by],
         comments:  psitem[:msgs].to_json,
       }
-      if rec = Comment.first(sid:sitem[:sid])
+      if !(rec = Comment.first(sid:sitem[:sid])).nil?
         rec.update(data)
         rec.save_changes
       else
@@ -342,7 +343,6 @@ EOM
     # being in run loop.  Code could be copied here for testing as the function
     # is redefineable at runtime with 'R' option
     def browser_op(sitem, psitem, *operations)
-      spage = @scanner.spage
       operations.each do |data|
         case data
         when 'M'
@@ -354,9 +354,9 @@ EOM
     end
 
     # Run the code and protect all exception from killing the menu
-    def _menu_eval(*args)
+    def _menu_eval
       begin
-        yield *args
+        yield
       rescue => errmsg
         prompt = TTY::Prompt.new
         @logger.dump_error(errmsg:errmsg, args:args, trace:errmsg.backtrace)
@@ -409,9 +409,9 @@ EOH
       while true
         # Update into db last one played
         @content.update_song(sitem) if sitem
-        if sitem = @playlist.next_song
+        if !(sitem = @playlist.next_song).nil?
           _list_show(sitem, nil, @playlist.toplay_list, 0, 10)
-          psitem = play_asong(sitem, prompt)
+          psitem = play_asong(sitem)
           if (duration = psitem[:duration]) <= 0
             next
           end
@@ -543,7 +543,7 @@ EOH
         end
 
       when 'h'
-        if url = prompt.ask('URL:')
+        if !(url = prompt.ask('URL:')).nil?
           newsongs = SmuleSong.update_from_url(url, update:true)
           @playlist.insert(*newsongs)
           return [:next, true]

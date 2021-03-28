@@ -26,7 +26,7 @@ module SmuleAuto
     end
     
     def [](kval)
-      unless rec = @dataset.where(@key => kval).first
+      if (rec = @dataset.where(@key => kval).first).nil?
         @dataset.insert_conflict(:replace).insert(@key => kval)
       end
       rec ||= @dataset.where(@key => kval).first
@@ -44,9 +44,10 @@ module SmuleAuto
     end
 
     def initialize(user, cdir = '.')
-      create_db unless test(?f, DBNAME)
+      dbname = File.join(cdir, DBNAME)
+      create_db unless test(?f, dbname)
       @user     = user
-      @DB       = Sequel.sqlite(DBNAME)
+      @DB       = Sequel.sqlite(dbname)
       Sequel::Model.plugin :insert_conflict
       YAML.load_file('etc/db_models.yml').each do |model, minfo|
         klass = Class.new(Sequel::Model)
@@ -132,7 +133,7 @@ module SmuleAuto
         recs = recs.where(Sequel.lit(filters))
       end
       Plog.dump_info(recs:recs, options:options, rcount:recs.count)
-      progress_set(recs) do |r, bar|
+      progress_set(recs) do |r, _bar|
         yield r[:sid], r
         true
       end
@@ -174,7 +175,7 @@ module SmuleAuto
       songtags_file = "data/songtags2.yml"
       ycontent      = YAML.load_file(content_file)
       bar           = TTY::ProgressBar.new("Content [:bar] :percent", total: ycontent.size)
-      ycontent.each do |sid, sinfo|
+      ycontent.each do |_sid, sinfo|
         irec = sinfo.dup
         irec.delete(:m4tag)
         irec[:record_by] = irec[:record_by]
@@ -224,7 +225,7 @@ module SmuleAuto
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
-        if c = @all_content.where(sid:r[:sid]).first
+        if @all_content.where(sid:r[:sid]).first
           updset = {
             listens:   r[:listens],
             loves:     r[:loves],
@@ -304,14 +305,14 @@ module SmuleAuto
         rank[key][:isfavs]  += r[:isfavs].to_i
         rank[key][:oldfavs] += r[:oldfavs].to_i
       end
-      rank.each do |singer, sinfo|
+      rank.each do |_singer, sinfo|
         score = sinfo[:count] + sinfo[:isfavs]*10 + sinfo[:oldfavs]*5 +
           sinfo[:loves]*0.2 +
           sinfo[:listens]/20.0 + sinfo[:stars]*0.1
         sinfo[:score] = score
       end
-      rank.to_a.select{|k, v| !k.empty? && k != @user}.
-        sort_by{|singer, sinfo| sinfo[:score] * -1}[0..limit-1]
+      rank.to_a.select{|k, _v| !k.empty? && k != @user}.
+        sort_by{|_singer, sinfo| sinfo[:score] * -1}[0..limit-1]
     end
   end
 
@@ -322,7 +323,6 @@ module SmuleAuto
       def _edit_file(records, format='json')
         require 'tempfile'
 
-        wset    = records.map{|r| r.to_json}.join("\n")
         newfile = Tempfile.new('new')
         bakfile = Tempfile.new('bak')
 
@@ -387,7 +387,8 @@ changes back into the database
     def edit_tag(user)
       cli_wrap do
         tdir           = _tdir_check(options[:data_dir])
-        content        = SmuleDB.instance(user, tdir)
+        # Must call once to init db connection/model
+        SmuleDB.instance(user, tdir)
         records        = SongTag.all.sort_by{|r| r[:name]}.map{|r| r.values}
         insset, delset = _edit_file(records, options[:format])
         if delset.size > 0
@@ -406,7 +407,8 @@ changes back into the database
     def edit_singer(user)
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
-        content = SmuleDB.instance(user, tdir)
+        # Must call once to init db connection/model
+        SmuleDB.instance(user, tdir)
         records = Singer.all.sort_by{|r| r[:name]}.map{|r| r.values}
         insset, delset = _edit_file(records, options[:format])
         if delset.size > 0
