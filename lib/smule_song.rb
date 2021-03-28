@@ -44,7 +44,7 @@ module SmuleAuto
       require 'listen'
 
       @listener = Listen.to(@watch_dir + '/cache2') do
-        |modified, added, removed|
+        |_modified, added, _removed|
         change_handler(added) if added.size > 0
       end
       @listener.start
@@ -67,12 +67,13 @@ module SmuleAuto
       sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
     }
 
-    def initialize(sdriver)
+    def initialize(_sdriver)
       super
     end
 
     def click_smule_page(elem, delay=2)
-      unless elem = Locators[elem]
+      elem = Locators[elem]
+      unless elem
         raise "#{elem} not defined in Locators"
       end
       clickit(elem[0], wait:delay, index:elem[1], move:true)
@@ -127,7 +128,8 @@ module SmuleAuto
 
     def star_song(href)
       goto(href, 3)
-      unless elem = Locators[:sc_star]
+      elem = Locators[:sc_star]
+      unless elem
         raise "#{elem} not defined in Locators"
       end
 
@@ -167,7 +169,8 @@ module SmuleAuto
           if css(play_locator).size == 2
             sleep_round = 0
             while true
-              if endtime = css(play_locator)[1]
+              endtime = css(play_locator)[1]
+              if endtime
                 if endtime.text != "00:00"
                   if options[:href]
                     if sleep_round > 2
@@ -340,7 +343,7 @@ module SmuleAuto
       @info[key]
     end
 
-    def [](key, value)
+    def []=(key, value)
       @info[key] = value
     end
 
@@ -368,7 +371,8 @@ module SmuleAuto
         lyrics:        lyrics,
       }
       if perf[:child_count] <= 0
-        if operf = perf[:other_performers][0]
+        operf = perf[:other_performers][0]
+        if operf
           output.update(
             other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
             record_by:   [perf[:performed_by], operf[:handle]].join(','),
@@ -403,18 +407,21 @@ module SmuleAuto
       document = Nokogiri::HTML(source)
       asset_str    = nil
 
-      if stream = document.at('meta[name="twitter:player:stream"]')
+      stream = document.at('meta[name="twitter:player:stream"]')
+      if stream
         asset_str = document.css('head script')[0].text.split("\n").grep(/Recording:/)[0].sub(/^\s*Recording: /, '')[0..-2]
       elsif stream = document.css('script')[0]
-        if asset_str = stream.text.split("\n").grep(/^\s+Recording: /)[0]
+        asset_str = stream.text.split("\n").grep(/^\s+Recording: /)[0]
+        if asset_str
           asset_str = asset_str.sub(/^\s+Recording: /, '').sub(/,$/, '')
         end
       end
       unless asset_str
         return {}
       end
-      res = JSON.parse(asset_str, symbolize_names:true) || {}
-      unless perf = res[:performance]
+      res  = JSON.parse(asset_str, symbolize_names:true) || {}
+      perf = res[:performance]
+      unless perf
         @logger.dump_error(msg:"No performance data found", olink:olink)
         return {}
       end
@@ -511,7 +518,8 @@ module SmuleAuto
     end
 
     def is_mp4_tagged?(excuser=nil)
-      unless wset = mp4_tags
+      wset = mp4_tags
+      unless wset
         return false
       end
       album   = @info[:created].strftime("Smule-%Y.%m")
@@ -565,7 +573,8 @@ module SmuleAuto
         command += " --year '#{release}'"
         command += " --comment '#{comment}'"
 
-        if lyric = @info[:lyrics] || self.get_asset[:lyrics]
+        lyric = @info[:lyrics] || self.get_asset[:lyrics]
+        if lyric
           tmpf = Tempfile.new("lyric")
           tmpf.puts(lyric)
           tmpf.close
@@ -620,7 +629,6 @@ module SmuleAuto
 
     def self.collect_collabs(user, days)
       days        = days.to_i
-      last_date   = (Time.now - days*24*3600)
       collab_list = Performance.
         where(Sequel.like(:record_by, user)).
         where(Sequel.like(:href, '%/ensembles')).
@@ -631,7 +639,7 @@ module SmuleAuto
         return []
       end
       result = []
-      progress_set(collab_list, "Checking collabs") do |sinfo, bar|
+      progress_set(collab_list, "Checking collabs") do |sinfo, _bar|
         result.concat(SmuleSong.new(sinfo, verbose:true).get_ensemble_asset)
         true
       end
