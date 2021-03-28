@@ -140,7 +140,7 @@ class SDriver
       element.click
       sleep(wtime) if wtime > 0
     rescue => errmsg
-      Elog.error(errmsg)
+      Plog.error(errmsg)
       return false
     end
     true

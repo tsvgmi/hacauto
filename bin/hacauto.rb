@@ -286,7 +286,7 @@ EOH
   def create_song(spage, sinfo, options={})
     surl = sinfo[:href]
     unless sinfo[:lyric]
-      if info = get_page_lyric(surl)
+      if !(info = get_page_lyric(surl)).nil?
         unless sinfo[:lyrics]
           return nil
         end
@@ -389,7 +389,6 @@ class SongStore
     elsif @options[:random]
       @songs = @songs.sort_by{rand}
     end
-    self
   end
 
   def save
@@ -504,7 +503,7 @@ class HACAuto
 
     def _each_page(link)
       options = _getOptions
-      if value = options[:page]
+      if !(value = options[:page]).nil?
         page, incr = value.split(',')
         page = value.to_i
         incr = (incr || 1).to_i
@@ -603,9 +602,7 @@ class HACAuto
     end
 
     def approve_versions(user)
-      options = _getOptions
       _each_page("/profile/posted/#{user}") do |spage|
-        nlinks = []
         sitems = spage.page.css(".song-item")
         sitems.each do |sitem|
           purl   = sitem.css('a.song-poster')[0]['href']

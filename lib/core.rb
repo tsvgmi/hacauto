@@ -590,7 +590,7 @@ class Plog
       log_level, *logopts = logspec.split(':')
       logopts.each do |anopt|
         oname  = anopt[0]
-        ovalue = anopt[1..-1]
+        #ovalue = anopt[1..-1]
         case oname
         when 's'
           logger.simple = true

@@ -45,9 +45,8 @@ module SmuleAuto
 
     def initialize(user, cdir = '.')
       dbname = File.join(cdir, DBNAME)
-      create_db unless test(?f, dbname)
-      @user     = user
-      @DB       = Sequel.sqlite(dbname)
+      @user  = user
+      @DB    = Sequel.sqlite(dbname)
       Sequel::Model.plugin :insert_conflict
       YAML.load_file('etc/db_models.yml').each do |model, minfo|
         klass = Class.new(Sequel::Model)
