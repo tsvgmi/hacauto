@@ -175,7 +175,7 @@ class GuitarTwitt < MusicSource
       lyric:  lyric,
       title:  blob.dig('tab', 'song_name'),
       artist: (blob.dig('tab', 'recording', 'recording_artists') || []).
-                map{ |r| r.dig('artist', 'name') }.join(', '),
+                map { |r| r.dig('artist', 'name') }.join(', '),
       author: blob.dig('tab', 'artist_name'),
       source: url,
     }
@@ -208,7 +208,7 @@ class ChordsWorld < MusicSource
     page  = get_page_curl(url)
     blob  = page.css('.contentprotect')
     lyric = merge_chord_lines(blob.text)
-    lyric = lyric.split("\n").select{ |l| l !~ /adsbygoogle/ }.join("\n")
+    lyric = lyric.split("\n").select { |l| l !~ /adsbygoogle/ }.join("\n")
     etitle =  page.css('.entry-title').text
     artist, title = etitle.split(/\s+-\s+/, 2)
     {
@@ -253,7 +253,7 @@ class TabGuitarSource < MusicSource
       lyric:  lyric,
       title:  blob.dig('tab', 'song_name'),
       artist: (blob.dig('tab', 'recording', 'recording_artists') || []).
-                map{ |r| r.dig('artist', 'name') }.join(', '),
+                map { |r| r.dig('artist', 'name') }.join(', '),
       author: blob.dig('tab', 'artist_name'),
       source: url,
     }
@@ -391,7 +391,7 @@ class KeengSource < MusicSource
         }
       end
     end
-    links.select{ |r| r[:href] !~ /album/ }
+    links.select { |r| r[:href] !~ /album/ }
   end
 end
 
@@ -537,7 +537,7 @@ class HahSource < MusicSource
     page  = get_page(url)
     page.css('#wide .pre script').remove
 
-    titles = page.css('.lyrics-title a').map{ |r| r.text.strip }
+    titles = page.css('.lyrics-title a').map { |r| r.text.strip }
     title  = titles[0]
     author = titles[1]
     genre  = titles[-1]
@@ -565,7 +565,7 @@ class HahSource < MusicSource
 
     guide = page.css('.huong-dan-dem-hat').text.strip
 
-    lyric = page.css('.pLgn').map{ |r| r.text.strip }.join("\n")
+    lyric = page.css('.pLgn').map { |r| r.text.strip }.join("\n")
     if lyric.empty?
       lyric = page.css('#wide .pre').text
     end
@@ -774,7 +774,7 @@ class ZingSource < MusicSource
         sinfo = sitem.css('a.fn-name')[0]
         href  = base_url + sinfo['href']
         name  = sinfo.text.strip
-        artist = sitem.css('.fn-artist_list a').map{ |i| i.text.strip }.join(', ')
+        artist = sitem.css('.fn-artist_list a').map { |i| i.text.strip }.join(', ')
         {
           name:   name,
           artist: artist,
@@ -807,7 +807,7 @@ class ZingSource < MusicSource
           }
         end
       end
-      slist = slist.select{ |r| r[:href] !~ /album/ }
+      slist = slist.select { |r| r[:href] !~ /album/ }
     else
       Plog.error "Unsupported URL for zing: #{url}"
     end
@@ -960,10 +960,10 @@ class HacSource < MusicSource
     Plog.info("Extract lyrics from #{url}")
     page      = get_page(url)
     lnote     = page.css('.song-lyric-note .chord_lyric_line').
-                    map{ |r| r.text.strip }.join("\n").strip
+                    map { |r| r.text.strip }.join("\n").strip
     lnote     = _fix_chords(lnote)
     lyric     = page.css('#song-lyric > .pre > .chord_lyric_line').
-                    map{ |r| r.text.gsub(/\r/, '').gsub(/\s+\]/, ']').strip }.join("\n")
+                    map { |r| r.text.gsub(/\r/, '').gsub(/\s+\]/, ']').strip }.join("\n")
     lyric     = _fix_chords(lyric)
     artist    = page.css('.perform-singer-list .author-item').map { |r| r.text.strip }
     author    = page.css("#song-detail-info tr")[1].css("td")[0].text.strip
@@ -1012,7 +1012,7 @@ class HacSource < MusicSource
     url   = "#{@base_url}/user/month"
     Plog.dump_info(url:url)
     page  = get_page_curl(url)
-    tlist = page.css('td .one-line').map{ |e| e['href'].split('/').last }[0..count-1]
+    tlist = page.css('td .one-line').map { |e| e['href'].split('/').last }[0..count-1]
     Plog.dump_info(tlist:tlist)
     tlist
   end
@@ -1075,7 +1075,7 @@ class HacSource < MusicSource
       sitems.each do |atrack|
         aref    = atrack.css('a.song-title')[0]
         artist  = atrack.css('.song-singers').
-          map{ |r| r.text.strip.sub(/^-\s+/, '').split(/\s*,\s*/) }.
+          map { |r| r.text.strip.sub(/^-\s+/, '').split(/\s*,\s*/) }.
           flatten.join(', ')
         preview = atrack.css('.song-preview-lyric')[0].text.strip
         name    = aref.text.strip
@@ -1084,7 +1084,7 @@ class HacSource < MusicSource
           href:    aref['href'],
           artist:  artist,
           preview: preview,
-          chords:  atrack.css('.song-chords span').map{ |v| v.text.strip }.join(' '),
+          chords:  atrack.css('.song-chords span').map { |v| v.text.strip }.join(' '),
         }
         if block_given?
           yield info

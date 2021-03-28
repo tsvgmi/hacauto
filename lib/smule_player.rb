@@ -57,7 +57,7 @@ module SmuleAuto
         filter:  @filter,
         order:   @order,
         listpos: @listpos,
-        clist:   @clist.map{ |r| r[:sid] },
+        clist:   @clist.map { |r| r[:sid] },
       }
       open(@state_file, "w") do |fod|
         fod.puts(data.to_yaml)
@@ -162,15 +162,15 @@ module SmuleAuto
         when /^random/
           cselect.shuffle
         when /^play/
-          cselect.sort_by{ |v| v[:listens]}
+          cselect.sort_by { |v| v[:listens]}
         when /^love/
-          cselect.sort_by{ |v| v[:loves]}.reverse
+          cselect.sort_by { |v| v[:loves]}.reverse
         when /^star/
-          cselect.sort_by{ |v| v[:stars].to_i}.reverse
+          cselect.sort_by { |v| v[:stars].to_i}.reverse
         when /^date/
-          cselect.sort_by{ |v| created_value(v[:created])}.reverse
+          cselect.sort_by { |v| created_value(v[:created])}.reverse
         when /^title/
-          cselect.sort_by{ |v| v[:stitle]}
+          cselect.sort_by { |v| v[:stitle]}
         else
           @logger.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
           cselect
@@ -529,7 +529,7 @@ EOH
       when 'f'                            # Set filter
         param = prompt.ask('Filter value?', default:'')
         _menu_eval do
-          @playlist.filter = Hash[param.split.map{ |fs| fs.split('=') }]
+          @playlist.filter = Hash[param.split.map { |fs| fs.split('=') }]
         end
         _setprompt
       when 'F'                              # Set as favorite and tag

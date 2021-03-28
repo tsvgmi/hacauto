@@ -359,7 +359,7 @@ module SmuleAuto
         fset = []
         %w(following followers).each do |agroup|
           users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
-          users = users['list'].map{ |r| 
+          users = users['list'].map { |r| 
             {
               name:       r['handle'],
               avatar:     r['pic_url'],
@@ -440,10 +440,10 @@ it left off from the previous run.
         following = content.singers.where(following:true).as_hash(:name)
         bar = TTY::ProgressBar.new("Following [:bar] :percent",
                                    total:Performance.count)
-        Performance.where(Sequel.lit 'record_by like ?', "%#{user}%").
+        Performance.where(Sequel.lit('record_by like ?', "%#{user}%")).
                           each do |sinfo|
           singers = sinfo[:record_by].split(',')
-          singers.select{ |r| r != user }.each do |osinger|
+          singers.select { |r| r != user }.each do |osinger|
             unless (finfo = following[osinger]).nil?
               finfo[:last_join] ||= Time.at(0)
               finfo[:last_join] = [created_value(sinfo[:created]),
@@ -464,7 +464,7 @@ it left off from the previous run.
             finfo[:last_days] = (Time.now - finfo[:last_join])/(24*3600)
           end
         end
-        following.sort_by{ |_k, v| v[:last_days] || 9999 }.each do |asinger, finfo|
+        following.sort_by { |_k, v| v[:last_days] || 9999 }.each do |asinger, finfo|
           puts "%-20.20s - %3d songs, %3d favs, %4d days, %s" %
             [asinger, finfo[:songs] || 0,
              finfo[:favs] || 0,
@@ -597,35 +597,34 @@ Filters is the list of SQL's into into DB.
           opened[r[:stitle]] = true
         end
 
-        wset = Performance.where(Sequel.lit 'record_by like ?', "%#{user}%")
+        wset = Performance.where(Sequel.lit('record_by like ?', "%#{user}%"))
         wset = wset.order(:created).
           join_table(:left, :song_tags, name: :stitle)
 
         if filter.size > 0
           wset = wset.where(Sequel.lit(filter.join(' ')))
         end
-        if options[:favs]
-          wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1'))
-        end
+        wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1')) if options[:fav]
         unless (value = options[:tags]).nil?
-          wset = wset.where(Sequel.lit 'tags like ?', "%#{value}%")
+          wset = wset.where(Sequel.lit('tags like ?', "%#{value}%"))
         end
         unless (value = options[:record_by]).nil?
-          wset = wset.where(Sequel.lit 'record_by like ?', "%#{value}%")
+          wset = wset.where(Sequel.lit('record_by like ?', "%#{value}%"))
         end
 
         unless (title = options[:title]).nil?
-          wset = wset.where(Sequel.lit 'stitle like ?', "%#{title}%")
+          wset = wset.where(Sequel.lit('stitle like ?', "%#{title}%"))
         end
 
         Plog.dump(wset:wset)
         topen = {}
         wset.all.each do |r|
           next if opened[r[:stitle]]
+
           topen[r[:stitle]] = [r[:created], r[:tags]]
         end
         table = []
-        topen.sort_by{ |_k, v| v[0]}.each do |name, sinfo|
+        topen.sort_by { |_k, v| v[0] }.each do |name, sinfo|
           table << [sinfo[0], name, sinfo[1]]
         end
         print_table(table)
@@ -638,11 +637,11 @@ Filters is the list of SQL's into into DB.
       cli_wrap do
         _tdir_check
         SmuleDB.instance(user, options[:data_dir])
-        wset    = Comment.where(Sequel.lit "record_by like '%#{user}%'")
+        wset    = Comment.where(Sequel.lit("record_by like '%#{user}%'"))
         if filter.size > 0
           wset = wset.where(Sequel.lit(filter.join(' ')))
         end
-        wset.all.map{ |r| r.values }.to_yaml
+        wset.all.map { |r| r.values }.to_yaml
         wset.each do |sinfo|
           puts "\n%-60.60s %s" % [sinfo[:stitle], sinfo[:record_by]]
           JSON.parse(sinfo[:comments]).each do |cuser, msg|
@@ -676,8 +675,8 @@ Filters is the list of SQL's into into DB.
         unless (topc = woptions[:top]).nil?
           topc += exclude.size
           singers = content.top_partners(topc, woptions).
-            map{ |k, _v| k }[options[:offset]..-1].
-            select{ |r| !exclude.include?(r) }
+            map    { |k, _v| k }[options[:offset]..-1].
+            select { |r| !exclude.include?(r) }
           @logger.dump_info(singers:singers)
         end
         limit    = woptions[:limit]
@@ -706,7 +705,7 @@ Filters is the list of SQL's into into DB.
           end
         end
         table = []
-        count.to_a.sort_by{ |_u, c| c}.each do |u, c|
+        count.to_a.sort_by { |_u, c| c }.each do |u, c|
           table << [u, c]
         end
         print_table(table)
