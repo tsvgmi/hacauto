@@ -62,7 +62,7 @@ class SPage < SelPage
     limit = (options[:limit] || 1000).to_i
     cwait = options[:click_wait].to_i
     unless options[:force]
-      links = links.select {|r| !@clog.was_clicked?(@auser, r, rselector)}
+      links = links.select { |r| !@clog.was_clicked?(@auser, r, rselector)}
     end
     if links.size <= 0
       return
@@ -386,7 +386,7 @@ class SongStore
       end
     end
     if @options[:pcount]
-      @songs = @songs.sort_by{|e| e[:pcount] || 0}.reverse
+      @songs = @songs.sort_by{ |e| e[:pcount] || 0}.reverse
     elsif @options[:random]
       @songs = @songs.sort_by{rand}
     end
@@ -734,7 +734,7 @@ class HACAuto
       options = _getOptions
       slist   = yield
       if slist && (slist[0] || {})[:href]
-        slist   = slist.uniq {|r| r[:href]}
+        slist   = slist.uniq { |r| r[:href]}
       end
 
       Plog.info "Filter against HAC current content"
@@ -799,7 +799,7 @@ class HACAuto
           raise "You must give a numeric list to update"
         end
         curlist = source.playlist("playlist/v/#{plname}").
-                  map {|r| r[:href].split('/')[4]}
+                  map { |r| r[:href].split('/')[4]}
       end
       slist = slist.select do |sentry|
         sname, surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
@@ -875,7 +875,7 @@ class HACAuto
       options = _getOptions
       slist   = []
       _connect_site(:zing) do |spage|
-        slist, nlist = _collect_and_filter do
+        slist, _nlist = _collect_and_filter do
           ZingSource.new.browser_song_list(spage, url, options)
         end
       end
@@ -969,7 +969,7 @@ class HACAuto
       checked_lists = []
       last_time = Time.at(0)
       if test(?s, ofile)
-        notified = YAML.load_stream(File.open(ofile)).map{|r| r[:name]}
+        notified = YAML.load_stream(File.open(ofile)).map{ |r| r[:name]}
       else
         notified = []
       end
@@ -980,7 +980,7 @@ class HACAuto
           source.song_list(url).each do |r|
             if r[:href] =~ /playlist/
               unless checked_lists.include?(r[:href])
-                mcontent += source.song_list(r[:href]).select{|r| r[:href] =~ /bai-hat/}
+                mcontent += source.song_list(r[:href]).select{ |r2| r2[:href] =~ /bai-hat/}
                 checked_lists << r
               end
             elsif r[:href] =~ /bai-hat/
@@ -988,7 +988,7 @@ class HACAuto
             end
           end
           last_time = Time.now
-          mcontent.delete_if{|r| notified.include?(r[:name])}
+          mcontent.delete_if{ |r| notified.include?(r[:name])}
         end
         if mcontent.size > 0
           Plog.info("Checking #{mcontent.size} entries")
@@ -1005,7 +1005,7 @@ class HACAuto
             end
           end
 
-          slist, nlist = HacSource.new.find_matching_songs(mcontent)
+          _slist, nlist = HacSource.new.find_matching_songs(mcontent)
           puts nlist.to_yaml
           Plog.info("Waiting for 60s")
           sleep(60)
@@ -1031,7 +1031,7 @@ class HACAuto
       slist   = File.read(file).split("\n").map do |r|
         {name: r.sub(/,.*$/,'')}
       end
-      slist, nlist = HacSource.new(options).find_matching_songs(slist)
+      slist, _nlist = HacSource.new(options).find_matching_songs(slist)
       _post_playlist(plname, slist, options)
     end
 
@@ -1045,7 +1045,7 @@ class HACAuto
         slist  = YAML.load_file(url)
       else
         source = MusicSource.mk_source(url)
-        slist, nlist = _collect_and_filter do
+        slist, _nlist = _collect_and_filter do
           if source.is_a?(ZingSource)
             slist = nil
             _connect_site(:zing) do |spage|
@@ -1068,7 +1068,7 @@ class HACAuto
 
     # Find list of matching songs from HAV.  List is normally from NCT
     def hav_matching_songs(cfile)
-      slist, nlist = HavSource.new.find_matching_songs(YAML.load_file(cfile))
+      slist, _nlist = HavSource.new.find_matching_songs(YAML.load_file(cfile))
       _output_data(slist, _getOptions)
     end
 
@@ -1086,7 +1086,7 @@ class HACAuto
 
       if options[:split]
         fline  = File.read(tmpf.path).split("\n").
-                    find{|l| l.start_with?('[ffmpeg] Adding thumbnail')}
+                    find{ |l| l.start_with?('[ffmpeg] Adding thumbnail')}
         if fline
           mp3file = fline.scan(/".*"/)[0][1..-2]
           system "set -x; mp3splt -s \"#{mp3file}\""
@@ -1102,7 +1102,7 @@ class HACAuto
         total  += content.size
         {name:f, fsize:fsize, count:content.size}
       end
-      fentries.sort_by{|e| e[:count]}.each do |e|
+      fentries.sort_by{ |e| e[:count]}.each do |e|
         puts "%-30s %6d %3d" % [e[:name], e[:fsize], e[:count]]
       end
       puts "%-30s %6d %3d" % ['Total', 0, total]

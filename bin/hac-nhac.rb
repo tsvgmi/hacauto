@@ -14,7 +14,7 @@ class MusicSource
     options.delete(:check_lyrics)
 
     Plog.info("Collecting #{self.class} from #{url}")
-    links = song_list(url, options).uniq {|e| e[:href]}
+    links = song_list(url, options).uniq { |e| e[:href]}
 
     # Filter for having lyrics only
     if check_lyrics
@@ -101,7 +101,7 @@ module ChordMerger
       if is_chord_line
         # Multiple chord lines together
         if chords.size > 0
-          result << chords.map {|cword, _cindex| "[#{cword}]"}.join(' ')
+          result << chords.map { |cword, _cindex| "[#{cword}]"}.join(' ')
         end
         chords = _pick_chords(l)
         next
@@ -175,7 +175,7 @@ class GuitarTwitt < MusicSource
       lyric:  lyric,
       title:  blob.dig('tab', 'song_name'),
       artist: (blob.dig('tab', 'recording', 'recording_artists') || []).
-                map{|r| r.dig('artist', 'name')}.join(', '),
+                map{ |r| r.dig('artist', 'name')}.join(', '),
       author: blob.dig('tab', 'artist_name'),
       source: url,
     }
@@ -208,7 +208,7 @@ class ChordsWorld < MusicSource
     page  = get_page_curl(url)
     blob  = page.css('.contentprotect')
     lyric = merge_chord_lines(blob.text)
-    lyric = lyric.split("\n").select{|l| l !~ /adsbygoogle/}.join("\n")
+    lyric = lyric.split("\n").select{ |l| l !~ /adsbygoogle/}.join("\n")
     etitle =  page.css('.entry-title').text
     artist, title = etitle.split(/\s+-\s+/, 2)
     {
@@ -253,7 +253,7 @@ class TabGuitarSource < MusicSource
       lyric:  lyric,
       title:  blob.dig('tab', 'song_name'),
       artist: (blob.dig('tab', 'recording', 'recording_artists') || []).
-                map{|r| r.dig('artist', 'name')}.join(', '),
+                map{ |r| r.dig('artist', 'name')}.join(', '),
       author: blob.dig('tab', 'artist_name'),
       source: url,
     }
@@ -292,14 +292,14 @@ class NhacSource < MusicSource
       links = page.css('.item-in-list .h4-song-item')[0..limit-1].
         map do |atrack|
         tlinks = atrack.css('a')
-        arefs  = atrack.css('a').map {|a| [a.text, a['href']]}
+        arefs  = atrack.css('a').map { |a| [a.text, a['href']]}
         info   = {
           name:   tlinks[0].text.strip,
           href:   tlinks[0]['href'],
           artist: tlinks[1].text.strip,
         }
         info
-      end.uniq {|e| e[:href]}
+      end.uniq { |e| e[:href]}
     end
     links
   end
@@ -337,7 +337,7 @@ class NhacSource < MusicSource
           artist: tlinks[1].text.strip,
         }
         info
-      end.uniq {|e| e[:href]}
+      end.uniq { |e| e[:href]}
     end
     links
   end
@@ -392,7 +392,7 @@ class KeengSource < MusicSource
         }
       end
     end
-    links.select{|r| r[:href] !~ /album/}
+    links.select{ |r| r[:href] !~ /album/}
   end
 end
 
@@ -401,7 +401,7 @@ class HavSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
     page  = get_page(url)
-    links = page.css('.ibar a').map {|l| l.text.strip}
+    links = page.css('.ibar a').map { |l| l.text.strip}
     if links[0] == 'Sheet'
       links.shift
     end
@@ -526,7 +526,7 @@ class HavSource < MusicSource
     if result.size > slist.size
       Plog.info "Found more matching songs than requested"
     end
-    result = result.uniq {|e| e[:href]}
+    result = result.uniq { |e| e[:href]}
     [result, not_founds]
   end
 end
@@ -538,7 +538,7 @@ class HahSource < MusicSource
     page  = get_page(url)
     page.css('#wide .pre script').remove
 
-    titles = page.css('.lyrics-title a').map{|r| r.text.strip}
+    titles = page.css('.lyrics-title a').map{ |r| r.text.strip}
     title  = titles[0]
     author = titles[1]
     genre  = titles[-1]
@@ -566,7 +566,7 @@ class HahSource < MusicSource
 
     guide = page.css('.huong-dan-dem-hat').text.strip
 
-    lyric = page.css('.pLgn').map{|r| r.text.strip}.join("\n")
+    lyric = page.css('.pLgn').map{ |r| r.text.strip}.join("\n")
     if lyric.empty?
       lyric = page.css('#wide .pre').text
     end
@@ -639,7 +639,7 @@ class NctSource < MusicSource
   def _songs_playlist(page, options={})
     limit = (options[:limit] || 9999).to_i
     page.css('#idScrllSongInAlbum li[itemprop="tracks"]')[0..limit-1].map do |atrack|
-      arefs = atrack.css('a').map {|a| [a.text, a['href']]}
+      arefs = atrack.css('a').map { |a| [a.text, a['href']]}
       info = {
         name:   arefs[0][0].sub(/\s*\(.*$/, '').sub(/\s+(2017|Cover)$/, ''),
         href:   arefs[2][1] || arefs[0][1],
@@ -652,7 +652,7 @@ class NctSource < MusicSource
   def _songs_artist(page, options={})
     limit = (options[:limit] || 9999).to_i
     page.css('.list_item_music li')[0..limit-1].map do |atrack|
-      arefs = atrack.css('a').map {|a| [a.text, a['href']]}
+      arefs = atrack.css('a').map { |a| [a.text, a['href']]}
       info = {
         name:   arefs[0][0].sub(/\s*\(.*$/, '').sub(/\s+(2017|Cover)$/, ''),
         href:   arefs[0][1],
@@ -780,7 +780,7 @@ class ZingSource < MusicSource
         sinfo = sitem.css('a.fn-name')[0]
         href  = base_url + sinfo['href']
         name  = sinfo.text.strip
-        artist = sitem.css('.fn-artist_list a').map{|i| i.text.strip}.join(', ')
+        artist = sitem.css('.fn-artist_list a').map{ |i| i.text.strip}.join(', ')
         {
           name:   name,
           artist: artist,
@@ -813,7 +813,7 @@ class ZingSource < MusicSource
           }
         end
       end
-      slist = slist.select{|r| r[:href] !~ /album/}
+      slist = slist.select{ |r| r[:href] !~ /album/}
     else
       Plog.error "Unsupported URL for zing: #{url}"
     end
@@ -904,7 +904,7 @@ class HacSource < MusicSource
         not_founds << sinfo
       end
     end
-    found_set = found_set.uniq {|e| e[:href]}
+    found_set = found_set.uniq { |e| e[:href]}
     [found_set, not_founds]
   end
 
@@ -966,12 +966,12 @@ class HacSource < MusicSource
     Plog.info("Extract lyrics from #{url}")
     page      = get_page(url)
     lnote     = page.css('.song-lyric-note .chord_lyric_line').
-                    map{|r| r.text.strip}.join("\n").strip
+                    map{ |r| r.text.strip}.join("\n").strip
     lnote     = _fix_chords(lnote)
     lyric     = page.css('#song-lyric > .pre > .chord_lyric_line').
-                    map{|r| r.text.gsub(/\r/, '').gsub(/\s+\]/, ']').strip}.join("\n")
+                    map{ |r| r.text.gsub(/\r/, '').gsub(/\s+\]/, ']').strip}.join("\n")
     lyric     = _fix_chords(lyric)
-    artist    = page.css('.perform-singer-list .author-item').map {|r| r.text.strip}
+    artist    = page.css('.perform-singer-list .author-item').map { |r| r.text.strip}
     author    = page.css("#song-detail-info tr")[1].css("td")[0].text.strip
     genre     = page.css("#song-detail-info tr")[1].css("td")[1].text.strip
     perf_link = page.css('.perform a').last['href']
@@ -1018,7 +1018,7 @@ class HacSource < MusicSource
     url   = "#{@base_url}/user/month"
     Plog.dump_info(url:url)
     page  = get_page_curl(url)
-    tlist = page.css('td .one-line').map{|e| e['href'].split('/').last}[0..count-1]
+    tlist = page.css('td .one-line').map{ |e| e['href'].split('/').last}[0..count-1]
     Plog.dump_info(tlist:tlist)
     tlist
   end
@@ -1081,7 +1081,7 @@ class HacSource < MusicSource
       sitems.each do |atrack|
         aref    = atrack.css('a.song-title')[0]
         artist  = atrack.css('.song-singers').
-          map{|r| r.text.strip.sub(/^-\s+/, '').split(/\s*,\s*/)}.
+          map{ |r| r.text.strip.sub(/^-\s+/, '').split(/\s*,\s*/)}.
           flatten.join(', ')
         preview = atrack.css('.song-preview-lyric')[0].text.strip
         name    = aref.text.strip
@@ -1090,7 +1090,7 @@ class HacSource < MusicSource
           href:    aref['href'],
           artist:  artist,
           preview: preview,
-          chords:  atrack.css('.song-chords span').map{|v| v.text.strip}.join(' '),
+          chords:  atrack.css('.song-chords span').map{ |v| v.text.strip}.join(' '),
         }
         if block_given?
           yield info
@@ -1104,7 +1104,7 @@ class HacSource < MusicSource
         break
       end
     end
-    slist = links.keys.sort.map {|aname| links[aname]}
+    slist = links.keys.sort.map { |aname| links[aname]}
     if ofile
       store.write(slist)
     else

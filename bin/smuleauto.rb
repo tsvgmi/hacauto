@@ -63,15 +63,15 @@ end
 def time_since(since)
   case since
   when /(min|m)$/
-    sincev = since.to_i * 60.0
+    since.to_i * 60.0
   when /hr?$/
-    sincev = since.to_i * 3600
+    since.to_i * 3600
   when /d$/
-    sincev = since.to_i * 24*3600
+    since.to_i * 24*3600
   when /mo$/
-    sincev = since.to_i * 24 * 30 * 3600
+    since.to_i * 24 * 30 * 3600
   when /yr$/
-    sincev = since.to_i * 24 * 365 * 3600
+    since.to_i * 24 * 365 * 3600
   else
     0
   end
@@ -145,7 +145,6 @@ module SmuleAuto
             end
             stats   = info['stats']
             created = Time.parse(info['created_at'])
-            since   = ((Time.now - created)/60).to_i
             rec     = {
               title:       info['title'],
               stitle:      to_search_str(info['title']),
@@ -210,7 +209,7 @@ module SmuleAuto
         next if sinfo[:record_by].include?(@user)
         next if Love.first(sid:sinfo[:sid], user:@user)
         if @options[:exclude]
-          next if @options[:exclude].find{|r| sinfo[:record_by] =~ /#{r}/}
+          next if @options[:exclude].find{ |r| sinfo[:record_by] =~ /#{r}/}
         end
         begin
           if @spage.star_song(sinfo[:href])
@@ -269,8 +268,7 @@ module SmuleAuto
       end
 
       def _tdir_check
-        sdir = options[:song_dir]
-        unless test(?d, sdir)
+        if (sdir = options[:song_dir]).nil?
           raise "Target dir #{sdir} not accessible to download music to"
         end
         SmuleSong.song_dir = sdir
@@ -361,7 +359,7 @@ module SmuleAuto
         fset = []
         %w(following followers).each do |agroup|
           users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
-          users = users['list'].map{|r| 
+          users = users['list'].map{ |r| 
             {
               name:       r['handle'],
               avatar:     r['pic_url'],
@@ -404,7 +402,7 @@ Filters is the list of SQL's into into DB.
         _tdir_check
         content = SmuleDB.instance(user, options[:data_dir])
         to_download = []
-        content.each(filter:filters.join('/')) do |sid, sinfo|
+        content.each(filter:filters.join('/')) do |_sid, sinfo|
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
           if sfile && test(?f, sfile)
@@ -446,8 +444,8 @@ it left off from the previous run.
         Performance.where(Sequel.lit 'record_by like ?', "%#{user}%").
                           each do |sinfo|
           singers = sinfo[:record_by].split(',')
-          singers.select{|r| r != user}.each do |osinger|
-            if finfo = following[osinger]
+          singers.select{ |r| r != user}.each do |osinger|
+            if !(finfo = following[osinger]).nil?
               finfo[:last_join] ||= Time.at(0)
               finfo[:last_join] = [created_value(sinfo[:created]),
                                    created_value(finfo[:last_join])].max
@@ -462,12 +460,12 @@ it left off from the previous run.
           end
           bar.advance
         end
-        following.each do |asinger, finfo|
+        following.each do |_asinger, finfo|
           if finfo[:last_join]
             finfo[:last_days] = (Time.now - finfo[:last_join])/(24*3600)
           end
         end
-        following.sort_by{|k, v| v[:last_days] || 9999}.each do |asinger, finfo|
+        following.sort_by{ |k, v| v[:last_days] || 9999}.each do |asinger, finfo|
           puts "%-20.20s - %3d songs, %3d favs, %4d days, %s" %
             [asinger, finfo[:songs] || 0,
              finfo[:favs] || 0,
@@ -491,7 +489,7 @@ it left off from the previous run.
         SmuleDB.instance(user)
         case fix_type.to_sym
         when :mp3, :m4a
-          content.each(filter:data.join('/')) do |sid, sinfo|
+          content.each(filter:data.join('/')) do |_sid, sinfo|
             asong = SmuleSong.new(sinfo)
             if asong.update_mp4tag(user) == :updated
               asong._run_command("open -g #{asong.ssfile}")
@@ -542,7 +540,7 @@ it left off from the previous run.
     def move_singer(user, old_name, new_name)
       cli_wrap do
         _tdir_check
-        content  = SmuleDB.instance(user, options[:data_dir])
+        SmuleDB.instance(user, options[:data_dir])
         moptions = writable_options
         moptions.update(
           pbar:   "Move content from #{old_name}",
@@ -593,7 +591,7 @@ Filters is the list of SQL's into into DB.
     def to_open(user, *filter)
       cli_wrap do
         _tdir_check
-        content = SmuleDB.instance(user, options[:data_dir])
+        SmuleDB.instance(user, options[:data_dir])
         wset    = Performance.where(record_by:user)
         opened  = {}
         wset.all.each do |r|
@@ -628,7 +626,7 @@ Filters is the list of SQL's into into DB.
           topen[r[:stitle]] = [r[:created], r[:tags]]
         end
         table = []
-        topen.sort_by{|k, v| v[0]}.each do |name, sinfo|
+        topen.sort_by{ |k, v| v[0]}.each do |name, sinfo|
           table << [sinfo[0], name, sinfo[1]]
         end
         print_table(table)
@@ -640,12 +638,12 @@ Filters is the list of SQL's into into DB.
     def dump_comment(user, *filter)
       cli_wrap do
         _tdir_check
-        content = SmuleDB.instance(user, options[:data_dir])
+        SmuleDB.instance(user, options[:data_dir])
         wset    = Comment.where(Sequel.lit "record_by like '%#{user}%'")
         if filter.size > 0
           wset = wset.where(Sequel.lit(filter.join(' ')))
         end
-        wset.all.map{|r| r.values}.to_yaml
+        wset.all.map{ |r| r.values}.to_yaml
         wset.each do |sinfo|
           puts "\n%-60.60s %s" % [sinfo[:stitle], sinfo[:record_by]]
           JSON.parse(sinfo[:comments]).each do |cuser, msg|
@@ -670,17 +668,17 @@ Filters is the list of SQL's into into DB.
         _tdir_check
         woptions = writable_options
         content = SmuleDB.instance(user, woptions[:data_dir])
-        if exclude = woptions[:exclude]
+        if !(exclude = woptions[:exclude]).nil?
           exclude = exclude.split(',')
         else
           exclude = []
         end
         woptions[:exclude] = exclude
-        if topc = woptions[:top]
+        if !(topc = woptions[:top]).nil?
           topc += exclude.size
           singers = content.top_partners(topc, woptions).
-            map{|k, v| k}[options[:offset]..-1].
-            select{|r| !exclude.include?(r)}
+            map{ |k, _v| k}[options[:offset]..-1].
+            select{ |r| !exclude.include?(r)}
           @logger.dump_info(singers:singers)
         end
         limit    = woptions[:limit]
@@ -709,7 +707,7 @@ Filters is the list of SQL's into into DB.
           end
         end
         table = []
-        count.to_a.sort_by{|u, c| c}.each do |u, c|
+        count.to_a.sort_by{ |_u, c| c}.each do |u, c|
           table << [u, c]
         end
         print_table(table)
@@ -724,7 +722,6 @@ Filters is the list of SQL's into into DB.
     def watch_mp4(dir, user, csong_file='cursong.yml')
       cli_wrap do
         woptions = writable_options
-        logger   = nil
         if !(value = woptions[:logfile]).nil?
           woptions[:logger] = PLogger.new(value)
         end

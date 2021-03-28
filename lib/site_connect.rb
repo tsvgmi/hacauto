@@ -45,7 +45,7 @@ class SelPage
   end
 
   def find_and_click_links(lselector, rselector, options={})
-    links = @page.css(lselector).map {|asong| asong['href']}
+    links = @page.css(lselector).map { |asong| asong['href']}
     click_links(links, rselector, options)
   end
 
@@ -133,7 +133,7 @@ class SDriver
     begin
       elements = @driver.find_elements(:css, selector)
       Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
-      unless element = elements[index]
+      if (element = elements[index]).nil?
         Plog.error "Element #{selector}[#{index}] not found"
         return false
       end

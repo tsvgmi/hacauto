@@ -549,15 +549,15 @@ class PLogger < Logger
   end
 
   def dump_info(obj)
-    _fmt_obj(obj) {|msg| self.info(msg) }
+    _fmt_obj(obj) { |msg| self.info(msg) }
   end
 
   def dump_error(obj)
-    _fmt_obj(obj) {|msg| self.error(msg) }
+    _fmt_obj(obj) { |msg| self.error(msg) }
   end
 
   def dump(obj)
-    _fmt_obj(obj) {|msg| self.debug(msg) }
+    _fmt_obj(obj) { |msg| self.debug(msg) }
   end
 end
 
@@ -618,15 +618,15 @@ class Plog
     end
 
     def dump_info(obj)
-      _fmt_obj(obj) {|msg| myLogs.info(msg) }
+      _fmt_obj(obj) { |msg| myLogs.info(msg) }
     end
 
     def dump_error(obj)
-      _fmt_obj(obj) {|msg| myLogs.error(msg) }
+      _fmt_obj(obj) { |msg| myLogs.error(msg) }
     end
 
     def dump(obj)
-      _fmt_obj(obj) {|msg| myLogs.debug(msg) }
+      _fmt_obj(obj) { |msg| myLogs.debug(msg) }
     end
 
     def method_missing(symbol, *args)

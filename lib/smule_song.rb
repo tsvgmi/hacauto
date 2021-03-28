@@ -12,7 +12,7 @@ module SmuleAuto
     def initialize(user, tmpdir, csong_file='cursong.yml', options={})
       @user       = user
       watch_dir   = `find #{tmpdir} -name 'rust_mozprofile*' 2>/dev/null`.
-        split("\n").sort_by{|d| File.mtime(d)}[-1]
+        split("\n").sort_by{ |d| File.mtime(d)}[-1]
       @watch_dir  = watch_dir
       @csong_file = csong_file
       @logger     = options[:logger] || PLogger.new(STDERR)
@@ -66,10 +66,6 @@ module SmuleAuto
       sc_song_menu:           ['button.sc-jbiwVq.dqCLEx', 1],
       sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
     }
-
-    def initialize(_sdriver)
-      super
-    end
 
     def click_smule_page(elem, delay=2)
       elem = Locators[elem]
@@ -351,7 +347,7 @@ module SmuleAuto
       lyrics = nil
       if perf[:lyrics]
         lyrics = JSON.parse(perf[:lyrics], symbolize_names:true).
-          map {|line| line.map {|w| w[:text]}.join}.join("\n")
+          map { |line| line.map {|w| w[:text]}.join}.join("\n")
       end
 
       output = {
@@ -429,7 +425,7 @@ module SmuleAuto
       lyrics = nil
       if perf[:lyrics]
         lyrics = JSON.parse(perf[:lyrics], symbolize_names:true).
-          map {|line| line.map {|w| w[:text]}.join}.join("\n")
+          map { |line| line.map {|w| w[:text]}.join}.join("\n")
       end
 
       output = {
@@ -503,7 +499,7 @@ module SmuleAuto
         return nil
       end
       wset = _run_command("atomicparsley #{sfile} -t").
-        split("\n").map {|l|
+        split("\n").map { |l|
         key, value = l.split(/\s+contains:\s+/)
         key = key.split[-1].gsub(/[^a-z0-9_]/i, '').to_sym
         [key, value]

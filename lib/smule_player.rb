@@ -57,7 +57,7 @@ module SmuleAuto
         filter:  @filter,
         order:   @order,
         listpos: @listpos,
-        clist:   @clist.map{|r| r[:sid]},
+        clist:   @clist.map{ |r| r[:sid]},
       }
       open(@state_file, "w") do |fod|
         fod.puts(data.to_yaml)
@@ -162,15 +162,15 @@ module SmuleAuto
         when /^random/
           cselect.shuffle
         when /^play/
-          cselect.sort_by{|v| v[:listens]}
+          cselect.sort_by{ |v| v[:listens]}
         when /^love/
-          cselect.sort_by{|v| v[:loves]}.reverse
+          cselect.sort_by{ |v| v[:loves]}.reverse
         when /^star/
-          cselect.sort_by{|v| v[:stars].to_i}.reverse
+          cselect.sort_by{ |v| v[:stars].to_i}.reverse
         when /^date/
-          cselect.sort_by{|v| created_value(v[:created])}.reverse
+          cselect.sort_by{ |v| created_value(v[:created])}.reverse
         when /^title/
-          cselect.sort_by{|v| v[:stitle]}
+          cselect.sort_by{ |v| v[:stitle]}
         else
           @logger.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
           cselect
@@ -229,7 +229,7 @@ module SmuleAuto
       end
       print cursor.move_to
       if sitem
-        if avatar = sitem[:avatar]
+        if !(avatar = sitem[:avatar]).nil?
           lfile = "cache/" + File.basename(avatar)
           unless test(?f, lfile)
             system "curl -so #{lfile} #{avatar}"
@@ -242,7 +242,7 @@ module SmuleAuto
         box   = TTY::Box.frame(top: 0, left: 15,
                 width:TTY::Screen.width-20,
                 height:5) do
-          content = <<EOM
+<<EOM
 [#{isfav}] #{sitem[:title]} - #{sitem[:created].strftime("%Y-%m-%d")} - #{bar[1..sitem[:stars].to_i]}
     #{sitem[:record_by]} - #{sitem[:listens]} plays, #{sitem[:loves]} loves - #{ptags[0..9]}
 #{(psitem || {})[:snote]}
@@ -294,10 +294,10 @@ EOM
       elsif psecs <= 0
         return res
       end
-      if !(plength = @roptions[:play_length] ).nil?
+      if !(plength = @roptions[:play_length]).nil?
         plength = plength.to_i
       end
-      if !(plength = @roptions[:play_length] ).nil?
+      if !(plength = @roptions[:play_length]).nil?
         duration = [plength.to_i, psecs].min
       else
         duration = psecs
@@ -511,7 +511,7 @@ EOH
           sitem[:stars] = key.to_i
         end
       when 'b'
-        if param = prompt.ask('Browser Op alue?')
+        if !(param = prompt.ask('Browser Op alue?')).nil?
           _menu_eval do
             browser_op(sitem, psitem, param)
             prompt.keypress("Press any key [:countdown]", timeout:3)
@@ -533,7 +533,7 @@ EOH
       when 'f'                            # Set filter
         param = prompt.ask('Filter value?', default:'')
         _menu_eval do
-          @playlist.filter = Hash[param.split.map{|fs| fs.split('=')}]
+          @playlist.filter = Hash[param.split.map{ |fs| fs.split('=')}]
         end
         _setprompt
       when 'F'                              # Set as favorite and tag
@@ -615,7 +615,7 @@ EOH
                           timeout:3)
         end
       when 't'                             # Set tag
-        if tag = prompt.ask('Tag value ?')
+        if !(tag = prompt.ask('Tag value ?')).nil?
           @content.add_tag(sitem, tag)
         end
       when 'x'                            # Quit
