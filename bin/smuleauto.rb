@@ -444,7 +444,7 @@ it left off from the previous run.
         Performance.where(Sequel.lit 'record_by like ?', "%#{user}%").
                           each do |sinfo|
           singers = sinfo[:record_by].split(',')
-          singers.select{ |r| r != user}.each do |osinger|
+          singers.select{ |r| r != user }.each do |osinger|
             if !(finfo = following[osinger]).nil?
               finfo[:last_join] ||= Time.at(0)
               finfo[:last_join] = [created_value(sinfo[:created]),
@@ -643,7 +643,7 @@ Filters is the list of SQL's into into DB.
         if filter.size > 0
           wset = wset.where(Sequel.lit(filter.join(' ')))
         end
-        wset.all.map{ |r| r.values}.to_yaml
+        wset.all.map{ |r| r.values }.to_yaml
         wset.each do |sinfo|
           puts "\n%-60.60s %s" % [sinfo[:stitle], sinfo[:record_by]]
           JSON.parse(sinfo[:comments]).each do |cuser, msg|
@@ -677,8 +677,8 @@ Filters is the list of SQL's into into DB.
         if !(topc = woptions[:top]).nil?
           topc += exclude.size
           singers = content.top_partners(topc, woptions).
-            map{ |k, _v| k}[options[:offset]..-1].
-            select{ |r| !exclude.include?(r)}
+            map{ |k, _v| k }[options[:offset]..-1].
+            select{ |r| !exclude.include?(r) }
           @logger.dump_info(singers:singers)
         end
         limit    = woptions[:limit]

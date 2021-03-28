@@ -83,7 +83,7 @@ module SmuleAuto
     def select_set(ftype, value)
       if ftype == :recent
         if value =~ /,/
-          sday, eday = value.split(',').map{ |f| f.to_i}
+          sday, eday = value.split(',').map{ |f| f.to_i }
         else
           sday, eday = value.to_i, -1
         end
@@ -127,7 +127,7 @@ module SmuleAuto
     end
 
     def each(options={})
-      filters = options[:filter].split('/').map{ |r| "(#{r})"}.join(' OR ')
+      filters = options[:filter].split('/').map{ |r| "(#{r})" }.join(' OR ')
       recs = @content.order(:record_by, :created)
       unless filters.empty?
         recs = recs.where(Sequel.lit(filters))
@@ -266,10 +266,10 @@ module SmuleAuto
 
     def add_tag(song, tags)
       songs   = song.is_a?(Array) ? song : [song]
-      stitles = songs.map{ |r| r[:stitle]}
+      stitles = songs.map{ |r| r[:stitle] }
       wset    = SongTag.where(name:stitles)
       addset, delset = tags.split(',').partition{ |r| r[0] != '-'}
-      delset = delset.map{ |r| r[1..-1]}
+      delset = delset.map{ |r| r[1..-1] }
       SongTag.where(name:stitles).each do |r|
         new_val = ((r[:tags] || '').split(',') + addset).uniq
         new_val -= delset
@@ -311,7 +311,7 @@ module SmuleAuto
           sinfo[:listens]/20.0 + sinfo[:stars]*0.1
         sinfo[:score] = score
       end
-      rank.to_a.select{ |k, _v| !k.empty? && k != @user}.
+      rank.to_a.select{ |k, _v| !k.empty? && k != @user }.
         sort_by{ |_singer, sinfo| sinfo[:score] * -1}[0..limit-1]
     end
   end
@@ -326,7 +326,7 @@ module SmuleAuto
         newfile = Tempfile.new('new')
         bakfile = Tempfile.new('bak')
 
-        bakfile.puts(records.map{ |r| r.to_json}.join("\n"))
+        bakfile.puts(records.map{ |r| r.to_json }.join("\n"))
 
         case format
         when /^y/i
@@ -334,9 +334,9 @@ module SmuleAuto
           system("vim #{newfile.path}")
           newrecs = YAML.load_file(newfile.path)
           editout = Tempfile.new('edit')
-          editout.puts(newrecs.map{ |r| r.to_json}.join("\n"))
+          editout.puts(newrecs.map{ |r| r.to_json }.join("\n"))
         else
-          newfile.puts(records.map{ |r| r.to_json}.join("\n"))
+          newfile.puts(records.map{ |r| r.to_json }.join("\n"))
           system("vim #{newfile.path}")
           editout = newfile
         end
@@ -389,10 +389,10 @@ changes back into the database
         tdir           = _tdir_check(options[:data_dir])
         # Must call once to init db connection/model
         SmuleDB.instance(user, tdir)
-        records        = SongTag.all.sort_by{ |r| r[:name]}.map{|r| r.values}
+        records        = SongTag.all.sort_by{ |r| r[:name]}.map{|r| r.values }
         insset, delset = _edit_file(records, options[:format])
         if delset.size > 0
-          SongTag.where(id:delset.map{ |r| r[:id]}).destroy
+          SongTag.where(id:delset.map{ |r| r[:id] }).destroy
         end
         insset.each do |r|
           r.delete(:id)
@@ -409,10 +409,10 @@ changes back into the database
         tdir    = _tdir_check(options[:data_dir])
         # Must call once to init db connection/model
         SmuleDB.instance(user, tdir)
-        records = Singer.all.sort_by{ |r| r[:name]}.map{|r| r.values}
+        records = Singer.all.sort_by{ |r| r[:name]}.map{|r| r.values }
         insset, delset = _edit_file(records, options[:format])
         if delset.size > 0
-          Singer.where(id:delset.map{ |r| r[:id]}).destroy
+          Singer.where(id:delset.map{ |r| r[:id] }).destroy
         end
         insset.each do |r|
           r.delete(:id)
@@ -445,8 +445,6 @@ changes back into the database
         end
         print_table(output)
         true
-        #rank.map{ |k, v| "@#{k}"}.
-          #sort_by { |v| v.downcase.gsub(/_/, '')}.join(' ')
       end
     end
   end

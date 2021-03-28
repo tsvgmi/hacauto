@@ -62,7 +62,7 @@ class SPage < SelPage
     limit = (options[:limit] || 1000).to_i
     cwait = options[:click_wait].to_i
     unless options[:force]
-      links = links.select { |r| !@clog.was_clicked?(@auser, r, rselector)}
+      links = links.select { |r| !@clog.was_clicked?(@auser, r, rselector) }
     end
     if links.size <= 0
       return
@@ -799,7 +799,7 @@ class HACAuto
           raise "You must give a numeric list to update"
         end
         curlist = source.playlist("playlist/v/#{plname}").
-                  map { |r| r[:href].split('/')[4]}
+                  map { |r| r[:href].split('/')[4] }
       end
       slist = slist.select do |sentry|
         sname, surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
@@ -969,7 +969,7 @@ class HACAuto
       checked_lists = []
       last_time = Time.at(0)
       if test(?s, ofile)
-        notified = YAML.load_stream(File.open(ofile)).map{ |r| r[:name]}
+        notified = YAML.load_stream(File.open(ofile)).map{ |r| r[:name] }
       else
         notified = []
       end
@@ -980,7 +980,7 @@ class HACAuto
           source.song_list(url).each do |r|
             if r[:href] =~ /playlist/
               unless checked_lists.include?(r[:href])
-                mcontent += source.song_list(r[:href]).select{ |r2| r2[:href] =~ /bai-hat/}
+                mcontent += source.song_list(r[:href]).select{ |r2| r2[:href] =~ /bai-hat/ }
                 checked_lists << r
               end
             elsif r[:href] =~ /bai-hat/

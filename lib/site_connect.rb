@@ -45,7 +45,7 @@ class SelPage
   end
 
   def find_and_click_links(lselector, rselector, options={})
-    links = @page.css(lselector).map { |asong| asong['href']}
+    links = @page.css(lselector).map { |asong| asong['href'] }
     click_links(links, rselector, options)
   end
 

@@ -57,7 +57,7 @@ module SmuleAuto
         filter:  @filter,
         order:   @order,
         listpos: @listpos,
-        clist:   @clist.map{ |r| r[:sid]},
+        clist:   @clist.map{ |r| r[:sid] },
       }
       open(@state_file, "w") do |fod|
         fod.puts(data.to_yaml)
@@ -533,7 +533,7 @@ EOH
       when 'f'                            # Set filter
         param = prompt.ask('Filter value?', default:'')
         _menu_eval do
-          @playlist.filter = Hash[param.split.map{ |fs| fs.split('=')}]
+          @playlist.filter = Hash[param.split.map{ |fs| fs.split('=') }]
         end
         _setprompt
       when 'F'                              # Set as favorite and tag

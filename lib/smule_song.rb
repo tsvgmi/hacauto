@@ -347,7 +347,7 @@ module SmuleAuto
       lyrics = nil
       if perf[:lyrics]
         lyrics = JSON.parse(perf[:lyrics], symbolize_names:true).
-          map { |line| line.map {|w| w[:text]}.join}.join("\n")
+          map { |line| line.map { |w| w[:text] }.join }.join("\n")
       end
 
       output = {
@@ -425,7 +425,7 @@ module SmuleAuto
       lyrics = nil
       if perf[:lyrics]
         lyrics = JSON.parse(perf[:lyrics], symbolize_names:true).
-          map { |line| line.map {|w| w[:text]}.join}.join("\n")
+          map { |line| line.map { |w| w[:text] }.join }.join("\n")
       end
 
       output = {
