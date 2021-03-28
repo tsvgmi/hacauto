@@ -11,17 +11,19 @@ module SmuleAuto
   class FirefoxWatch
     def initialize(user, tmpdir, csong_file='cursong.yml', options={})
       @user       = user
-      watch_dir   = `find #{tmpdir}/*/T -name 'rust_mozprofile.*'`.split("\n").
-        sort_by{|d| File.mtime(d)}[-1]
+      watch_dir   = `find #{tmpdir} -name 'rust_mozprofile*' 2>/dev/null`.
+        split("\n").sort_by{|d| File.mtime(d)}[-1]
       @watch_dir  = watch_dir
-      Plog.info("Watching #{@watch_dir}")
       @csong_file = csong_file
+      @logger     = options[:logger] || PLogger.new(STDERR)
       @options    = options
+
+      @logger.info("Watching #{@watch_dir}")
+      @logger.dump_info(msg:"Watching #{@watch_dir}")
     end
 
     def change_handler(added)
       return if added.size <= 0
-      STDERR.print('.'); STDERR.flush
       added.each do |f|
         begin
           SmuleSong.check_and_download(@csong_file, f, @user, @options)
@@ -35,7 +37,7 @@ module SmuleAuto
     end
 
     def dirchange_handler(added)
-      Plog.info("Dir is added: #{added.inspect}")
+      logger.info("Dir is added: #{added.inspect}")
     end
 
     def start
@@ -51,23 +53,45 @@ module SmuleAuto
   end
 
   class SmulePage < SelPage
+    Locators = {
+      sc_auto_play:           ['div.sc-qWfkp',            0],
+      sc_comment_close:       ['div.sc-gsBrbv.dgedbA',    0],
+      sc_comment_open:        ['div.sc-iitrsy',           2],
+      sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
+      sc_expose_play_control: ['div.sc-pZCuu',            0],
+      sc_favorite_toggle:     ['span.sc-ptfmh.gtVEMN',    -1],
+      sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
+      sc_play_continue:       ['a.sc-hYZPRl.gumLkx',      0],
+      sc_play_toggle:         ['div.sc-fiKUUL',           0],
+      sc_song_menu:           ['button.sc-jbiwVq.dqCLEx', 1],
+      sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
+    }
+
     def initialize(sdriver)
       super
     end
 
+    def click_smule_page(elem, delay=2)
+      unless elem = Locators[elem]
+        raise "#{elem} not defined in Locators"
+      end
+      clickit(elem[0], wait:delay, index:elem[1], move:true)
+      refresh if delay > 0
+      true
+    end
+
     def set_song_favorite(setit=true)
-      # Click on the selector to expose
-      click_and_wait("button.sc-pcYTN", 1, 1)
-      refresh
+      click_smule_page(:sc_song_menu, 1)
 
-      # This is actually toggle blindly.  So caller need to know/guess the current
-      # before calling
-      locator = 'span.sc-ptfmh.gtVEMN'
+      locator = 'div.sc-hKKeuH.kXQUbk'
+      cval = css("#{locator} svg path")[0][:fill]
 
-      cval = css('div.sc-qPVvu.Irslq svg path')[0][:fill]
-      if cval == "#FFCE42"
+      if setit && cval == "#FFCE42"
         Plog.info("Already fav, skip it")
-        return
+        return false
+      elsif !setit && cval != "#FFCE42"
+        Plog.info("Already not-fav, skip it")
+        return false
       end
       cpos    = find_elements(:css, locator).size / 2
       click_and_wait(locator, 1, cpos)
@@ -76,122 +100,144 @@ module SmuleAuto
     end
 
     def set_like
-      click_and_wait("div.sc-oTNDV.jzKNzB", 0, 0)
+      click_smule_page(:sc_like, 0, 0)
     end
 
     def set_song_tag(tag)
       if song_note =~ /#{tag}/
-        Plog.info "Message already containing #{tag}"
+        Plog.debug "Message already containing #{tag}"
         return false
       end
       text = ' ' + tag
 
-      click_and_wait("button.sc-pcYTN", 1, 1)
-      refresh
-      locator = 'span.sc-ptfmh.gtVEMN'
+      click_smule_page(:sc_song_menu)
+      locator = 'span.sc-jgHCyG.jYOAjG'
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, "//html").click
         return false
       end
-      cpos    = find_elements(:css, locator).size / 2
-      click_and_wait(locator, 1, cpos+2)
+      cpos = (find_elements(:css, locator).size + 1)/2
+      click_and_wait(locator, 1, cpos)
 
       type("textarea#message", text, append:true)  # Enter tag
       click_and_wait("input#recording-save")
 
-      play_song(true)
+      toggle_play(true)
     end
 
     def star_song(href)
       goto(href, 3)
-      if css("div.sc-pBlxj.dGgbmN").size > 0
-        Elog.eror("Already starred")
+      unless elem = Locators[:sc_star]
+        raise "#{elem} not defined in Locators"
+      end
+
+      fill = (css("#{elem[0]} svg path")[0] || {})[:fill]
+      unless fill
         return false
       end
-      click_and_wait("div.sc-oTNDV.jzKNzB", 1)
+      if fill == "#FD286E"
+        Plog.error("Already starred")
+        return false
+      end
+      click_smule_page(:sc_star, 1)
       return true
     end
 
     # Play or pause song
-    def play_song(doplay=true, options={})
+    def toggle_play(doplay=true, options={})
       remain = 0
       refresh
 
-      goto(options[:href]) if options[:href]
-      if options[:href]
-        %w(div.error-gone div.page-error).each do |acss|
-          if css(acss).size > 0
-            Plog.info("Song is gone")
-            return :deleted
-          end
-        end
-      end
-
-      paths    = css('div.sc-pQsrT.bsHhNW svg path').size
+      paths    = css('div.sc-fiKUUL svg path').size
       toggling = true
       if doplay && paths == 2
-        Plog.info("Already playing.  Do nothing")
+        Plog.debug("Already playing.  Do nothing")
         toggling = false
       elsif !doplay && paths == 1
-        Plog.info("Already stopped.  Do nothing")
+        Plog.debug("Already stopped.  Do nothing")
         toggling = false
+      end
+
+      play_locator = 'span.sc-lgqmxq.FGHoO'
+
+      if toggling
+        Plog.debug("Think play = #{doplay}, remain: #{remain}")
+        click_smule_page(:sc_play_toggle, 0)
+        if doplay
+          if css(play_locator).size == 2
+            sleep_round = 0
+            while true
+              if endtime = css(play_locator)[1]
+                if endtime.text != "00:00"
+                  if options[:href]
+                    if sleep_round > 2
+                      sleep(1)
+                      click_smule_page(:sc_play_continue, 0)
+                      click_smule_page(:sc_play_continue, 0)
+                    else
+                      sleep(1)
+                      click_smule_page(:sc_play_toggle, 0)
+                    end
+                  end
+                  break
+                end
+              end
+              sleep 2
+              sleep_round += 1
+              refresh
+            end
+          else
+            Plog.error("Can't see time elememt.  Just pause and guess")
+            sleep 2
+          end
+        end
       end
 
       if doplay
-        locator = 'span.sc-pYNsO'
-        # First time I wait until song is loaded
-        if options[:href]
-          1.upto(5) do
-            duration_s = css(locator)[1]
-            if duration_s && duration_s.text != "00:00"
-              break
-            end
-            sleep 2
-            refresh
-          end
+        if css(play_locator).size == 2
+          curtime   = css(play_locator)[0].text.split(':')
+          curtime_s = curtime[0].to_i*60 + curtime[1].to_i
+
+          endtime   = css(play_locator)[1].text.split(':')
+          endtime_s = endtime[0].to_i*60 + endtime[1].to_i
+
+          remain    = endtime_s - curtime_s
+        else
+          remain    = 300
         end
-        curtime   = css(locator)[0].text.split(':')
-        curtime_s = curtime[0].to_i*60 + curtime[1].to_i
-
-        endtime   = css(locator)[1].text.split(':')
-        endtime_s = endtime[0].to_i*60 + endtime[1].to_i
-
-        remain    = endtime_s - curtime_s
       else
         remain = 0
-      end
-
-      if toggling
-        Plog.info("Think play = #{doplay}, remain: #{remain}")
-        click_and_wait('div.sc-pZCuu', 0)
       end
       remain
     end
 
     def get_comments
-      click_and_wait("div.sc-oTNDV.jzKNzB",0,2)
-      refresh
+      click_smule_page(:sc_comment_open, 0.5)
       res = []
-      css('div.sc-pLyGp.hIGHoI').reverse.each do |acmt|
-        comment = acmt.css('div.sc-pDboM.deGaYK').text.split
+      #css('div.sc-ksPlPm.fiBdLJ').reverse.each do |acmt|
+      css('div.sc-hBmvGb.gugxcI').reverse.each do |acmt|
+        comment = acmt.text.split
         user = comment[0]
-        msg  = comment[1..-1].join(' ')
+        msg  = (comment[1..-1] || []).join(' ')
         res << [user, msg]
       end
-      click_and_wait('div.sc-pBzUF.jfMcol', 0)
-
-      # Show player up again
-      click_and_wait('div.sc-pZCuu', 0)
-      click_and_wait('div.sc-pZCuu', 0)
+      click_smule_page(:sc_comment_close, 0)
+      click_smule_page(:sc_play_toggle, 0)
       res
     end
 
     def toggle_autoplay
-      click_and_wait("div.sc-qWfkp")
+      click_smule_page(:sc_auto_play)
     end
 
     def song_note
-      css('span.sc-fzomuh.bBrjWV')[0].text
+      locator = 'span.sc-jgHCyG.koUJIA'
+      if css(locator).size > 0
+        css(locator)[0].text
+      else
+        Plog.error("#{locator} not found (song note)")
+        ''
+      end
     end
   end
 
@@ -213,7 +259,8 @@ module SmuleAuto
 
       def update_from_url(url, options)
         sid   = File.basename(url)
-        sinfo = Performance.first(sid:sid) || Performance.new(sid:sid)
+        href  = url.sub(%r[^https://www.smule.com], '')
+        sinfo = Performance.first(sid:sid) || Performance.new(sid:sid, href:href)
         song  = SmuleSong.new(sinfo, options)
         if url =~ /ensembles$/
           result = song.get_ensemble_asset
@@ -248,11 +295,14 @@ module SmuleAuto
       @info          = sinfo
       @options       = options
       @surl          = "https://www.smule.com#{@info[:href]}"
+      @logger        = options[:logger] || PLogger.new(STDERR)
 
       @info[:created] ||= Date.today
       if @info[:created].is_a?(String)
         @info[:created] = Date.parse(@info[:created])
       end
+      @ssl_context = OpenSSL::SSL::SSLContext.new
+      @ssl_context.verify_mode = OpenSSL::SSL::VERIFY_NONE
     end
 
     def ssfile
@@ -266,7 +316,7 @@ module SmuleAuto
       title = @info[:title].strip.gsub(/[\/\"]/, '-')
       ofile = File.join(odir, title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
       sfile = ssfile
-      Plog.dump_info(sfile:sfile, ofile:ofile)
+      @logger.dump_info(sfile:sfile, ofile:ofile)
       if File.exist?(sfile) && !File.symlink?(ofile)
         FileUtils.remove(ofile, verbose:true, force:true)
         FileUtils.ln_s(sfile, ofile, verbose:true, force:true)
@@ -274,11 +324,11 @@ module SmuleAuto
       ofile
     end
 
-    def move_song(new_name)
+    def move_song(old_name, new_name)
       cur_record = @info[:record_by]
       new_record = cur_record.gsub(old_name, new_name)
       if new_record == cur_record
-        Plog.info("No change in data")
+        @logger.info("No change in data")
         return false
       end
       @info[:record_by] = new_record
@@ -329,7 +379,7 @@ module SmuleAuto
     end
 
     def get_ensemble_asset
-      source    = HTTP.follow.get(@surl).to_s 
+      source    = HTTP.follow.get(@surl, ssl_context:@ssl_context).to_s 
       asset_str = (source.split("\n").grep(/DataStore.Pages.Duet/)[0] || "").
         sub(/^\s+DataStore.Pages.Duet = {/, '{').sub(/;$/, '')
       res = JSON.parse(asset_str, symbolize_names:true) || {}
@@ -349,7 +399,7 @@ module SmuleAuto
 
     def get_asset
       olink    = @surl.sub(/\/ensembles$/, '')
-      source   = HTTP.follow.get(olink).to_s 
+      source   = HTTP.follow.get(olink, ssl_context:@ssl_context).to_s 
       document = Nokogiri::HTML(source)
       asset_str    = nil
 
@@ -365,7 +415,7 @@ module SmuleAuto
       end
       res = JSON.parse(asset_str, symbolize_names:true) || {}
       unless perf = res[:performance]
-        Plog.dump_error(msg:"No performance data found", olink:olink)
+        @logger.dump_error(msg:"No performance data found", olink:olink)
         return {}
       end
 
@@ -406,15 +456,21 @@ module SmuleAuto
 
     def play(spage)
       href = @info[:href].sub(/\/ensembles$/, '')
-      # This will start playing
-      # Page was archived
       spinner = TTY::Spinner.new("[:spinner] Loading ...",
                                     format: :pulse_2)
       spinner.auto_spin      
-      if spage.play_song(true, href:href) == :deleted
-        spinner.stop('Done!')
-        return :deleted
+
+      spage.goto(href)
+      %w(div.error-gone div.page-error).each do |acss|
+        if spage.css(acss).size > 0
+          Plog.info("Song is gone")
+          spinner.stop('Done!')
+          return :deleted
+        end
       end
+
+      msgs = spage.get_comments
+      spage.toggle_play(true, href:href)
       spinner.stop('Done!')
 
       # Should pickup for joined file where info was not picked up
@@ -430,17 +486,16 @@ module SmuleAuto
       # Click on play
       @info.update(listens:asset[:listens], loves:asset[:loves],
                    psecs:asset[:psecs])
-      @info[:psecs]
+      [@info[:psecs], msgs]
     end
 
     def mp4_tags
       sfile = ssfile
       if !sfile || !test(?s, sfile)
-        Plog.error("#{@info[:stitle]}:#{sfile} empty or not exist")
+        @logger.error("#{@info[:stitle]}:#{sfile} empty or not exist")
         return nil
       end
-      wset = `set -x; atomicparsley #{sfile} -t`.
-        encode("UTF-8", invalid: :replace, replace: "").
+      wset = _run_command("atomicparsley #{sfile} -t").
         split("\n").map {|l|
         key, value = l.split(/\s+contains:\s+/)
         key = key.split[-1].gsub(/[^a-z0-9_]/i, '').to_sym
@@ -450,28 +505,32 @@ module SmuleAuto
     end
 
     def media_size(sfile)
-      output = `set -x; atomicparsley #{sfile} -T 1`.
-        encode("UTF-8", invalid: :replace).split("\n").
-        grep(/Media data:/)
+      output = _run_command("atomicparsley #{sfile} -T 1").
+        split("\n").grep(/Media data:/)
       output[0].split[2].to_i
     end
 
     def is_mp4_tagged?(excuser=nil)
-      wset    = mp4_tags
+      unless wset = mp4_tags
+        return false
+      end
       album   = @info[:created].strftime("Smule-%Y.%m")
-      year    = @info[:created].strftime("%Y")
       release = @info[:created].iso8601
       aartist = @info[:record_by].gsub(/(,?)#{excuser}(,?)/, '')
       if wset[:nam] == 'ver:1' || wset[:alb] != album || \
-          (wset[:day] != year && wset[:day] != release) || \
-          wset[:aART].to_s != aartist
+          wset[:day] != release || wset[:aART].to_s != aartist
         wset.delete(:lyr)
-        Plog.dump_info(msg:"Tagging #{ssfile}",
-                       wset:wset, title:@info[:title],
-                       record_by:@info[:record_by])
+        @logger.dump_info(msg:"Tagging not matched for #{ssfile}",
+                          wset:wset, title:@info[:title],
+                          record_by:@info[:record_by])
         return false
       end
       true
+    end
+
+    def _run_command(command)
+      @logger.info(command)
+      `#{command}`.chomp.encode("UTF-8", invalid: :replace, replace: "")
     end
 
     def update_mp4tag(excuser=nil)
@@ -488,7 +547,7 @@ module SmuleAuto
         comment = "#{date} - #{href}"
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
 
-        command = "set -x; atomicparsley #{ofile}"
+        command = "atomicparsley #{ofile}"
 
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
@@ -515,8 +574,7 @@ module SmuleAuto
           l_flag = ''
         end
 
-        output = `(#{command} --overWrite #{l_flag}) | tee /dev/tty`.
-          encode("UTF-8", invalid: :replace, replace: "")
+        output = _run_command("#{command} --overWrite #{l_flag}")
         if output =~ /insufficient space to retag the source file/io
           return :error
         end
@@ -527,74 +585,35 @@ module SmuleAuto
       end
     end
 
-    def wait_loop(limit, msg, sleep=1)
-      wait_time = 0
-      Plog.info("Waiting for #{msg}:#{limit}")
-      while true
-        if wait_time >= limit
-          Plog.error("Timeout waiting for operation")
-          return false
-        end
-        yield
-        sleep(sleep)
-        wait_time += sleep
-      end
-      Plog.info("found")
-      true
-    end
-
-    def wait_for_last_file(wdir, ofile, wtime=3600)
-      Plog.info("Right click and download to #{ofile} please")
-      m4file = nil
-      wait_loop(wtime, "see file") do
-        m4file = Dir.glob("#{wdir}/*.m4a").
-          sort_by{|r| File.mtime(r)}.last
-        break if (m4file && test(?f, m4file))
-      end
-      if !m4file || !test(?f, m4file)
-        return false
-      end
-
-      wait_loop(60, "see content") do
-        if (fsize = File.size(m4file)) > 1_000_000
-          break
-        end
-      end
-      File.open(ofile, 'wb') do |f|
-        f.write(File.read(m4file))
-      end
-      File.delete(m4file)
-      Plog.info("Wrote #{ofile}(#{File.size(ofile)} bytes)")
-      true
-    end
-
     def check_and_download(f, user)
-      puts "\n%-40.40s %12d" % [File.basename(f), File.size(f)]
-      puts "%s %-40.40s %s" % [@info[:sid], @info[:stitle], @info[:record_by]]
+      @logger.info "%s %d" % [File.basename(f), File.size(f)]
+      @logger.info "%s %s %s" % [@info[:sid], @info[:stitle], @info[:record_by]]
 
       sfile = ssfile
       if test(?f, sfile)
         unless @options[:verify] 
           sofile
+          #_run_command("open -g #{sfile}") if @options[:open]
           return
         end
         csize  = self.media_size(sfile)
         fmsize = self.media_size(f)
         if (csize == fmsize) && self.is_mp4_tagged?(user)
-          Plog.info("Verify same media size and tags: #{csize}")
+          @logger.info("Verify same media size and tags: #{csize}")
           sofile
+          #_run_command("open -g #{sfile}") if @options[:open]
           return
         end
-        Plog.info("Size: #{csize} <>? #{fmsize}")
+        @logger.info("Size: #{csize} <>? #{fmsize}")
       end
 
-      Plog.info("Song missing or bad tag on local disk.  Create")
+      @logger.info("Song missing or bad tag on local disk.  Create")
       FileUtils.cp(f, sfile, verbose:true)
       self.update_mp4tag(user)
       sofile
 
       if @options[:open]
-        system("set -x; open -g #{sfile}")
+        _run_command("open -g #{sfile}")
         sleep(2)
       end
     end

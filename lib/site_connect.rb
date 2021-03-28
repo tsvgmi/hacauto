@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env rub
 #---------------------------------------------------------------------------
 # File:        site_connect.rb
 # Date:        2019-01-19 16:50:40 -0800
@@ -86,7 +86,7 @@ class SDriver
     @options = options
     @auser   = options[:user]
     browser  = (options[:browser] || 'firefox').to_sym
-    Plog.info("Goto #{@url} using #{browser}")
+    Plog.debug("Goto #{@url} using #{browser}")
 
     #capabilities = Selenium::WebDriver::Remote::W3C::Capabilities.firefox(accept_insecure_certs: true)
     capabilities = Selenium::WebDriver::Remote::Capabilities.firefox(accept_insecure_certs: true)
@@ -118,20 +118,45 @@ class SDriver
     sleep(1)
   end
 
+  def clickit(selector, options={})
+    begin
+      wtime    = options[:wait] ||= 2
+      index    = options[:index] ||= 0
+      elements = @driver.find_elements(:css, selector)
+      Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
+      unless element = elements[index]
+        Plog.error "Element #{selector}[#{index}] not found"
+        return false
+      end
+      if options[:move]
+        @driver.action.move_to(element.location)
+      end
+      element.click
+      sleep(wtime) if wtime > 0
+    rescue => errmsg
+      Plog.error(errmsg)
+      return false
+    end
+    true
+  end
+
   def click_and_wait(selector, wtime=2, index=0)
     begin
       elements = @driver.find_elements(:css, selector)
-      Plog.info "Click on #{selector}[#{index}] (of #{elements.size})" if @options[:verbose]
-      if elements[index]
-        elements[index].click
-      else
-        Plog.info "Element #{selector}[#{index}] not found" if @options[:verbose]
-        return
+      Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
+      unless element = elements[index]
+        Plog.error "Element #{selector}[#{index}] not found"
+        return false
       end
+      #loc = element.location
+      #element.move_to_location(loc.x, loc.y)
+      element.click
       sleep(wtime) if wtime > 0
     rescue => errmsg
       errmsg
+      return false
     end
+    true
   end
  
   def alert
@@ -140,7 +165,7 @@ class SDriver
 
   def type(selector, data, options={})
     if data
-      Plog.info "Enter on #{selector} - #{data[0..19]}" if @options[:verbose]
+      Plog.debug "Enter on #{selector} - #{data[0..19]}"
       elem = @driver.find_element(:css, selector)
       elem.clear unless options[:append]
       elem.send_keys(data)
@@ -151,7 +176,7 @@ class SDriver
     if path !~ /^https?:/io
       path = "#{@url}/#{path.sub(%r{^/}, '')}"
     end
-    Plog.info "Goto #{path}" if @options[:verbose]
+    Plog.debug "Goto #{path}"
     @driver.navigate.to(path)
   end
 
@@ -197,6 +222,7 @@ class SiteConnect
       if !options[:skip_auth] && auth = options[:auth]
         sdriver.goto("/user/login")
         identity, password = auth.split(':')
+        sleep(3)
         sdriver.click_and_wait('a[data-test-id="login-type-btn-login-acc"]') # email
         sdriver.type('input[name="snp-username"]', identity + "\n")
         sleep 3

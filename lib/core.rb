@@ -24,6 +24,12 @@ module ThorAddition
     Signal.trap('SIGINT')  { exit(1) }
     Signal.trap('SIGQUIT') { Elog.info "Quitting from signal."; exit(0) }
 
+    if options[:logfile]
+      @logger = PLogger.new(value)
+    else
+      @logger = PLogger.new(STDERR)
+    end
+
     result = yield
 
     if result.is_a?(FalseClass)
@@ -326,7 +332,7 @@ module Cli
   end
 
   def self.shellResult
-    if ENV['T_LOGSEVERITY'] && (ENV['T_LOGSEVERITY'] > "0")
+    if ENV['LOG_LEVEL'] && (ENV['LOG_LEVEL'] > "0")
       begin
 	result = yield
 	self.setShellResult(result)
@@ -346,24 +352,10 @@ module Cli
       exit(0)
     elsif result.kind_of?(FalseClass)
       exit(1)
-    elsif result.kind_of?(Array)
-      result.each { |row|
-	if row.kind_of?(Array)
-	  puts "#{row.join(sep)}"
-	else
-	  puts "#{row}"
-	end
-      }
-    elsif result.kind_of?(Hash)
-      result.each { |k, v|
-	if v.kind_of?(Array)
-	  puts "#{k}: #{v.join(sep)}"
-	else
-          puts "#{k}: #{v}"
-	end
-      }
+    elsif result.kind_of?(String)
+      puts result
     else
-      puts result if result
+      puts result.inspect
     end
     exit(0)
   end
@@ -408,30 +400,6 @@ module Cli
       puts "#{File.basename($0)} " + showOptions(options).join(" ") + "..."
     end
     option
-  end
-
-  # Edit file - display mode if possible (detach editing)
-  def self.xedit(*files)
-    if ENV['DISPLAY']
-      xeditor = ENV['XEDITOR'] || File.execPath('gvim') || 'vim'
-    else
-      xeditor = ENV['EDITOR'] || 'vim'
-    end
-    case xeditor
-    when /vim/
-      tabcount = (files.size >= 6) ? 6 : files.size
-      Pf.system("#{xeditor} -p#{tabcount} #{files.join(' ')}", 1)
-    else
-      Pf.system("#{xeditor} #{files.join(' ')}", 1)
-    end
-  end
-
-  # Edit files - inline mode
-  def self.edit(*files)
-    display = ENV['DISPLAY']
-    ENV.delete('DISPLAY')
-    xedit(*files)
-    ENV['DISPLAY'] = display if display
   end
 end
 
@@ -478,45 +446,6 @@ module Pf
     Kernel.exec(command)
   end
 
-  def self.etcDir(name)
-    "#{ENV['T_ETC_DIR']}/#{name}"
-  end
-
-  def self.userCfPath(name)
-    if ENV['T_PRIVATEDIR']
-      "#{ENV['T_PRIVATEDIR']}/#{name}"
-    else
-      "#{ENV['HOME']}/.tool/#{name}"
-    end
-  end
-
-  # Common data directory (guaranteed to be writable on all condition)
-  # So only writer could read back
-  def self.dataDir(name)
-    "#{ENV['T_DATA_DIR']}/#{name}"
-  end
-
-  # Common data directory (not guaranteed to be writable on all condition)
-  def self.dataDir0(name)
-    "#{ENV['T_DATA_DIR0']}/#{name}"
-  end
-
-  def self.tmpPath(name)
-    tmpdir = ENV['TMPDIR'] || "/usr/tmp"
-    "#{tmpdir}/#{name}"
-  end
-
-  def self.privatePath(name)
-    tmpdir = ENV['TMPDIR'] || "/usr/tmp"
-    "#{tmpdir}/#{ENV['USER']}-#{name}"
-  end
-
-  def self.pidFile(name, pid = nil)
-    pidfile = "#{ENV['TMPDIR']}/PIDS/#{name}.pid"
-    File.catto(pidfile, pid) if pid
-    pidfile
-  end
-
   # Run command as root (via sudo)
   def self.suRun(command, trace = 0)
     if Process.uid == 0
@@ -525,123 +454,10 @@ module Pf
       Pf.system("sudo #{command}", trace)
     end
   end
-
-  def self.runOnHost(host, *cmds)
-    if host != hostname(true)
-      cmd = "ssh -t #{host} #{cmds.join(' ')}"
-      Pf.exec(cmd, 1)
-    end
-  end
-
-  def self.resetEnv
-    ENV.keys.grep(/^T_/).each do |e|
-      ENV.delete(e)
-    end
-  end
-end
-
-# Xterm support functions
-class Xterm
-  def Xterm.run(program, config = {})
-    require 'yaml'
-
-    xtarg = config[:xtarg] || ""
-    name  = config[:name]  || program.split[0]
-    xtarg  += " -name #{name}"
-    if config[:title]
-      xtarg  += " -title #{config[:title]}"
-    else
-      xtarg  += " -title #{program.gsub(/ /, '.')}"
-    end
-    xtarg  += " -display #{config[:display]}" if config[:display]
-    yconfig = YAML.load(File.read(Pf.etcDir("xtprofile.yml")))
-    if test(?e, Pf.userCfPath("xtprofile.yml"))
-      yconfig.merge(YAML.load(File.read(Pf.userCfPath("xtprofile.yml"))))
-    end
-    xtargs += " "
-    xtargs += yconfig["xterm.#{name}"] || ""
-    if config[:foreground]
-      if config[:rhost] && (config[:rhost] != hostname())
-        xtarg += " -display #{ENV['DISPLAY']}"
-        cmd = "rsh -n #{config[:rhost]} /usr/openwin/bin/xterm \
-            #{xtarg} -e #{program}"
-      else
-        cmd = "xterm #{xtarg} #{program}"
-      end
-      Pf.system(cmd, 1)
-    else
-      cpid = Process::fork
-      if cpid
-        if config[:pidfile]
-          Plog.debug "Saving pid of #{cpid} to #{config[:pidfile]}\n"
-          File.catto(config[:pidfile], cpid)
-        end
-      else
-        Process::setpgrp
-        if config[:rhost] && (config[:rhost] != hostname())
-          xtarg += " -display #{ENV['DISPLAY']}"
-          exec("rsh -n #{config[:rhost]} /usr/openwin/bin/xterm \
-              #{xtarg} -e #{program}")
-        else
-          exec("xterm #{xtarg} -e #{program}")
-        end
-      end
-    end
-  end
-
-  def Xterm.runOnHost(host, program, config = {})
-    mconfig         = config.dup
-    mconfig[:rhost] = host
-    run(program, mconfig)
-  end
-
-  def Xterm.runForeground(program, config = {})
-    mconfig              = config.dup
-    mconfig[:foreground] = true
-    run(program, mconfig)
-  end
-
-=begin
---- Method: title=(msg)
-  Change the current xterm title
-*        msg: 
-=end
-  def Xterm.title=(msg)
-    $stderr.print("]0;#{msg}:#{hostname()}:#{ENV['TTY']}")
-  end
 end
 
 # Extension to normal File class
 class File
-  def File.catto(fname, content, openmode = "w")
-    File.deleteForce(fname)
-    File.open(fname, openmode) do |fid|
-      fid.print(content + "\n")
-    end
-  end
-
-  def File.deleteForce(*flist) 
-    flist.each do |file|
-      catcherr { File.delete(file) }
-    end
-  end
-
-  # Force a rename of a file to a new file
-  def File.renameForce(from, to) 
-    return unless File.file?(from)
-    File.file?(to) && File.delete(to)
-    File.rename(from, to)
-  end
-
-  # Search for the pattern in file.  Returns array of result
-  def File.grep(fname, pattern)
-    result = []
-    File.open(fname) do |fid|
-      result = fid.grep(pattern)
-    end
-    result
-  end
-
   # Equivalent perl method to check if file is text only
   def File.isText?(file, bsize=256)
     return true if File.extname(file) =~ /\.(java|c|h|m)/
@@ -656,29 +472,6 @@ class File
       end
     end
     text
-  end
-
-  # Change the last updated time on filelist
-  def self.touch(*flist)
-    flist.each do |afile|
-      if File.readable?(afile)
-        File.utime(Time.now, Time.now, afile)
-      else
-        fod = File.open(afile, "w")
-        fod.close
-      end
-    end
-  end
-
-  # Return the full path of a command - nil if not found
-  def self.execPath(command, pathvar = 'PATH')
-    ENV[pathvar].split(':').each do |apath|
-      cfile = "#{apath}/#{command}"
-      if executable?(cfile)
-        return cfile
-      end
-    end
-    nil
   end
 end
 
@@ -721,24 +514,50 @@ end
 require 'logger'
 class PLogger < Logger
   Format2    = "%s %s - [%s] %s\n"
-  @@__clevel = 0
-  @@__slevel = nil
+  attr_accessor :simple, :clevel
+
+  def initialize(*args)
+    super
+    @simple = false
+    @slevel = 2
+    @clevel = 0
+  end
+
   def format_message(severity, timestamp, progname, msg)
     # Look like this changes from diff versions.  So we need to detect
-    unless @@__slevel
-      @@__slevel = caller.index{|r| r =~ /`method_missing/} + 1
-    end
-    @@__slevel ||= 5
-    script = caller[@@__slevel+@@__clevel].sub(/:in .*$/, '').sub(/^.*\//, '')
-    if timestamp.respond_to?(:strftime)
-      Format2 % [severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg]
+    script = caller[@slevel+@clevel].sub(/:in .*$/, '').sub(/^.*\//, '')
+    if @simple
+      "%s - [%s] %s\n" % [severity[0..0], script, msg]
     else
-      Format2 % [severity[0..0], timestamp, script, progname]
+      if timestamp.respond_to?(:strftime)
+        Format2 % [severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg]
+      else
+        Format2 % [severity[0..0], timestamp, script, progname]
+      end
     end
   end
 
-  def self.set_clevel(level)
-    @@__clevel = level
+  def _fmt_obj(obj)
+    msg = if obj[:_ofmt] == 'Y'
+      obj.to_yaml
+    else
+      obj.inspect
+    end
+    @clevel = 3
+    yield msg
+    @clevel = 0
+  end
+
+  def dump_info(obj)
+    _fmt_obj(obj) {|msg| self.info(msg) }
+  end
+
+  def dump_error(obj)
+    _fmt_obj(obj) {|msg| self.error(msg) }
+  end
+
+  def dump(obj)
+    _fmt_obj(obj) {|msg| self.debug(msg) }
   end
 end
 
@@ -747,7 +566,7 @@ class Plog
 --- Class: Plog
     Singleton class for application based global log
 =end
-  @@xglog        = []
+  @@xglog        = nil
   @@timestampFmt = "%Y-%m-%d %H:%M:%S"
   @@dotrace      = false
   class << self
@@ -757,85 +576,58 @@ class Plog
       # Beside singleton imp,  this is also done to defer log creation
       # to absolute needed to allow application to control addition
       # logger setting
-      unless @@xglog[0]
-	addLogger(STDERR)
-	addLogger(ENV['T_PROGRESSFILE']) if ENV['T_PROGRESSFILE']
-      end
-      @@xglog
+      @@xglog ||= setLogger
     end
 
     public
-
-    def setTimestampFmt(format)
-      @@timestampFmt = format
-    end
-
-    def addLogger(*args)
-      if @@xglog.find {|alog, aname| aname == args[0]}
-        p "Repeat log"
-        return alog
-      end
-      newlog = PLogger.new(*args)
-      newlog.level = ENV['T_LOGSEVERITY'] ?
-	      ENV['T_LOGSEVERITY'].to_i : Logger::INFO
-      newlog.datetime_format = @@timestampFmt
-      @@xglog << [newlog, args[0]]
-      newlog
-    end
-
-    def rmLogger(logger)
-      i = 0
-      @@xglog.each do |alog, aname|
-        if aname == logger
-          @@xglog.delete_at(i)
-        end
-        i += 1
-      end
-    end
-
-    def trace(msg, level = 0)
-      if @@dotrace
-        if msg
-          loc = caller[0].sub(/:in .*$/, '').sub(/^.*\//, '')
-          info("#{loc} - #{msg}")
-        end
-        if level > 0
-          puts "\t" + caller[0...level].join("\n\t")
-        end
+    def setLogger
+      logspec = (ENV['LOG_LEVEL'] || '')
+      if logspec =~  /:f/
+        logger = PLogger.new($'.sub(/:.*$/, ''))
       else
-        info(msg)
+        logger = PLogger.new(STDERR)
       end
+      log_level, *logopts = logspec.split(':')
+      logopts.each do |anopt|
+        oname  = anopt[0]
+        ovalue = anopt[1..-1]
+        case oname
+        when 's'
+          logger.simple = true
+        end
+      end
+      logger.level = log_level && !log_level.empty? ? log_level.to_i : Logger::INFO
+      logger.datetime_format = @@timestampFmt
+      @@xglog = logger
     end
 
-    def traceon
-      @@dotrace = true
-    end
-
-    def traceoff
-      @@dotrace = false
+    def _fmt_obj(obj)
+      msg = if obj[:_ofmt] == 'Y'
+        obj.to_yaml
+      else
+        obj.inspect
+      end
+      myLogs.clevel = 3
+      yield msg
+      myLogs.clevel = 0
     end
 
     def dump_info(obj)
-      PLogger.set_clevel(1)
-      if obj[:_ofmt] == 'Y'
-        Plog.info(obj.to_yaml)
-      else
-        Plog.info(obj.inspect)
-      end
-      PLogger.set_clevel(0)
+      _fmt_obj(obj) {|msg| myLogs.info(msg) }
     end
 
     def dump_error(obj)
-      PLogger.set_clevel(1)
-      Plog.error(obj.inspect)
-      PLogger.set_clevel(0)
+      _fmt_obj(obj) {|msg| myLogs.error(msg) }
+    end
+
+    def dump(obj)
+      _fmt_obj(obj) {|msg| myLogs.debug(msg) }
     end
 
     def method_missing(symbol, *args)
-      result = nil
-      myLogs.each do |alog, tmp|
-	result = alog.send(symbol, *args)
-      end
+      myLogs.clevel = 1
+      result = myLogs.send(symbol, *args)
+      myLogs.clevel = 0
       result
     end
   end
@@ -856,6 +648,7 @@ class Psyslog
       end
       @@glog
     end
+
     def method_missing(symbol, *args)
       myLog.send(symbol, *args)
     end

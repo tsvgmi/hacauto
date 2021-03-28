@@ -127,9 +127,11 @@ module SmuleAuto
 
     def each(options={})
       filters = options[:filter].split('/').map{|r| "(#{r})"}.join(' OR ')
-      recs = @content.where(Sequel.lit(filters)).
-        order(:record_by, :created)
-      Plog.dump_info(options:options, rcount:recs.count)
+      recs = @content.order(:record_by, :created)
+      unless filters.empty?
+        recs = recs.where(Sequel.lit(filters))
+      end
+      Plog.dump_info(recs:recs, options:options, rcount:recs.count)
       progress_set(recs) do |r, bar|
         yield r[:sid], r
         true
@@ -290,7 +292,7 @@ module SmuleAuto
         limit(limit*4).
         where(Sequel.lit 'record_by like ?', "%#{@user}%").
         where(Sequel.lit 'created > ?', odate)
-      Plog.info(query)
+      Plog.dump(sql:query.sql)
       rank = {}
       query.each do |r|
         key = r[:record_by].sub(/,?#{@user},?/, '')
@@ -423,7 +425,7 @@ changes back into the database
       desc:'Look back the specified number of days only'
     def rank_singer(user)
       cli_wrap do
-        tdir    = _tdir_check(options[:data_dir])
+        tdir    = _tdir_check
         content = SmuleDB.instance(user, tdir)
         days    = options[:days]
         limit   = options[:limit] || 100
@@ -431,7 +433,8 @@ changes back into the database
         puts "Ranking in last #{days} days"
         line = 0
         output = []
-        output << %w(. Singer Count Loves Listens Favs Stars Score)
+        output << %w(No. Singer Count Loves Listens Favs Stars Score)
+        output << %w[=== ====== ===== ===== ======= ==== ===== =====]
         rank.each do |singer, sinfo|
           line += 1
           output << [line, singer, sinfo[:count], sinfo[:loves],
@@ -439,8 +442,9 @@ changes back into the database
                      sinfo[:stars], sinfo[:score].to_i]
         end
         print_table(output)
-        rank.map{|k, v| "@#{k}"}.
-          sort_by {|v| v.downcase.gsub(/_/, '')}.join(' ')
+        true
+        #rank.map{|k, v| "@#{k}"}.
+          #sort_by {|v| v.downcase.gsub(/_/, '')}.join(' ')
       end
     end
   end
