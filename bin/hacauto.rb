@@ -26,7 +26,7 @@ class SPage < SelPage
   end
 
   def find_and_click_song_links(lselector, rselector, options={})
-    if exclude_user = options[:exclude_user]
+    if !(exclude_user = options[:exclude_user]).nil?
       exclude_user = exclude_user.split(',')
     end
     pcount = options[:pcount].to_i
@@ -322,7 +322,6 @@ EOH
   end
 
   def create_from_site(spage, store, coptions={})
-    donelist = []
     loop do
       sinfo = store.peek
       break unless sinfo
@@ -386,7 +385,7 @@ class SongStore
       end
     end
     if @options[:pcount]
-      @songs = @songs.sort_by{ |e| e[:pcount] || 0}.reverse
+      @songs = @songs.sort_by{ |e| e[:pcount] || 0 }.reverse
     elsif @options[:random]
       @songs = @songs.sort_by{rand}
     end
@@ -624,17 +623,23 @@ class HACAuto
       # Is in the approved list?
       *_tmp, song, user = url.split('/')
       tgroup = 0
+      skipit = false
+
       spage.page.css('#version-list tr').each do |tr|
-        if p_a = tr.css('a')[0]
+        if !(p_a = tr.css('a')[0]).nil?
           puser = p_a['href'].split('/').last
           if puser == user
             Plog.info "#{song} approved for #{user} already.  Skip"
-            return
+            skipit = true
+            break
           end
         else
           break if tgroup >= 1
           tgroup += 1
         end
+      end
+      if skipit
+        return
       end
 
       Plog.info "Approving #{song} for #{user}."
@@ -646,7 +651,7 @@ class HACAuto
         Plog.error errmsg
       end
 
-      1.upto(5) do |repeat|
+      1.upto(5) do
         spage.goto(cdefault)
         spage.click_and_wait("#set-as-default")
         begin
@@ -724,7 +729,7 @@ class HACAuto
 
     def xem_nhieu(url)
       options = _getOptions
-      slist, nlist = _collect_and_filter do
+      slist, _nlist = _collect_and_filter do
         MusicSource.mk_source(url).song_list_with_filter(url, options)
       end
       _post_song_list(slist, options)
@@ -739,7 +744,7 @@ class HACAuto
 
       Plog.info "Filter against HAC current content"
       slist.each do |sentry|
-        sname, surl = sentry[:name], sentry[:href]
+        sname, _surl = sentry[:name], sentry[:href]
         sname = sname.strip.split(/\s*-\s*/)[0].sub(/^\d+\.\s*/, '')
         sentry[:name] = sname
       end
@@ -791,7 +796,6 @@ class HACAuto
         return
       end
       source  = HacSource.new(options)
-      ref_url = "#{source.base_url}/playlist/v/#{plname}"
       if options[:newlist]
         curlist = []
       else
@@ -802,7 +806,7 @@ class HACAuto
                   map { |r| r[:href].split('/')[4] }
       end
       slist = slist.select do |sentry|
-        sname, surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
+        _sname, surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
         curlist.include?(surl.split('/')[4]) ? false : true
       end
 
@@ -830,14 +834,11 @@ class HACAuto
       coptions = options[:with_attribution] ? {addn_note:'Source: hopamviet.vn'} : {}
       _connect_site do |spage|
         slist.each_with_index do |sentry, index|
-          sname, surl = sentry[:name], sentry[:href]
+          sname, _surl = sentry[:name], sentry[:href]
           Plog.info "Next to import is #{sname} - [#{index+1}/#{slist.size}]"
           input = hacfill.get_command_from_user
           break unless input
-          if input.is_a?(Symbol)
-            if input == :text_mode
-            end
-          else
+          unless input.is_a?(Symbol)
             hacfill.create_song(spage, sentry, coptions)
           end
         end
@@ -856,7 +857,6 @@ class HACAuto
     end
 
     def zing_song_list(url=nil)
-      base_url ||= 'https://nhac.vn'
       options = _getOptions
       slist   = []
       _connect_site(:zing) do |spage|

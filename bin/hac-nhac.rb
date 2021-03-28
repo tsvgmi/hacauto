@@ -544,14 +544,14 @@ class HahSource < MusicSource
     artist, chord = nil, nil
 
     ['#fullsong a', '.single-lyric-video a'].each do |spec|
-      if element = page.css(spec)[0]
+      if !(element = page.css(spec)[0]).nil?
         artist = element.text.strip
         break
       end
     end
 
     ['#fullsong .label-primary', '.single-lyric-video .KCNchordWrap'].each do |spec|
-      if element = page.css(spec)[0]
+      if !(element = page.css(spec)[0]).nil?
         chord = element.text.strip
         break
       end
@@ -587,7 +587,6 @@ EOL
   end
 
   def song_list(url, options={})
-    url     = 'https://hopamhay.com'
     page    = get_page(url)
     list_no = (options[:list_no] || 1).to_i
     section = page.css('.latest-lyrics')[list_no]
@@ -652,7 +651,7 @@ class NctSource < MusicSource
     limit = (options[:limit] || 9999).to_i
     page.css('.list_item_music li')[0..limit-1].map do |atrack|
       arefs = atrack.css('a').map { |a| [a.text, a['href']] }
-      info = {
+      {
         name:   arefs[0][0].sub(/\s*\(.*$/, '').sub(/\s+(2017|Cover)$/, ''),
         href:   arefs[0][1],
         artist: arefs[1][0],
@@ -686,10 +685,6 @@ class NctSource < MusicSource
 end
 
 class ZingSource < MusicSource
-  # Zing requires a selenium connection
-  def initialize
-  end
-
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
     page  = get_page(url)
@@ -711,14 +706,14 @@ class ZingSource < MusicSource
     end
   end
 
-  def song_list(url, options={})
+  def song_list(url, _options={})
     page   = get_page(url)
     # Artist page
     base_url = 'https://mp3.zing.vn'
     links    = page.css('li[data-type="song"]').map do |atrack|
       aref = atrack.css('a')[0]
       name, artist = aref.text.strip.split(/\s+-\s+/)
-      info = {
+      {
         name:   name,
         href:   base_url + aref['href'],
         artist: artist,
@@ -727,7 +722,7 @@ class ZingSource < MusicSource
     links
   end
 
-  def browser_song_list(spage, url, options={})
+  def browser_song_list(spage, url, _options={})
     uri      = URI.parse(url)
     base_url = uri.scheme + '://' + uri.host
     slist    = []
@@ -770,7 +765,7 @@ class ZingSource < MusicSource
       end
     when /top100/
       # Scroll a few times to the end of page
-      (1..5).each do |apage|
+      (1..5).each do
         spage.execute_script("window.scrollTo(0,10000)")
         sleep 1
       end
@@ -821,9 +816,8 @@ class ZingSource < MusicSource
 end
 
 class SpotifySource < MusicSource
-  def song_list(url, options={})
+  def song_list(url, _options={})
     page   = get_page(url)
-    links  = {}
     tracks = []
     page.css('.track-name-wrapper').each do |atrack|
       name = atrack.css('.track-name').text.strip
@@ -846,9 +840,10 @@ class HacSource < MusicSource
 
   def initialize(options={})
     @base_url = options[:hac_url] || "https://hopamchuan.com"
+    super
   end
 
-  def find_matching_songs(slist, do_match=true)
+  def find_matching_songs(slist)
     found_set  = []
     not_founds = []
     bar        = TTY::ProgressBar.new('Find [:bar] :percent', slist.size)
@@ -975,7 +970,7 @@ class HacSource < MusicSource
     genre     = page.css("#song-detail-info tr")[1].css("td")[1].text.strip
     perf_link = page.css('.perform a').last['href']
     song_key  = (lnote + lyric).scan(/\[([^\]]+)\]/)[0][0]
-    ret = {
+    {
       title:     page.css('#song-title').text.strip,
       artist:    artist.join(', '),
       author:    author,
@@ -987,7 +982,7 @@ class HacSource < MusicSource
     }
   end
 
-  def list_for_user(url, options={})
+  def list_for_user(url, _options={})
     offset = 0
     result = []
     loop do
@@ -1023,7 +1018,7 @@ class HacSource < MusicSource
   end
 
   # Pull the current list of songs from the playlist
-  def playlist(url, options={})
+  def playlist(url, _options={})
     offset  = 0
     entries = []
     url     = "#{@base_url}/#{url}" unless url =~ /^http/i
@@ -1063,7 +1058,7 @@ class HacSource < MusicSource
     end
 
     limit = (options[:limit] || 100000).to_i
-    if value = options[:page]
+    if !(value = options[:page]).nil?
       offset = (value.to_i) * 10
       incr = -10
     else

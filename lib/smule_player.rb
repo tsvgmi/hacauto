@@ -295,9 +295,6 @@ EOM
         return res
       end
       if !(plength = @roptions[:play_length]).nil?
-        plength = plength.to_i
-      end
-      if !(plength = @roptions[:play_length]).nil?
         duration = [plength.to_i, psecs].min
       else
         duration = psecs

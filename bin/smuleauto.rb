@@ -401,7 +401,6 @@ Filters is the list of SQL's into into DB.
       cli_wrap do
         _tdir_check
         content = SmuleDB.instance(user, options[:data_dir])
-        to_download = []
         content.each(filter:filters.join('/')) do |_sid, sinfo|
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
@@ -465,7 +464,7 @@ it left off from the previous run.
             finfo[:last_days] = (Time.now - finfo[:last_join])/(24*3600)
           end
         end
-        following.sort_by{ |k, v| v[:last_days] || 9999}.each do |asinger, finfo|
+        following.sort_by{ |_k, v| v[:last_days] || 9999 }.each do |asinger, finfo|
           puts "%-20.20s - %3d songs, %3d favs, %4d days, %s" %
             [asinger, finfo[:songs] || 0,
              finfo[:favs] || 0,
@@ -502,7 +501,7 @@ it left off from the previous run.
           end
           recs   = []
           filter = "stitle like '%#{data.shift}%'"
-          content.each(filter:filter) do |sid, r|
+          content.each(filter:filter) do |_sid, r|
             recs << r
           end
           ccount = content.add_tag(recs, data.join(','))
@@ -608,14 +607,14 @@ Filters is the list of SQL's into into DB.
         if options[:favs]
           wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1'))
         end
-        if value = options[:tags]
+        if !(value = options[:tags]).nil?
           wset = wset.where(Sequel.lit 'tags like ?', "%#{value}%")
         end
-        if value = options[:record_by]
+        if !(value = options[:record_by]).nil?
           wset = wset.where(Sequel.lit 'record_by like ?', "%#{value}%")
         end
 
-        if title = options[:title]
+        if !(title = options[:title]).nil?
           wset = wset.where(Sequel.lit 'stitle like ?', "%#{title}%")
         end
 
@@ -626,7 +625,7 @@ Filters is the list of SQL's into into DB.
           topen[r[:stitle]] = [r[:created], r[:tags]]
         end
         table = []
-        topen.sort_by{ |k, v| v[0]}.each do |name, sinfo|
+        topen.sort_by{ |_k, v| v[0]}.each do |name, sinfo|
           table << [sinfo[0], name, sinfo[1]]
         end
         print_table(table)
@@ -725,8 +724,7 @@ Filters is the list of SQL's into into DB.
         if !(value = woptions[:logfile]).nil?
           woptions[:logger] = PLogger.new(value)
         end
-
-        FirefoxWatch.new(user, dir, 'cursong.yml', woptions).start
+        FirefoxWatch.new(user, dir, csong_file, woptions).start
         sleep
       end
     end
