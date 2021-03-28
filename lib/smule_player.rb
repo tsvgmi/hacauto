@@ -229,7 +229,7 @@ module SmuleAuto
       end
       print cursor.move_to
       if sitem
-        if !(avatar = sitem[:avatar]).nil?
+        unless (avatar = sitem[:avatar]).nil?
           lfile = "cache/" + File.basename(avatar)
           unless test(?f, lfile)
             system "curl -so #{lfile} #{avatar}"
@@ -294,10 +294,10 @@ EOM
       elsif psecs <= 0
         return res
       end
-      if !(plength = @roptions[:play_length]).nil?
-        duration = [plength.to_i, psecs].min
-      else
+      if (plength = @roptions[:play_length]).nil?
         duration = psecs
+      else
+        duration = [plength.to_i, psecs].min
       end
 
       spage = @scanner.spage
@@ -322,11 +322,10 @@ EOM
         record_by: sitem[:record_by],
         comments:  psitem[:msgs].to_json,
       }
-      if !(rec = Comment.first(sid:sitem[:sid])).nil?
+      if (rec = Comment.first(sid:sitem[:sid])).nil?
+      else
         rec.update(data)
         rec.save_changes
-      else
-        Comment.insert(data)
       end
       puts table.render(multiline:true)
     end
@@ -406,7 +405,7 @@ EOH
       while true
         # Update into db last one played
         @content.update_song(sitem) if sitem
-        if !(sitem = @playlist.next_song).nil?
+        unless (sitem = @playlist.next_song).nil?
           _list_show(sitem, nil, @playlist.toplay_list, 0, 10)
           psitem = play_asong(sitem)
           if (duration = psitem[:duration]) <= 0
@@ -508,7 +507,7 @@ EOH
           sitem[:stars] = key.to_i
         end
       when 'b'
-        if !(param = prompt.ask('Browser Op alue?')).nil?
+        unless (param = prompt.ask('Browser Op alue?')).nil?
           _menu_eval do
             browser_op(sitem, psitem, param)
             prompt.keypress("Press any key [:countdown]", timeout:3)
@@ -540,7 +539,7 @@ EOH
         end
 
       when 'h'
-        if !(url = prompt.ask('URL:')).nil?
+        unless (url = prompt.ask('URL:')).nil?
           newsongs = SmuleSong.update_from_url(url, update:true)
           @playlist.insert(*newsongs)
           return [:next, true]
@@ -612,7 +611,7 @@ EOH
                           timeout:3)
         end
       when 't'                             # Set tag
-        if !(tag = prompt.ask('Tag value ?')).nil?
+        unless (tag = prompt.ask('Tag value ?')).nil?
           @content.add_tag(sitem, tag)
         end
       when 'x'                            # Quit

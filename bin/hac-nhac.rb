@@ -544,14 +544,14 @@ class HahSource < MusicSource
     artist, chord = nil, nil
 
     ['#fullsong a', '.single-lyric-video a'].each do |spec|
-      if !(element = page.css(spec)[0]).nil?
+      unless (element = page.css(spec)[0]).nil?
         artist = element.text.strip
         break
       end
     end
 
     ['#fullsong .label-primary', '.single-lyric-video .KCNchordWrap'].each do |spec|
-      if !(element = page.css(spec)[0]).nil?
+      unless (element = page.css(spec)[0]).nil?
         chord = element.text.strip
         break
       end
@@ -1058,12 +1058,12 @@ class HacSource < MusicSource
     end
 
     limit = (options[:limit] || 100000).to_i
-    if !(value = options[:page]).nil?
-      offset = (value.to_i) * 10
-      incr = -10
-    else
+    if (value = options[:page]).nil?
       offset = 0
       incr = 10
+    else
+      offset = (value.to_i) * 10
+      incr = -10
     end
     loop do
       purl = "#{url}?offset=#{offset}"

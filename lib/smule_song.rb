@@ -403,9 +403,9 @@ module SmuleAuto
       document = Nokogiri::HTML(source)
       asset_str    = nil
 
-      stream = document.at('meta[name="twitter:player:stream"]')
-      if stream
-        asset_str = document.css('head script')[0].text.split("\n").grep(/Recording:/)[0].sub(/^\s*Recording: /, '')[0..-2]
+      if !(stream = document.at('meta[name="twitter:player:stream"]')).nil?
+        asset_str = document.css('head script')[0].text.split("\n").
+          grep(/Recording:/)[0].sub(/^\s*Recording: /, '')[0..-2]
       elsif !(stream = document.css('script')[0]).nil?
         asset_str = stream.text.split("\n").grep(/^\s+Recording: /)[0]
         if asset_str

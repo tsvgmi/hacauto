@@ -444,7 +444,7 @@ it left off from the previous run.
                           each do |sinfo|
           singers = sinfo[:record_by].split(',')
           singers.select{ |r| r != user }.each do |osinger|
-            if !(finfo = following[osinger]).nil?
+            unless (finfo = following[osinger]).nil?
               finfo[:last_join] ||= Time.at(0)
               finfo[:last_join] = [created_value(sinfo[:created]),
                                    created_value(finfo[:last_join])].max
@@ -607,14 +607,14 @@ Filters is the list of SQL's into into DB.
         if options[:favs]
           wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1'))
         end
-        if !(value = options[:tags]).nil?
+        unless (value = options[:tags]).nil?
           wset = wset.where(Sequel.lit 'tags like ?', "%#{value}%")
         end
-        if !(value = options[:record_by]).nil?
+        unless (value = options[:record_by]).nil?
           wset = wset.where(Sequel.lit 'record_by like ?', "%#{value}%")
         end
 
-        if !(title = options[:title]).nil?
+        unless (title = options[:title]).nil?
           wset = wset.where(Sequel.lit 'stitle like ?', "%#{title}%")
         end
 
@@ -667,13 +667,13 @@ Filters is the list of SQL's into into DB.
         _tdir_check
         woptions = writable_options
         content = SmuleDB.instance(user, woptions[:data_dir])
-        if !(exclude = woptions[:exclude]).nil?
+        unless (exclude = woptions[:exclude]).nil?
           exclude = exclude.split(',')
         else
           exclude = []
         end
         woptions[:exclude] = exclude
-        if !(topc = woptions[:top]).nil?
+        unless (topc = woptions[:top]).nil?
           topc += exclude.size
           singers = content.top_partners(topc, woptions).
             map{ |k, _v| k }[options[:offset]..-1].
@@ -721,7 +721,7 @@ Filters is the list of SQL's into into DB.
     def watch_mp4(dir, user, csong_file='cursong.yml')
       cli_wrap do
         woptions = writable_options
-        if !(value = woptions[:logfile]).nil?
+        unless (value = woptions[:logfile]).nil?
           woptions[:logger] = PLogger.new(value)
         end
         FirefoxWatch.new(user, dir, csong_file, woptions).start

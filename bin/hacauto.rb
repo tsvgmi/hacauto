@@ -26,7 +26,7 @@ class SPage < SelPage
   end
 
   def find_and_click_song_links(lselector, rselector, options={})
-    if !(exclude_user = options[:exclude_user]).nil?
+    unless (exclude_user = options[:exclude_user]).nil?
       exclude_user = exclude_user.split(',')
     end
     pcount = options[:pcount].to_i
@@ -286,7 +286,7 @@ EOH
   def create_song(spage, sinfo, options={})
     surl = sinfo[:href]
     unless sinfo[:lyric]
-      if !(info = get_page_lyric(surl)).nil?
+      unless (info = get_page_lyric(surl)).nil?
         unless sinfo[:lyrics]
           return nil
         end
@@ -503,13 +503,13 @@ class HACAuto
 
     def _each_page(link)
       options = _getOptions
-      if !(value = options[:page]).nil?
+      if (value = options[:page]).nil?
+        page = 0
+        incr = 1
+      else
         page, incr = value.split(',')
         page = value.to_i
         incr = (incr || 1).to_i
-      else
-        page = 0
-        incr = 1
       end
       limit   = (options[:limit] || 1000).to_i
       _connect_site do |spage|
@@ -623,16 +623,16 @@ class HACAuto
       skipit = false
 
       spage.page.css('#version-list tr').each do |tr|
-        if !(p_a = tr.css('a')[0]).nil?
+        if (p_a = tr.css('a')[0]).nil?
+          break if tgroup >= 1
+          tgroup += 1
+        else
           puser = p_a['href'].split('/').last
           if puser == user
             Plog.info "#{song} approved for #{user} already.  Skip"
             skipit = true
             break
           end
-        else
-          break if tgroup >= 1
-          tgroup += 1
         end
       end
       if skipit
