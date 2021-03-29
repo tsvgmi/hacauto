@@ -487,9 +487,9 @@ class PLogger < Logger
       "%s - [%s] %s\n" % [severity[0..0], script, msg]
     else
       if timestamp.respond_to?(:strftime)
-        Format2 % [severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg]
+        format(Format2, severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg)
       else
-        Format2 % [severity[0..0], timestamp, script, progname]
+        format(Format2, severity[0..0], timestamp, script, progname)
       end
     end
   end

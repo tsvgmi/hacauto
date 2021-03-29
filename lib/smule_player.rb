@@ -228,10 +228,8 @@ module SmuleAuto
       print cursor.move_to
       if sitem
         unless (avatar = sitem[:avatar]).nil?
-          lfile = "cache/" + File.basename(avatar)
-          unless test('f', lfile)
-            system "curl -so #{lfile} #{avatar}"
-          end
+          lfile = "cache/#{File.basename(avatar)}"
+          system "curl -so #{lfile} #{avatar}" unless test('f', lfile)
           print cursor.move_to(0,0)
           system "imgcat -r 5 <#{lfile}"
         end
@@ -249,7 +247,7 @@ EOM
         puts box
       end
       start.upto(start+limit-1) do |i|
-        witem  = cselect[i]
+        witem = cselect[i]
         next unless witem
         ptags = tags[witem[:stitle]] || ''
         isfav = (witem[:isfav] || witem[:oldfav]) ? 'F' : ''
@@ -348,13 +346,11 @@ EOM
 
     # Run the code and protect all exception from killing the menu
     def _menu_eval
-      begin
-        yield
-      rescue => e
-        prompt = TTY::Prompt.new
-        @logger.dump_error(e:e, args:args, trace:e.backtrace)
-        prompt.keypress("[ME] Press any key to continue ...")
-      end
+      yield
+    rescue => e
+      prompt = TTY::Prompt.new
+      @logger.dump_error(e:e, trace:e.backtrace)
+      prompt.keypress("[ME] Press any key to continue ...")
     end
 
     HelpScreen = <<EOH

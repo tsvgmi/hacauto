@@ -591,8 +591,10 @@ module SmuleAuto
     end
 
     def check_and_download(f, user)
-      @logger.info "%s %d" % [File.basename(f), File.size(f)]
-      @logger.info "%s %s %s" % [@info[:sid], @info[:stitle], @info[:record_by]]
+      @logger.info format("%<file>s %<size>d", file:File.basename(f),
+                          size:File.size(f))
+      @logger.info format("%<sid>s %<title>s %<record>s", sid:@info[:sid],
+                          title:@info[:stitle], record:@info[:record_by])
 
       sfile = ssfile
       if test('f', sfile)

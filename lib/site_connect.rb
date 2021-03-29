@@ -108,42 +108,38 @@ class SDriver
   end
 
   def clickit(selector, options={})
-    begin
-      wtime    = options[:wait] ||= 2
-      index    = options[:index] ||= 0
-      elements = @driver.find_elements(:css, selector)
-      Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
-      if (element = elements[index]).nil?
-        Plog.error "Element #{selector}[#{index}] not found"
-        return false
-      end
-      if options[:move]
-        @driver.action.move_to(element.location)
-      end
-      element.click
-      sleep(wtime) if wtime > 0
-    rescue => e
-      Plog.error(e)
+    wtime    = options[:wait] ||= 2
+    index    = options[:index] ||= 0
+    elements = @driver.find_elements(:css, selector)
+    Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
+    if (element = elements[index]).nil?
+      Plog.error "Element #{selector}[#{index}] not found"
       return false
     end
+    if options[:move]
+      @driver.action.move_to(element.location)
+    end
+    element.click
+    sleep(wtime) if wtime > 0
     true
+  rescue => e
+    Plog.error(e)
+    return false
   end
 
   def click_and_wait(selector, wtime=2, index=0)
-    begin
-      elements = @driver.find_elements(:css, selector)
-      Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
-      if (element = elements[index]).nil?
-        Plog.error "Element #{selector}[#{index}] not found"
-        return false
-      end
-      element.click
-      sleep(wtime) if wtime > 0
-    rescue => e
-      Plog.error(e)
+    elements = @driver.find_elements(:css, selector)
+    Plog.debug "Click on #{selector}[#{index}] (of #{elements.size})"
+    if (element = elements[index]).nil?
+      Plog.error "Element #{selector}[#{index}] not found"
       return false
     end
+    element.click
+    sleep(wtime) if wtime > 0
     true
+  rescue => e
+    Plog.error(e)
+    return false
   end
  
   def alert

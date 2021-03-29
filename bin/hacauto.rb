@@ -116,12 +116,10 @@ class AutoFill
   end
 
   def get_page_lyric(url)
-    begin
-      MusicSource.mk_source(url).lyric_info(url)
-    rescue => e
-      Plog.error "Error retrieving #{url} - #{e}"
-      nil
-    end
+    MusicSource.mk_source(url).lyric_info(url)
+  rescue => e
+    Plog.error "Error retrieving #{url} - #{e}"
+    nil
   end
 
   HelpText = <<EOH
@@ -260,27 +258,25 @@ EOH
 
   def add_to_plist(spage, plname, sinfo, options={})
     spage.goto(sinfo[:href])
-    begin
-      spage.click_and_wait('#song-action-add > i.fa.fa-plus')
-      if options[:newlist]
-        spage.click_and_wait('#playlist-add-label > i.fa.fa-plus')
-        spage.type('#playlist-add-name', plname)
-        spage.click_and_wait('#playlist-add-btn')
+    spage.click_and_wait('#song-action-add > i.fa.fa-plus')
+    if options[:newlist]
+      spage.click_and_wait('#playlist-add-label > i.fa.fa-plus')
+      spage.type('#playlist-add-name', plname)
+      spage.click_and_wait('#playlist-add-btn')
 
-        # Collect the new list id
-        spage.refresh
-        new_id = spage.page.css('.playlist-item')[0].css('input')[0]['id']
-        options[:new_id] = new_id.sub(/^playlist-/, '')
-        options.delete(:newlist)
-      end
-      if plname =~ /^\d+$/
-        spage.click_and_wait("label[for=\"playlist-#{plname}\"]")
-      else
-        spage.click_and_wait("label[title=\"#{plname}\"]")
-      end
-    rescue => e
-      Plog.error e
+      # Collect the new list id
+      spage.refresh
+      new_id = spage.page.css('.playlist-item')[0].css('input')[0]['id']
+      options[:new_id] = new_id.sub(/^playlist-/, '')
+      options.delete(:newlist)
     end
+    if plname =~ /^\d+$/
+      spage.click_and_wait("label[for=\"playlist-#{plname}\"]")
+    else
+      spage.click_and_wait("label[title=\"#{plname}\"]")
+    end
+  rescue => e
+    Plog.error e
   end
 
   def create_song(spage, sinfo, options={})
@@ -945,22 +941,18 @@ class HACAuto
     end
 
     def lyric_info(url)
-      begin
-        MusicSource.mk_source(url, _getOptions).lyric_info(url)
-      rescue => e
-        Plog.error "Error retrieving #{url} - #{e}"
-        nil
-      end
+      MusicSource.mk_source(url, _getOptions).lyric_info(url)
+    rescue => e
+      Plog.error "Error retrieving #{url} - #{e}"
+      nil
     end
 
     def song_list(url)
       options = _getOptions
-      begin
-        MusicSource.mk_source(url, options).song_list(url, options)
-      rescue => e
-        Plog.error "Error retrieving #{url} - #{e}"
-        nil
-      end
+      MusicSource.mk_source(url, options).song_list(url, options)
+    rescue => e
+      Plog.error "Error retrieving #{url} - #{e}"
+      nil
     end
 
     def monitor_lyric(url, ofile='monitor-out.yml')
@@ -1104,9 +1096,9 @@ class HACAuto
         {name: f, fsize: fsize, count: content.size}
       end
       fentries.sort_by{ |e| e[:count]}.each do |e|
-        puts "%-30s %6d %3d" % [e[:name], e[:fsize], e[:count]]
+        puts format("%-30s %6d %3d", e[:name], e[:fsize], e[:count])
       end
-      puts "%-30s %6d %3d" % ['Total', 0, total]
+      puts format("%-30s %6d %3d", 'Total', 0, total)
       true
     end
 

@@ -66,12 +66,10 @@ module SmuleAuto
     end
 
     def update_song(sinfo)
-      begin
-        sinfo.delete(:lyrics)
-        @content.insert_conflict(:replace).insert(sinfo)
-      rescue => e
-        Plog.error(e)
-      end
+      sinfo.delete(:lyrics)
+      @content.insert_conflict(:replace).insert(sinfo)
+    rescue => e
+      Plog.error(e)
     end
 
     def delete_song(sinfo)

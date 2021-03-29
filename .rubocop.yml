@@ -1,3 +1,7 @@
 ---
+Layout/SpaceAroundEqualsInParameterDefault:
+  EnforcedStyle: no_space
+
 Lint/Debugger:
   Enabled: false
+
