@@ -22,20 +22,18 @@ module SmuleAuto
       @state_file = state_file
       @content    = content
       @options    = options
-      @logger     = options[:logger] || PLogger.new(STDERR)
-      if test(?f, @state_file)
-        config      = YAML.safe_load_file(@state_file)
-        if config[:clist]
-          @clist      = @content.select_sids(config[:clist])
-        end
-        @filter     = config[:filter]
-        @order      = config[:order]
-        @listpos    = config[:listpos]
+      @logger     = options[:logger] || PLogger.new($stderr)
+      if test('f', @state_file)
+        config   = YAML.safe_load_file(@state_file)
+        @clist   = @content.select_sids(config[:clist]) if config[:clist]
+        @filter  = config[:filter]
+        @order   = config[:order]
+        @listpos = config[:listpos]
       end
-      @clist      ||= []
-      @filter     ||= {}
-      @order      ||= 'play'
-      @listpos    ||= 0
+      @clist   ||= []
+      @filter  ||= {}
+      @order   ||= 'play'
+      @listpos ||= 0
     end
 
     def toplay_list
@@ -95,7 +93,7 @@ module SmuleAuto
 
     def next_song(increment=1, nextinc=1)
       req_file = 'toplay.dat'
-      if test(?f, req_file)
+      if test('f', req_file)
         sids = File.read(req_file).split
         @clist.insert(@listpos, *@content.select_sids(sids))
         FileUtils.remove(req_file, verbose:true)
@@ -194,7 +192,7 @@ module SmuleAuto
       @sapi       = API.new(options)
       @csong_file = options[:csong_file] || "./cursong.yml"
       @playlist   = PlayList.new(File.join(@tdir, StateFile), @content)
-      @logger     = options[:logger] || PLogger.new(STDERR)
+      @logger     = options[:logger] || PLogger.new($stderr)
       at_exit {
         @playlist.save
         exit 0
@@ -231,7 +229,7 @@ module SmuleAuto
       if sitem
         unless (avatar = sitem[:avatar]).nil?
           lfile = "cache/" + File.basename(avatar)
-          unless test(?f, lfile)
+          unless test('f', lfile)
             system "curl -so #{lfile} #{avatar}"
           end
           print cursor.move_to(0,0)
@@ -352,9 +350,9 @@ EOM
     def _menu_eval
       begin
         yield
-      rescue => errmsg
+      rescue => e
         prompt = TTY::Prompt.new
-        @logger.dump_error(errmsg:errmsg, args:args, trace:errmsg.backtrace)
+        @logger.dump_error(e:e, args:args, trace:e.backtrace)
         prompt.keypress("[ME] Press any key to continue ...")
       end
     end
@@ -443,8 +441,8 @@ EOH
             else
               key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
             end
-          rescue => errmsg
-            @logger.error(errmsg)
+          rescue => e
+            @logger.error(e)
             next
           end
           begin
@@ -467,8 +465,8 @@ EOH
               refresh = true
             end
             break if (Time.now >= endt)
-          rescue => errmsg
-            p errmsg
+          rescue => e
+            p e
             sleep(3)
           end
         end
@@ -590,8 +588,8 @@ EOH
                 eval "load '#{script}'", TOPLEVEL_BINDING
               end
             end
-          rescue => errmsg
-            p errmsg
+          rescue => e
+            p e
           end
           prompt.keypress("Press any key [:countdown]", timeout:3)
         end

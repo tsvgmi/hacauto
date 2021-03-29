@@ -15,7 +15,7 @@ module SmuleAuto
         split("\n").sort_by{ |d| File.mtime(d)}[-1]
       @watch_dir  = watch_dir
       @csong_file = csong_file
-      @logger     = options[:logger] || PLogger.new(STDERR)
+      @logger     = options[:logger] || PLogger.new($stderr)
       @options    = options
 
       @logger.info("Watching #{@watch_dir}")
@@ -30,8 +30,8 @@ module SmuleAuto
         rescue Errno::ENOENT
           # Ignore this error.  Just glitch b/c I could not see fast
           # enough.  Likely non-mp4 file anyway
-        rescue => errmsg
-          p errmsg
+        rescue => e
+          p e
         end
       end
     end
@@ -294,7 +294,7 @@ module SmuleAuto
       @info          = sinfo
       @options       = options
       @surl          = "https://www.smule.com#{@info[:href]}"
-      @logger        = options[:logger] || PLogger.new(STDERR)
+      @logger        = options[:logger] || PLogger.new($stderr)
 
       @info[:created] ||= Date.today
       if @info[:created].is_a?(String)
@@ -311,7 +311,7 @@ module SmuleAuto
     def sofile
       odir  = SmuleSong.song_dir +
         "/#{@info[:record_by].split(',').sort.join('-')}"
-      FileUtils.mkdir_p(odir, verbose:true) unless test(?d, odir)
+      FileUtils.mkdir_p(odir, verbose:true) unless test('d', odir)
       title = @info[:title].strip.gsub(/[\/\"]/, '-')
       ofile = File.join(odir, title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
       sfile = ssfile
@@ -494,7 +494,7 @@ module SmuleAuto
 
     def mp4_tags
       sfile = ssfile
-      if !sfile || !test(?s, sfile)
+      if !sfile || !test('s', sfile)
         @logger.error("#{@info[:stitle]}:#{sfile} empty or not exist")
         return nil
       end
@@ -542,7 +542,7 @@ module SmuleAuto
         return :was_tagged
       end
       ofile = ssfile
-      if ofile && test(?f, ofile)
+      if ofile && test('f', ofile)
         href    = 'https://www.smule.com' + @info[:href]
         date    = @info[:created].strftime("%Y-%m-%d")
         album   = @info[:created].strftime("Smule-%Y.%m")
@@ -556,7 +556,7 @@ module SmuleAuto
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
         curl(@info[:avatar], lcfile)
-        if test(?f, lcfile) && `file #{lcfile}` =~ /JPEG/
+        if test('f', lcfile) && `file #{lcfile}` =~ /JPEG/
           command += " --artwork REMOVE_ALL --artwork #{lcfile}"
         end
         command += " --title '#{title}'"
@@ -595,7 +595,7 @@ module SmuleAuto
       @logger.info "%s %s %s" % [@info[:sid], @info[:stitle], @info[:record_by]]
 
       sfile = ssfile
-      if test(?f, sfile)
+      if test('f', sfile)
         unless @options[:verify] 
           sofile
           #_run_command("open -g #{sfile}") if @options[:open]

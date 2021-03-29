@@ -138,8 +138,8 @@ module ChordMerger
 
             l.insert(pos, "[#{text}]")
             #Plog.dump_error(l: l)
-          rescue => errmsg
-            Plog.error errmsg
+          rescue => e
+            Plog.error e
           end
         end
         chords = []
@@ -912,12 +912,12 @@ class HacSource < MusicSource
 
     sdir    = options[:store] || '.'
     odir    = "#{sdir}/#{user}"
-    unless test(?d, odir)
+    unless test('d', odir)
       FileUtils.mkdir_p(odir, verbose: true)
     end
 
     ofile = "#{odir}/#{sno}::#{song}.yml"
-    if !options[:force] && test(?s, ofile)
+    if !options[:force] && test('s', ofile)
       Plog.info("#{ofile} exists.  Skip") if options[:verbose]
       return
     end

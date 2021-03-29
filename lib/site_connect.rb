@@ -122,8 +122,8 @@ class SDriver
       end
       element.click
       sleep(wtime) if wtime > 0
-    rescue => errmsg
-      Plog.error(errmsg)
+    rescue => e
+      Plog.error(e)
       return false
     end
     true
@@ -139,8 +139,8 @@ class SDriver
       end
       element.click
       sleep(wtime) if wtime > 0
-    rescue => errmsg
-      Plog.error(errmsg)
+    rescue => e
+      Plog.error(e)
       return false
     end
     true
@@ -199,8 +199,8 @@ class SiteConnect
       sdriver.type('#identifierId', identity + "\n")
       sdriver.type('input[name="password"]', password + "\n")
 
-      STDERR.puts "Confirm authentication on cell phone and continue"
-      STDIN.gets
+      $stderr.puts "Confirm authentication on cell phone and continue"
+      $stdin.gets
       sdriver
     end
 

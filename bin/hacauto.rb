@@ -118,8 +118,8 @@ class AutoFill
   def get_page_lyric(url)
     begin
       MusicSource.mk_source(url).lyric_info(url)
-    rescue => errmsg
-      Plog.error "Error retrieving #{url} - #{errmsg}"
+    rescue => e
+      Plog.error "Error retrieving #{url} - #{e}"
       nil
     end
   end
@@ -137,15 +137,15 @@ EOH
 
   def get_command_from_user
     while true
-      STDERR.print "Command [b|h|p|r|s|t|w|x]? "
-      STDERR.flush
-      ans = STDIN.gets.strip
+      $stderr.print "Command [b|h|p|r|s|t|w|x]? "
+      $stderr.flush
+      ans = $stdin.gets.strip
       case ans
       when /^b/io
         require 'byebug'
         byebug
       when /^(h|\?)/io
-        STDERR.puts HelpText
+        $stderr.puts HelpText
       when /^p/io
         return :previous
       when /^r/io
@@ -153,8 +153,8 @@ EOH
         file = __FILE__
         begin
           eval "load '#{file}'", TOPLEVEL_BINDING
-        rescue => errmsg
-          Plog.error errmsg
+        rescue => e
+          Plog.error e
         end
       when /^s/io
         return :skip
@@ -238,8 +238,8 @@ EOH
           if spage
             begin
               spage.type('#song-link', work_link, clear: true)
-            rescue => errmsg
-              Plog.error errmsg
+            rescue => e
+              Plog.error e
             end
           end
           system "open '#{work_link}'"
@@ -278,8 +278,8 @@ EOH
       else
         spage.click_and_wait("label[title=\"#{plname}\"]")
       end
-    rescue => errmsg
-      Plog.error errmsg
+    rescue => e
+      Plog.error e
     end
   end
 
@@ -315,8 +315,8 @@ EOH
       spage.type('#song-link',    sinfo[:source])
       Plog.info "Review page to fill in remaining info and submit afterward"
       play_song(sinfo, spage)
-    rescue => errmsg
-      Plog.error errmsg
+    rescue => e
+      Plog.error e
     end
     info
   end
@@ -376,7 +376,7 @@ class SongStore
     @curptr  = 0
     @songs   = []
     @files.each do |file|
-      if test(?s, file)
+      if test('s', file)
         songs = YAML.safe_load_file(file)
         Plog.info "Reading #{songs.size} entries from #{file}"
         @songs += songs
@@ -428,13 +428,13 @@ class SongStore
 
   def peek
     if @files.size <= 0
-      STDERR.print "URL/File to retrieve song: "
-      STDERR.flush
-      url = STDIN.gets.strip
+      $stderr.print "URL/File to retrieve song: "
+      $stderr.flush
+      url = $stdin.gets.strip
       if url.empty? || url =~ /^x/i
         return {}
       end
-      if test(?f, url)
+      if test('f', url)
         @songs[@curptr] = YAML.safe_load_file(url)
       elsif url =~ /hopamchuan/
         sinfo = {href: url}
@@ -696,8 +696,8 @@ class HACAuto
         unless sinfo[:lyric]
           begin
             sinfo.update(HavSource.new.lyric_info(sinfo[:href]))
-          rescue => errmsg
-            bar.log(errmsg.to_s)
+          rescue => e
+            bar.log(e.to_s)
           end
         end
         bar.advance
@@ -918,7 +918,7 @@ class HACAuto
           lfile = Dir.glob("*/#{sno}::#{sname}.yml")[0]
         end
 
-        if !lfile || !test(?s, lfile)
+        if !lfile || !test('s', lfile)
           hac_source.download_song(e[:href])
         end
       end
@@ -947,8 +947,8 @@ class HACAuto
     def lyric_info(url)
       begin
         MusicSource.mk_source(url, _getOptions).lyric_info(url)
-      rescue => errmsg
-        Plog.error "Error retrieving #{url} - #{errmsg}"
+      rescue => e
+        Plog.error "Error retrieving #{url} - #{e}"
         nil
       end
     end
@@ -957,8 +957,8 @@ class HACAuto
       options = _getOptions
       begin
         MusicSource.mk_source(url, options).song_list(url, options)
-      rescue => errmsg
-        Plog.error "Error retrieving #{url} - #{errmsg}"
+      rescue => e
+        Plog.error "Error retrieving #{url} - #{e}"
         nil
       end
     end
@@ -969,7 +969,7 @@ class HACAuto
       mcontent      = []
       checked_lists = []
       last_time = Time.at(0)
-      if test(?s, ofile)
+      if test('s', ofile)
         notified = YAML.load_stream(File.open(ofile)).map{ |r| r[:name] }
       else
         notified = []
@@ -1042,7 +1042,7 @@ class HACAuto
       plname  = CGI.unescape(plname) if plname.include?('%')
       options[:site_filter] = 'hac'
       options[:src_url]     = url
-      if test(?f, url)
+      if test('f', url)
         slist  = YAML.safe_load_file(url)
       else
         source = MusicSource.mk_source(url)
@@ -1123,7 +1123,7 @@ class HACAuto
 
     def lineup_chords(ifile)
       if ifile == '-'
-        lines = STDIN.read.split(/\n/)
+        lines = $stdin.read.split(/\n/)
       else
         lines = File.read(ifile).split(/\n/)
       end
@@ -1174,8 +1174,8 @@ class HACAuto
                   l += ' ' * 80
                 end
                 l.insert(pos, "[#{text}]")
-              rescue => errmsg
-                Plog.error errmsg
+              rescue => e
+                Plog.error e
               end
             end
             chords = []

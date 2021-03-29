@@ -106,7 +106,7 @@ module SmuleAuto
   class ConfigFile
     def initialize(cfile)
       @cfile = cfile
-      if test(?f, @cfile)
+      if test('f', @cfile)
         @content = YAML.safe_load_file(@cfile)
       else
         @content = {}
@@ -117,7 +117,7 @@ module SmuleAuto
   class API
     def initialize(options={})
       @options = options
-      @logger  = options[:logger] || PLogger.new(STDERR)
+      @logger  = options[:logger] || PLogger.new($stderr)
     end
 
     def get_songs(url, options)
@@ -194,7 +194,7 @@ module SmuleAuto
       @options   = options
       @connector = SiteConnect.new(:smule, @options)
       @spage     = SmulePage.new(@connector.driver)
-      @logger    = options[:logger] || PLogger.new(STDERR)
+      @logger    = options[:logger] || PLogger.new($stderr)
       sleep(1)
       at_exit {
         @connector.close
@@ -274,7 +274,7 @@ module SmuleAuto
         SmuleSong.song_dir = sdir
 
         ddir = options[:data_dir]
-        unless test(?d, ddir)
+        unless test('d', ddir)
           raise "Target dir #{ddir} not accessible to keep database in"
         end
       end
@@ -404,7 +404,7 @@ Filters is the list of SQL's into into DB.
         content.each(filter: filters.join('/')) do |_sid, sinfo|
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
-          if sfile && test(?f, sfile)
+          if sfile && test('f', sfile)
             @logger.dump_info(sinfo: sinfo, _ofmt:'Y')
             system("set -x; open -g #{sfile}")
             sleep(1)

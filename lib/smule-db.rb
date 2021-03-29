@@ -69,8 +69,8 @@ module SmuleAuto
       begin
         sinfo.delete(:lyrics)
         @content.insert_conflict(:replace).insert(sinfo)
-      rescue => errmsg
-        Plog.error(errmsg)
+      rescue => e
+        Plog.error(e)
       end
     end
 
@@ -96,8 +96,8 @@ module SmuleAuto
       when :query
         begin
           newset = @content.where(Sequel.lit(value))
-        rescue => errmsg
-          Plog.dump_error(errmsg:errmsg, value:value, trace:errmsg.backtrace)
+        rescue => e
+          Plog.dump_error(e:e, value:value, trace:e.backtrace)
           newset = []
         end
       when :url
@@ -181,8 +181,8 @@ module SmuleAuto
         begin
           @content.insert_conflict(:replace).insert(irec)
           bar.advance
-        rescue => errmsg
-          Plog.dump_error(errmsg:errmsg, irec:irec)
+        rescue => e
+          Plog.dump_error(e:e, irec:irec)
         end
       end
 
@@ -193,8 +193,8 @@ module SmuleAuto
         begin
           @singers.insert_conflict(:replace).insert(irec)
           bar.advance
-        rescue => errmsg
-          Plog.dump_info(errmsg:errmsg, singer:singer, sinfo:sinfo)
+        rescue => e
+          Plog.dump_info(e:e, singer:singer, sinfo:sinfo)
         end
       end
 
@@ -352,8 +352,8 @@ module SmuleAuto
               data = JSON.parse(l[2..-1], symbolize_names:true)
               delset << data
             end
-          rescue => errmsg
-            Plog.error(errmsg:errmsg, l:l)
+          rescue => e
+            Plog.error(e:e, l:l)
           end
         end
         [addset, delset]

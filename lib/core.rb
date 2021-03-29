@@ -35,7 +35,7 @@ module ThorAddition
     if options[:logfile]
       @logger = PLogger.new(value)
     else
-      @logger = PLogger.new(STDERR)
+      @logger = PLogger.new($stderr)
     end
 
     result = yield
@@ -141,56 +141,6 @@ module Cli
     else
       Cli.setShellResult(result)
     end
-  end
-
-  def handleCli2(*optset)
-    imethods = self.instance_methods(false)
-    if imethods.size > 0
-      optset << ['--class', '-c']
-    end
-    @cliOptions = optset
-    opt = Cli.parseOptions(*optset)
-    setOptions(opt)
-    obj = nil
-    if opt[:class] || (imethods.size <= 0)
-      (ARGV.length > 0) || self.cliUsage
-      result = self.send(*ARGV)
-    elsif block_given?
-      result = yield opt
-    # Class handle CLI instantiation?
-    elsif self.respond_to?(:cliNew)
-      # ARGV could change during cliNew, so we check both places
-      (ARGV.length > 0) || self.cliUsage
-      obj = self.cliNew(@options)
-      (ARGV.length > 0) || self.cliUsage
-      result = obj.send(*ARGV)
-    else
-      (ARGV.length > 0) || self.cliUsage
-      obj    = self.new(ARGV.shift, @options)
-      result = obj.send(*ARGV)
-    end
-
-    # Class handle result?
-    if self.respond_to?(:cliResult)
-      self.cliResult(result, obj)
-    else
-      Cli.setShellResult(result)
-    end
-  end
-
-  # Regenerate the command line option for self invocation use.
-  def cliOptBuild
-    result = ""
-    @options.each do |k, v|
-      if v
-        if v == true
-          result += " --#{k}"
-        else
-          result += " --#{k} #{v}"
-        end
-      end
-    end
-    result
   end
 
   # Print the message on cli usage (flag/method) and exit script
@@ -343,8 +293,8 @@ module Cli
       begin
 	result = yield
 	self.setShellResult(result)
-      rescue => error
-	$stderr.puts "+ #{$0}: #{error}"
+      rescue => e
+	$stderr.puts "+ #{$0}: #{e}"
 	exit 1
       end
     else
@@ -402,8 +352,8 @@ module Cli
         optname = opt[2..-1]
         option[optname.intern] = (arg == '') ? true : arg
       end
-    rescue => errmsg
-      puts errmsg
+    rescue => e
+      puts e
       puts "#{File.basename($0)} " + showOptions(options).join(" ") + "..."
     end
     option
@@ -593,7 +543,7 @@ class Plog
       if logspec =~  /:f/
         logger = PLogger.new($'.sub(/:.*$/, ''))
       else
-        logger = PLogger.new(STDERR)
+        logger = PLogger.new($stderr)
       end
       log_level, *logopts = logspec.split(':')
       logopts.each do |anopt|
@@ -668,147 +618,3 @@ class Psyslog
   end
 end
 
-module Process
-  def self.alive? pid
-    pid = Integer("#{ pid }")
-    begin
-      Process.kill 0, pid
-      true
-    rescue Errno::EPERM
-      true
-    rescue Errno::ESRCH
-      false
-    end
-  end
-end
-
-class Erb
-  @@argv = nil
-  # Get an argument for Erb processing.  This is used in erb templates
-  # to allow command line to use ERBARG env variable to pass argument
-  # to thte templates
-  def self.argv
-    unless @@argv
-      @@argv = ENV['ERBARG'].split
-    end
-    @@argv
-  end
-end
-
-module YamlConfig
-  def configLoad(cfile, index = nil)
-    @_ycfile = cfile
-    if File.readable?(cfile)
-      result = YAML.safe_load_file(cfile)
-      return index ? result[index] : result
-    else
-      nil
-    end
-  end
-
-  def configSave(obj, index = nil)
-    if index
-      if File.readable?(@_ycfile)
-        config = YAML.safe_load_file(@_ycfile)
-      else
-        config = {}
-      end
-      config[index] = obj
-      yobj = config
-    else
-      yobj = obj
-    end
-    File.open(@_ycfile, "w") do |fod|
-      fod.puts(YAML.dump(yobj))
-    end
-  end
-end
-
-# Provides persistent configuration by association of yml data with
-# a file
-class YmlConfig
-  attr_accessor :config
-  attr_reader   :cfile
-
-  def initialize(cfile, default = {})
-    require 'yaml'
-
-    @cfile  = cfile
-    if File.readable?(cfile)
-      @config = YAML.safe_load(cfile)
-    else
-      @config = default
-    end
-  end
-
-  def save(ofile = nil)
-    require 'yaml'
-
-    ofile ||= @cfile
-    File.open(ofile, "w") do |fod|
-      fod.puts(YAML.dump(@config))
-    end
-  end
-
-  # Get an arbitrary value in the yml tree (hash and list index only)
-  def getf(field)
-    value = @config
-    field.split(/\//).each do |af|
-      return nil unless value
-      if af =~ /^:/
-        value = value[af[1..-1].intern]
-      elsif af =~ /^\d+$/
-        value = value[af.to_i]
-      else
-        value = value[af]
-      end
-    end
-    value
-  end
-
-  # Set an arbitrary value in the yml tree (hash and list index only)
-  # Creates storage on demand
-  def setf(field, newval)
-    pfields = field.split(/\//)
-    store   = pfields.last
-
-    # Traverse to the leaf
-    value = @config
-    fidx  = 0
-    pfields.each do |af|
-      if fidx < (pfields.size - 1)
-        if af =~ /^:/
-          index = af[1..-1].intern
-        elsif af =~ /^\d+$/
-          index = af.to_i
-        else
-          index = af
-        end
-        # Create storage if needed
-        case pfields[fidx+1]
-        when /^:/
-          value[index] ||= {}
-        when /^\d+$/
-          value[index] ||= []
-        else
-          value[index] ||= {}
-        end
-        value = value[index]
-      end
-      fidx += 1
-    end
-
-    # Assign new value to the leaf
-    if store =~ /^:/
-      value[store[1..-1].intern] = newval
-    elsif store =~ /^\d+$/
-      value[store.to_i] = newval
-    else
-      value[store] = newval
-    end
-  end
-
-  def method_missing(symbol, *args)
-    @config.send(symbol, *args)
-  end
-end
