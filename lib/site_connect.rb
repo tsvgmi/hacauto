@@ -24,7 +24,7 @@ module HtmlRes
     # Some sites does not have good SSL certs.  That's OK here.
     
     #Plog.dump_info(url:url)
-    fid  = URI.open(url, ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE)
+    fid  = URI.parse(url).open(ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE)
     page = Nokogiri::HTML(fid.read)
     fid.close
     page
@@ -116,9 +116,7 @@ class SDriver
       Plog.error "Element #{selector}[#{index}] not found"
       return false
     end
-    if options[:move]
-      @driver.action.move_to(element.location)
-    end
+    @driver.action.move_to(element.location) if options[:move]
     element.click
     sleep(wtime) if wtime > 0
     true

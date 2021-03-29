@@ -325,7 +325,7 @@ EOH
       text_mode = false
       loop do
         if sinfo[:name]
-          Plog.info "Next to import is #{sinfo[:name]} - [#{store.curptr+1}/#{store.songs.size}]"
+          Plog.info "Next to import is #{sinfo[:name]} - [#{store.curptr + 1}/#{store.songs.size}]"
         end
 
         input = get_command_from_user
@@ -381,9 +381,9 @@ class SongStore
       end
     end
     if @options[:pcount]
-      @songs = @songs.sort_by{ |e| e[:pcount] || 0 }.reverse
+      @songs = @songs.sort_by { |e| e[:pcount] || 0 }.reverse
     elsif @options[:random]
-      @songs = @songs.sort_by{rand}
+      @songs = @songs.sort_by { rand }
     end
   end
 
@@ -812,7 +812,7 @@ class HACAuto
         bar = TTY::ProgressBar.new('Posting [:bar] :percent', slist.size)
         slist.each_with_index do |sentry, index|
           sname, _surl = sentry[:name], sentry[:href].sub(/\?.*$/, '')
-          bar.log "Next to add is #{sname} - [#{index+1}/#{slist.size}]"
+          bar.log "Next to add is #{sname} - [#{index + 1}/#{slist.size}]"
           hacfill.add_to_plist(spage, plname, sentry, options)
           bar.advance
         end
@@ -832,7 +832,7 @@ class HACAuto
       _connect_site do |spage|
         slist.each_with_index do |sentry, index|
           sname, _surl = sentry[:name], sentry[:href]
-          Plog.info "Next to import is #{sname} - [#{index+1}/#{slist.size}]"
+          Plog.info "Next to import is #{sname} - [#{index + 1}/#{slist.size}]"
           input = hacfill.get_command_from_user
           break unless input
           unless input.is_a?(Symbol)
@@ -1095,7 +1095,7 @@ class HACAuto
         total  += content.size
         {name: f, fsize: fsize, count: content.size}
       end
-      fentries.sort_by{ |e| e[:count]}.each do |e|
+      fentries.sort_by { |e| e[:count] }.each do |e|
         puts format("%<name>-30s %<fsize>6d %<count>3d", name: e[:name],
                     fsize: e[:fsize], count: e[:count])
       end

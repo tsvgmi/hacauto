@@ -72,21 +72,21 @@ module SmuleAuto
       unless elem
         raise "#{elem} not defined in Locators"
       end
-      clickit(elem[0], wait:delay, index:elem[1], move:true)
+      clickit(elem[0], wait: delay, index: elem[1], move: true)
       refresh if delay > 0
       true
     end
 
-    def set_song_favorite(setit: true)
+    def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, 1)
 
       locator = 'div.sc-hKKeuH.kXQUbk'
       cval = css("#{locator} svg path")[0][:fill]
 
-      if setit && cval == "#FFCE42"
+      if fav && cval == "#FFCE42"
         Plog.info("Already fav, skip it")
         return false
-      elsif !setit && cval != "#FFCE42"
+      elsif !fav && cval != "#FFCE42"
         Plog.info("Already not-fav, skip it")
         return false
       end
@@ -116,7 +116,7 @@ module SmuleAuto
       cpos = (find_elements(:css, locator).size + 1)/2
       click_and_wait(locator, 1, cpos)
 
-      type("textarea#message", text, append:true)  # Enter tag
+      type("textarea#message", text, append: true)  # Enter tag
       click_and_wait("input#recording-save")
 
       toggle_play(true)
@@ -259,7 +259,7 @@ module SmuleAuto
       def update_from_url(url, options)
         sid   = File.basename(url)
         href  = url.sub(%r[^https://www.smule.com], '')
-        sinfo = Performance.first(sid:sid) || Performance.new(sid:sid, href:href)
+        sinfo = Performance.first(sid: sid) || Performance.new(sid: sid, href: href)
         song  = SmuleSong.new(sinfo, options)
         if url =~ /ensembles$/
           result = song.get_ensemble_asset
@@ -269,11 +269,11 @@ module SmuleAuto
         if options[:update]
           result.each do |sdata|
             sdata.delete(:lyrics)
-            Plog.dump_info(title:sdata[:title], record_by:sdata[:record_by])
-            sinfo = Performance.first(sid:sdata[:sid]) ||
-                    Performance.new(sid:sdata[:sid])
-            Plog.dump_info(data:sdata[:href], info:sinfo[:href],
-                           sid:sinfo[:sid])
+            Plog.dump_info(title: sdata[:title], record_by: sdata[:record_by])
+            sinfo = Performance.first(sid: sdata[:sid]) ||
+                    Performance.new(sid: sdata[:sid])
+            Plog.dump_info(data: sdata[:href], info: sinfo[:href],
+                           sid: sinfo[:sid])
             sinfo.update(sdata)
             sinfo.save
           end
@@ -311,14 +311,14 @@ module SmuleAuto
     def sofile
       odir  = SmuleSong.song_dir +
         "/#{@info[:record_by].split(',').sort.join('-')}"
-      FileUtils.mkdir_p(odir, verbose:true) unless test('d', odir)
+      FileUtils.mkdir_p(odir, verbose: true) unless test('d', odir)
       title = @info[:title].strip.gsub(/[\/\"]/, '-')
       ofile = File.join(odir, title.gsub(/\&/, '-').gsub(/\'/, '-') + '.m4a')
       sfile = ssfile
-      @logger.dump_info(sfile:sfile, ofile:ofile)
+      @logger.dump_info(sfile: sfile, ofile: ofile)
       if File.exist?(sfile) && !File.symlink?(ofile)
-        FileUtils.remove(ofile, verbose:true, force:true)
-        FileUtils.ln_s(sfile, ofile, verbose:true, force:true)
+        FileUtils.remove(ofile, verbose: true, force: true)
+        FileUtils.ln_s(sfile, ofile, verbose: true, force: true)
       end
       ofile
     end
@@ -346,7 +346,7 @@ module SmuleAuto
     def _extract_info(perf)
       lyrics = nil
       if perf[:lyrics]
-        lyrics = JSON.parse(perf[:lyrics], symbolize_names:true).
+        lyrics = JSON.parse(perf[:lyrics], symbolize_names: true).
           map { |line| line.map { |w| w[:text] }.join }.join("\n")
       end
 
@@ -382,7 +382,7 @@ module SmuleAuto
       source    = HTTP.follow.get(@surl, ssl_context:@ssl_context).to_s 
       asset_str = (source.split("\n").grep(/DataStore.Pages.Duet/)[0] || "").
         sub(/^\s+DataStore.Pages.Duet = {/, '{').sub(/;$/, '')
-      res = JSON.parse(asset_str, symbolize_names:true) || {}
+      res = JSON.parse(asset_str, symbolize_names: true) || {}
       main_out = _extract_info(res[:recording])
       outputs  = [main_out]
       res[:performances][:list].each do |jinfo|
@@ -415,16 +415,16 @@ module SmuleAuto
       unless asset_str
         return {}
       end
-      res  = JSON.parse(asset_str, symbolize_names:true) || {}
+      res  = JSON.parse(asset_str, symbolize_names: true) || {}
       perf = res[:performance]
       unless perf
-        @logger.dump_error(msg:"No performance data found", olink:olink)
+        @logger.dump_error(msg:"No performance data found", olink: olink)
         return {}
       end
 
       lyrics = nil
       if perf[:lyrics]
-        lyrics = JSON.parse(perf[:lyrics], symbolize_names:true).
+        lyrics = JSON.parse(perf[:lyrics], symbolize_names: true).
           map { |line| line.map { |w| w[:text] }.join }.join("\n")
       end
 
@@ -452,7 +452,7 @@ module SmuleAuto
         )
       end
       if @options[:verbose]
-        output.update(res:res)
+        output.update(res: res)
       end
       output
     end
@@ -473,7 +473,7 @@ module SmuleAuto
       end
 
       msgs = spage.get_comments
-      spage.toggle_play(true, href:href)
+      spage.toggle_play(true, href: href)
       spinner.stop('Done!')
 
       # Should pickup for joined file where info was not picked up
@@ -487,8 +487,8 @@ module SmuleAuto
       end
 
       # Click on play
-      @info.update(listens:asset[:listens], loves:asset[:loves],
-                   psecs:asset[:psecs])
+      @info.update(listens: asset[:listens], loves: asset[:loves],
+                   psecs: asset[:psecs])
       [@info[:psecs], msgs]
     end
 
@@ -513,7 +513,7 @@ module SmuleAuto
       output[0].split[2].to_i
     end
 
-    def is_mp4_tagged?(excuser: nil)
+    def mp4_tagged?(excuser: nil)
       wset = mp4_tags
       unless wset
         return false
@@ -525,7 +525,7 @@ module SmuleAuto
           wset[:day] != release || wset[:aART].to_s != aartist
         wset.delete(:lyr)
         @logger.dump_info(msg:"Tagging not matched for #{ssfile}",
-                          wset:wset, title:@info[:title],
+                          wset: wset, title:@info[:title],
                           record_by:@info[:record_by])
         return false
       end
@@ -538,7 +538,7 @@ module SmuleAuto
     end
 
     def update_mp4tag(excuser: nil)
-      if is_mp4_tagged?(excuser)
+      if mp4_tagged?(excuser)
         return :was_tagged
       end
       ofile = ssfile
@@ -569,7 +569,7 @@ module SmuleAuto
         command += " --year '#{release}'"
         command += " --comment '#{comment}'"
 
-        lyric = @info[:lyrics] || self.get_asset[:lyrics]
+        lyric = @info[:lyrics] || get_asset[:lyrics]
         if lyric
           tmpf = Tempfile.new("lyric")
           tmpf.puts(lyric)
@@ -583,7 +583,7 @@ module SmuleAuto
         if output =~ /insufficient space to retag the source file/io
           return :error
         end
-        FileUtils.remove(lcfile, verbose:true)
+        FileUtils.remove(lcfile, verbose: true)
         :updated
       else
         :notfound
@@ -603,9 +603,9 @@ module SmuleAuto
           #_run_command("open -g #{sfile}") if @options[:open]
           return
         end
-        csize  = self.media_size(sfile)
-        fmsize = self.media_size(file)
-        if (csize == fmsize) && self.is_mp4_tagged?(user)
+        csize  = media_size(sfile)
+        fmsize = media_size(file)
+        if (csize == fmsize) && mp4_tagged?(user)
           @logger.info("Verify same media size and tags: #{csize}")
           sofile
           #_run_command("open -g #{sfile}") if @options[:open]
@@ -615,8 +615,8 @@ module SmuleAuto
       end
 
       @logger.info("Song missing or bad tag on local disk.  Create")
-      FileUtils.cp(file, sfile, verbose:true)
-      self.update_mp4tag(user)
+      FileUtils.cp(file, sfile, verbose: true)
+      update_mp4tag(user)
       sofile
 
       if @options[:open]
@@ -630,7 +630,7 @@ module SmuleAuto
       collab_list = Performance.
         where(Sequel.like(:record_by, user)).
         where(Sequel.like(:href, '%/ensembles')).
-        where(created:Date.today-days..(Date.today + 1)).
+        where(created: Date.today-days..(Date.today + 1)).
         reverse(:created)
       if collab_list.count <= 0
         Plog.info("No collabs found in last #{days} days")
@@ -638,7 +638,7 @@ module SmuleAuto
       end
       result = []
       progress_set(collab_list, "Checking collabs") do |sinfo, _bar|
-        result.concat(SmuleSong.new(sinfo, verbose:true).get_ensemble_asset)
+        result.concat(SmuleSong.new(sinfo, verbose: true).get_ensemble_asset)
         true
       end
       result

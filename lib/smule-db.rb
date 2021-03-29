@@ -13,7 +13,7 @@ require 'core'
 require 'sequel/adapters/sqlite'
 class Sequel::SQLite::Dataset
   def size
-    self.count
+    count
   end
 end
 
@@ -35,12 +35,12 @@ module SmuleAuto
   end
 
   class SmuleDB
-    DBNAME = "smule.db"
+    DBNAME = "smule.db".freeze
 
-    attr_reader :content, :singers, :DB
+    attr_reader :content, :singers
 
     def self.instance(user, cdir: '.')
-      @_db ||= SmuleDB.new(user, cdir)
+      @instance ||= SmuleDB.new(user, cdir: cdir)
     end
 
     def initialize(user, cdir: '.')
@@ -294,7 +294,7 @@ module SmuleAuto
       rank = {}
       query.each do |r|
         key = r[:record_by].sub(/,?#{@user},?/, '')
-        rank[key] ||= { count: 0, loves:0, listens:0, isfavs:0, oldfavs:0, stars:0}
+        rank[key] ||= {count: 0, loves:0, listens:0, isfavs:0, oldfavs:0, stars:0}
         rank[key][:count]   += r[:count]
         rank[key][:loves]   += r[:loves]
         rank[key][:listens] += r[:listens]
@@ -366,7 +366,7 @@ module SmuleAuto
     end
 
     desc "dump_db user [dir]", "dump_db"
-    long_desc <<-LONGDESC
+    long_desc <<~LONGDESC
 Dump the database into yaml file (for backup)
     LONGDESC
     def dump_db(user, cdir: '.')
@@ -376,7 +376,7 @@ Dump the database into yaml file (for backup)
     end
 
     desc "edit_tag", "Edit tag of existing song"
-    long_desc <<-LONGDESC
+    long_desc <<~LONGDESC
 Dump the tag data into a text file.  Allow user to edit and update with any
 changes back into the database
     LONGDESC

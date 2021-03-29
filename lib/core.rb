@@ -367,7 +367,7 @@ module Pf
     Socket.getaddrinfo(name, 0, nil, Socket::SOCK_STREAM)[0][3]
   end
 
-  def self.hostname(addr, shortform=true)
+  def self.hostname(addr, shortform: true)
     require 'socket'
 
     result = Socket.getaddrinfo(addr, 0, nil, Socket::SOCK_STREAM)[0][2]

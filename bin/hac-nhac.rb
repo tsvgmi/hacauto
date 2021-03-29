@@ -120,12 +120,12 @@ module ChordMerger
 
             # Need to back until I find a space
             if options[:shift_space]
-              if (pos > 0) && (l[pos] != ' ') && (l[pos-1] != ' ')
-                cpos = pos-1
+              if (pos > 0) && (l[pos] != ' ') && (l[pos - 1] != ' ')
+                cpos = pos - 1
                 while cpos > 0
                   if l[cpos] == ' '
-                    Plog.dump_error(pos: pos, cpos: cpos+1)
-                    pos = cpos+1
+                    Plog.dump_error(pos: pos, cpos: cpos + 1)
+                    pos = cpos + 1
                     break
                   end
                   cpos -= 1
@@ -281,7 +281,7 @@ class NhacSource < MusicSource
     limit = (options[:limit] || 9999).to_i
     case url
     when %r{^https://nhac.vn/?$}
-      links = page.css('.info_song_home')[0..limit-1].map do |atrack|
+      links = page.css('.info_song_home')[0..limit - 1].map do |atrack|
         {
           name: atrack.css('.name a')[0].text.strip,
           href: atrack.css('.name a')[0]['href'],
@@ -289,7 +289,7 @@ class NhacSource < MusicSource
         }
       end
     else
-      links = page.css('.item-in-list .h4-song-item')[0..limit-1].
+      links = page.css('.item-in-list .h4-song-item')[0..limit - 1].
         map do |atrack|
         tlinks = atrack.css('a')
         info   = {
@@ -309,7 +309,7 @@ class NhacSource < MusicSource
     page  = spage.page
     case url
     when %r{^https://nhac.vn/?$}
-      links = page.css('.info_song_home')[0..limit-1].map do |atrack|
+      links = page.css('.info_song_home')[0..limit - 1].map do |atrack|
         {
           name: atrack.css('.name a')[0].text.strip,
           href: atrack.css('.name a')[0]['href'],
@@ -317,7 +317,7 @@ class NhacSource < MusicSource
         }
       end
     when %r{/album/}
-      links = page.css('.items .present')[0..limit-1].
+      links = page.css('.items .present')[0..limit - 1].
         map do |atrack|
         info = {
           name:   atrack.css('a')[0].text.strip,
@@ -327,7 +327,7 @@ class NhacSource < MusicSource
         info
       end
     else
-      links = page.css('.item-in-list .h4-song-item')[0..limit-1].
+      links = page.css('.item-in-list .h4-song-item')[0..limit - 1].
         map do |atrack|
         tlinks = atrack.css('a')
         info = {
@@ -361,7 +361,7 @@ class KeengSource < MusicSource
     limit = (options[:limit] || 9999).to_i
     case url
     when %r{^http://keeng.vn/?$}
-      links = page.css('.song-hot-info')[0..limit-1].map do |atrack|
+      links = page.css('.song-hot-info')[0..limit - 1].map do |atrack|
         tinfo  = atrack.css('.song-hot-h3 a')[0]
         {
           name:   tinfo.text.strip,
@@ -370,7 +370,7 @@ class KeengSource < MusicSource
         }
       end
     when %r{/video/}
-      links = page.css('.ka-content')[0..limit-1].
+      links = page.css('.ka-content')[0..limit - 1].
         map do |atrack|
         tinfo = atrack.css('.ka-info-h3 a')
         {
@@ -380,7 +380,7 @@ class KeengSource < MusicSource
         }
       end
     else
-      links = page.css('.ka-info')[0..limit-1].
+      links = page.css('.ka-info')[0..limit - 1].
         map do |atrack|
         tinfo = atrack.css('.ka-info-h3 a')
         {
@@ -636,7 +636,7 @@ class NctSource < MusicSource
 
   def _songs_playlist(page, options={})
     limit = (options[:limit] || 9999).to_i
-    page.css('#idScrllSongInAlbum li[itemprop="tracks"]')[0..limit-1].map do |atrack|
+    page.css('#idScrllSongInAlbum li[itemprop="tracks"]')[0..limit - 1].map do |atrack|
       arefs = atrack.css('a').map { |a| [a.text, a['href']] }
       info = {
         name:   arefs[0][0].sub(/\s*\(.*$/, '').sub(/\s+(2017|Cover)$/, ''),
@@ -649,7 +649,7 @@ class NctSource < MusicSource
 
   def _songs_artist(page, options={})
     limit = (options[:limit] || 9999).to_i
-    page.css('.list_item_music li')[0..limit-1].map do |atrack|
+    page.css('.list_item_music li')[0..limit - 1].map do |atrack|
       arefs = atrack.css('a').map { |a| [a.text, a['href']] }
       {
         name:   arefs[0][0].sub(/\s*\(.*$/, '').sub(/\s+(2017|Cover)$/, ''),
@@ -1012,7 +1012,7 @@ class HacSource < MusicSource
     url   = "#{@base_url}/user/month"
     Plog.dump_info(url: url)
     page  = get_page_curl(url)
-    tlist = page.css('td .one-line').map { |e| e['href'].split('/').last }[0..count-1]
+    tlist = page.css('td .one-line').map { |e| e['href'].split('/').last }[0..count - 1]
     Plog.dump_info(tlist: tlist)
     tlist
   end

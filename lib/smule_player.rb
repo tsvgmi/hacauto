@@ -139,7 +139,7 @@ module SmuleAuto
 
     # Chop list to a new list only
     def chop(size)
-      endpos   = [@listpos+size, @clist.size-1].min
+      endpos   = [@listpos + size, @clist.size - 1].min
       @clist   = @clist[@listpos..endpos]
       @listpos = 0
     end
@@ -236,7 +236,7 @@ module SmuleAuto
         ptags = tags[sitem[:stitle]] || ''
         isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ' '
         box   = TTY::Box.frame(top: 0, left: 15,
-                width: TTY::Screen.width-20,
+                width: TTY::Screen.width - 20,
                 height:5) do
 <<EOM
 [#{isfav}] #{sitem[:title]} - #{sitem[:created].strftime("%Y-%m-%d")} - #{bar[1..sitem[:stars].to_i]}
@@ -246,7 +246,7 @@ EOM
         end
         puts box
       end
-      start.upto(start+limit-1) do |i|
+      start.upto(start + limit - 1) do |i|
         witem = cselect[i]
         next unless witem
         ptags = tags[witem[:stitle]] || ''
@@ -266,7 +266,7 @@ EOM
     def box_msg(msg, options={})
       box = TTY::Box.frame(top: 0, left: 0,
               width: options[:width] || TTY::Screen.width,
-              height: options[:height] || TTY::Screen.height-1) do
+              height: options[:height] || TTY::Screen.height - 1) do
         msg
       end
       puts box
@@ -326,7 +326,7 @@ EOM
     end
 
     def _set_favorite(sitem)
-      @scanner.spage.set_song_favorite
+      @scanner.spage.toogle_song_favorite(fav: true)
       sitem[:isfav] = true
     end
 
