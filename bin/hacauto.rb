@@ -1096,9 +1096,11 @@ class HACAuto
         {name: f, fsize: fsize, count: content.size}
       end
       fentries.sort_by{ |e| e[:count]}.each do |e|
-        puts format("%-30s %6d %3d", e[:name], e[:fsize], e[:count])
+        puts format("%<name>-30s %<fsize>6d %<count>3d", name: e[:name],
+                    fsize: e[:fsize], count: e[:count])
       end
-      puts format("%-30s %6d %3d", 'Total', 0, total)
+      puts format("%<name>-30s %<fsize>6d %<count>3d", name: 'Total',
+                  fsize: 0, total: total)
       true
     end
 

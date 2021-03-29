@@ -1,4 +1,7 @@
 ---
+Layout/HashAlignment:
+  Enabled: false
+
 Layout/SpaceAroundEqualsInParameterDefault:
   EnforcedStyle: no_space
 

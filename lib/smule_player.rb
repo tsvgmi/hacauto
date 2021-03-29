@@ -96,7 +96,7 @@ module SmuleAuto
       if test('f', req_file)
         sids = File.read(req_file).split
         @clist.insert(@listpos, *@content.select_sids(sids))
-        FileUtils.remove(req_file, verbose:true)
+        FileUtils.remove(req_file, verbose: true)
       end
       if @clist.size <= 0
         return nil
@@ -207,7 +207,7 @@ module SmuleAuto
         @listener.stop if @listener
         @listener = FirefoxWatch.
           new(@user, dir.strip, 'cursong.yml',
-              verify:true, open:true, logger:PLogger.new('watcher.log')).
+              verify: true, open: true, logger: PLogger.new('watcher.log')).
           start
       else
         if @listener
@@ -236,7 +236,7 @@ module SmuleAuto
         ptags = tags[sitem[:stitle]] || ''
         isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ' '
         box   = TTY::Box.frame(top: 0, left: 15,
-                width:TTY::Screen.width-20,
+                width: TTY::Screen.width-20,
                 height:5) do
 <<EOM
 [#{isfav}] #{sitem[:title]} - #{sitem[:created].strftime("%Y-%m-%d")} - #{bar[1..sitem[:stars].to_i]}
@@ -257,16 +257,16 @@ EOM
                  witem[:created].strftime("%Y-%m-%d"), ptags[0..9]]
         table << row
       end
-      puts table.render(:unicode, multiline:true,
-                        width:TTY::Screen.width,
+      puts table.render(:unicode, multiline: true,
+                        width: TTY::Screen.width,
              alignments:[:right, :left, :left, :left, :right, :right])
       print cursor.clear_screen_down
     end
 
     def box_msg(msg, options={})
       box = TTY::Box.frame(top: 0, left: 0,
-              width:options[:width] || TTY::Screen.width,
-              height:options[:height] || TTY::Screen.height-1) do
+              width: options[:width] || TTY::Screen.width,
+              height: options[:height] || TTY::Screen.height-1) do
         msg
       end
       puts box
@@ -318,11 +318,11 @@ EOM
         record_by: sitem[:record_by],
         comments:  psitem[:msgs].to_json,
       }
-      unless (rec = Comment.first(sid:sitem[:sid])).nil?
+      unless (rec = Comment.first(sid: sitem[:sid])).nil?
         rec.update(data)
         rec.save_changes
       end
-      puts table.render(multiline:true)
+      puts table.render(multiline: true)
     end
 
     def _set_favorite(sitem)
@@ -349,7 +349,7 @@ EOM
       yield
     rescue => e
       prompt = TTY::Prompt.new
-      @logger.dump_error(e:e, trace:e.backtrace)
+      @logger.dump_error(e: e, trace: e.backtrace)
       prompt.keypress("[ME] Press any key to continue ...")
     end
 
@@ -433,7 +433,7 @@ EOH
               end
               wait_t = endt - Time.now
               key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
-                                       timeout:wait_t)
+                                       timeout: wait_t)
             else
               key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
             end
@@ -533,7 +533,7 @@ EOH
 
       when 'h'
         unless (url = prompt.ask('URL:')).nil?
-          newsongs = SmuleSong.update_from_url(url, update:true)
+          newsongs = SmuleSong.update_from_url(url, update: true)
           @playlist.insert(*newsongs)
           return [:next, true]
         end

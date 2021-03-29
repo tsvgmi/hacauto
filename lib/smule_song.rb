@@ -584,17 +584,17 @@ module SmuleAuto
           return :error
         end
         FileUtils.remove(lcfile, verbose:true)
-        return :updated
+        :updated
       else
-        return :notfound
+        :notfound
       end
     end
 
-    def check_and_download(f, user)
-      @logger.info format("%<file>s %<size>d", file:File.basename(f),
-                          size:File.size(f))
-      @logger.info format("%<sid>s %<title>s %<record>s", sid:@info[:sid],
-                          title:@info[:stitle], record:@info[:record_by])
+    def check_and_download(file, user)
+      @logger.info format("%<file>s %<size>d", file: File.basename(file),
+                          size: File.size(file))
+      @logger.info format("%<sid>s %<title>s %<record>s", sid: @info[:sid],
+                          title: @info[:stitle], record: @info[:record_by])
 
       sfile = ssfile
       if test('f', sfile)
@@ -604,7 +604,7 @@ module SmuleAuto
           return
         end
         csize  = self.media_size(sfile)
-        fmsize = self.media_size(f)
+        fmsize = self.media_size(file)
         if (csize == fmsize) && self.is_mp4_tagged?(user)
           @logger.info("Verify same media size and tags: #{csize}")
           sofile
@@ -615,7 +615,7 @@ module SmuleAuto
       end
 
       @logger.info("Song missing or bad tag on local disk.  Create")
-      FileUtils.cp(f, sfile, verbose:true)
+      FileUtils.cp(file, sfile, verbose:true)
       self.update_mp4tag(user)
       sofile
 

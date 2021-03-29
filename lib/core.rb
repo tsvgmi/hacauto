@@ -77,7 +77,7 @@ module Cli
     @options ||= {}
     @options.merge!(opt)
   end
-  def getOption(name = nil)
+  def getOption(name=nil)
     @options ||= {}
     return name ? @options[name] : @options
   end
@@ -199,7 +199,7 @@ module Cli
   end
 
   # Print a message and just wait till user press enter
-  def self.pause(msg = "... Press return to continue ...")
+  def self.pause(msg="... Press return to continue ...")
     $stderr.print msg
     $stdin.gets
   end
@@ -277,7 +277,7 @@ module Cli
   end
 
   # Wait for an interval seconds and print progress dot ...
-  def self.wait(interval, comment = nil)
+  def self.wait(interval, comment=nil)
     $stderr.print "#{comment}" if comment
     $stderr.print "[#{interval}]: "
     interval.downto(1) {
@@ -367,7 +367,7 @@ module Pf
     Socket.getaddrinfo(name, 0, nil, Socket::SOCK_STREAM)[0][3]
   end
 
-  def self.hostname(addr, shortform = true)
+  def self.hostname(addr, shortform=true)
     require 'socket'
 
     result = Socket.getaddrinfo(addr, 0, nil, Socket::SOCK_STREAM)[0][2]
@@ -378,7 +378,7 @@ module Pf
   end
 
   # Run a system command with optional trace
-  def self.system(command, trace = nil, logfile = nil)
+  def self.system(command, trace=nil, logfile=nil)
     $stderr.puts "+ #{command}" if trace
     Plog.debug("+ #{command}")
     if logfile
@@ -397,14 +397,14 @@ module Pf
   end
 
  # Exec a command with optional trace
-  def self.exec(command, trace = 0)
+  def self.exec(command, trace=0)
     $stderr.puts "+ #{command}" if trace != 0
     Plog.debug("+ #{command}")
     Kernel.exec(command)
   end
 
   # Run command as root (via sudo)
-  def self.suRun(command, trace = 0)
+  def self.suRun(command, trace=0)
     if Process.uid == 0
       Pf.system(command, trace)
     else
@@ -436,7 +436,7 @@ module Kernel
   #--------------------------------------------------------- def: hostname
   # Purpose  :
   #-----------------------------------------------------------------------
-  def hostname(shortform = nil)
+  def hostname(shortform=nil)
     require 'socket'
 
     if shortform

@@ -124,7 +124,7 @@ class SDriver
     true
   rescue => e
     Plog.error(e)
-    return false
+    false
   end
 
   def click_and_wait(selector, wtime=2, index=0)
@@ -139,7 +139,7 @@ class SDriver
     true
   rescue => e
     Plog.error(e)
-    return false
+    false
   end
  
   def alert

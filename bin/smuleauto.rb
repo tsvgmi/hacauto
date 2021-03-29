@@ -644,7 +644,7 @@ Filters is the list of SQL's into into DB.
         wset.all.map { |r| r.values }.to_yaml
         wset.each do |sinfo|
           comments = JSON.parse(sinfo[:comments]).
-            select { |c, m| m && !m.empty? }
+            select { |_c, m| m && !m.empty? }
           if comments.size > 0
             puts "\n%-60.60s %20.20s %s" %
               [sinfo[:stitle], sinfo[:record_by], sinfo[:created]]

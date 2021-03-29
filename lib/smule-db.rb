@@ -43,7 +43,7 @@ module SmuleAuto
       @_db ||= SmuleDB.new(user, cdir)
     end
 
-    def initialize(user, cdir = '.')
+    def initialize(user, cdir='.')
       dbname = File.join(cdir, DBNAME)
       @user  = user
       @DB    = Sequel.sqlite(dbname)
