@@ -19,13 +19,13 @@ require 'thor'
 require 'smule-db'
 require 'smule_song'
 
-def clean_emoji(str='')
+def clean_emoji(str)
   str=str.force_encoding('utf-8').encode
   arr_regex=[/[\u{1f600}-\u{1f64f}]/,/[\u{2702}-\u{27b0}]/,/[\u{1f680}-\u{1f6ff}]/,/[\u{24C2}-\u{1F251}]/,/[\u{1f300}-\u{1f5ff}]/]
   arr_regex.each do |regex|
-          str = str.gsub regex, ''
+    str = str.gsub regex, ''
   end
-  return str
+  str
 end
 
 AccentMap = {
@@ -54,7 +54,7 @@ def to_search_str(str)
   stitle.gsub(/\s+/, ' ').strip
 end
 
-def curl(path, ofile=nil)
+def curl(path, ofile:nil)
   cmd = 'curl -s -H "User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"'
   cmd += " -o #{ofile}" if ofile
   `#{cmd} '#{path}'`
@@ -233,7 +233,7 @@ module SmuleAuto
       stars
     end
 
-    def set_unfavs(songs, marking=true)
+    def set_unfavs(songs, marking:true)
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.set_song_favorite(false)
@@ -253,7 +253,7 @@ module SmuleAuto
     include ThorAddition
 
     no_commands do
-      def _connect_site(site=:smule)
+      def _connect_site(site: :smule)
         if @sconnector
           do_close = false
         else
@@ -339,7 +339,7 @@ module SmuleAuto
       it to enable adding more.  The removed one will be tagged with #thvfavs
       if possible
     LONGDESC
-    def unfavs_old(user, count=10)
+    def unfavs_old(user, count:10)
       cli_wrap do
         _tdir_check
         content  = SmuleDB.instance(user, options[:data_dir])
@@ -723,7 +723,7 @@ Filters is the list of SQL's into into DB.
     option :verify,  type: :boolean
     option :open,    type: :boolean, desc: 'Opening mp4 after download'
     option :logfile, type: :string
-    def watch_mp4(dir, user, csong_file='cursong.yml')
+    def watch_mp4(dir, user, csong_file:'cursong.yml')
       cli_wrap do
         woptions = writable_options
         unless (value = woptions[:logfile]).nil?

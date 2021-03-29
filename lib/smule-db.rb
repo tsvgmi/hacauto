@@ -19,7 +19,7 @@ end
 
 module SmuleAuto
   class HashableSet
-    def initialize(dataset, key, vcol=nil)
+    def initialize(dataset, key, vcol:nil)
       @dataset = dataset
       @key     = key
       @vcol    = vcol
@@ -39,11 +39,11 @@ module SmuleAuto
 
     attr_reader :content, :singers, :DB
 
-    def self.instance(user, cdir='.')
+    def self.instance(user, cdir:'.')
       @_db ||= SmuleDB.new(user, cdir)
     end
 
-    def initialize(user, cdir='.')
+    def initialize(user, cdir:'.')
       dbname = File.join(cdir, DBNAME)
       @user  = user
       @DB    = Sequel.sqlite(dbname)
@@ -208,7 +208,7 @@ module SmuleAuto
       Plog.info("Loading db complete")
     end
 
-    def add_new_songs(block, isfav=false)
+    def add_new_songs(block, isfav:false)
       require 'time'
 
       now = Time.now
@@ -317,7 +317,7 @@ module SmuleAuto
     include ThorAddition
 
     no_commands do
-      def _edit_file(records, format='json')
+      def _edit_file(records, format:'json')
         require 'tempfile'
 
         newfile = Tempfile.new('new')
@@ -359,7 +359,7 @@ module SmuleAuto
     end
 
     desc "load_db user", "load_db"
-    def load_db_for_user(user, cdir='.')
+    def load_db_for_user(user, cdir:'.')
       cli_wrap do
         SmuleDB.instance(user, cdir).load_db
       end
@@ -369,7 +369,7 @@ module SmuleAuto
     long_desc <<-LONGDESC
 Dump the database into yaml file (for backup)
     LONGDESC
-    def dump_db(user, cdir='.')
+    def dump_db(user, cdir:'.')
       cli_wrap do
         SmuleDB.instance(user, cdir).dump_db
       end

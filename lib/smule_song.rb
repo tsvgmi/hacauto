@@ -67,7 +67,7 @@ module SmuleAuto
       sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
     }
 
-    def click_smule_page(elem, delay=2)
+    def click_smule_page(elem, delay:2)
       elem = Locators[elem]
       unless elem
         raise "#{elem} not defined in Locators"
@@ -77,7 +77,7 @@ module SmuleAuto
       true
     end
 
-    def set_song_favorite(setit=true)
+    def set_song_favorite(setit:true)
       click_smule_page(:sc_song_menu, 1)
 
       locator = 'div.sc-hKKeuH.kXQUbk'
@@ -513,7 +513,7 @@ module SmuleAuto
       output[0].split[2].to_i
     end
 
-    def is_mp4_tagged?(excuser=nil)
+    def is_mp4_tagged?(excuser:nil)
       wset = mp4_tags
       unless wset
         return false
@@ -537,7 +537,7 @@ module SmuleAuto
       `#{command}`.chomp.encode("UTF-8", invalid: :replace, replace: "")
     end
 
-    def update_mp4tag(excuser=nil)
+    def update_mp4tag(excuser:nil)
       if is_mp4_tagged?(excuser)
         return :was_tagged
       end

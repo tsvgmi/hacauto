@@ -11,3 +11,5 @@ Layout::SpaceInsideHashLiteralBraces:
 Lint/Debugger:
   Enabled: false
 
+Style/NumericPredicate:
+  Enabled: false
