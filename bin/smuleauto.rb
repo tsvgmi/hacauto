@@ -207,7 +207,7 @@ module SmuleAuto
         href = sinfo[:href]
         next if href =~ /ensembles$/
         next if sinfo[:record_by].include?(@user)
-        next if Love.first(sid:sinfo[:sid], user:@user)
+        next if Love.first(sid: sinfo[:sid], user:@user)
         if @options[:exclude]
           next if @options[:exclude].find{ |r| sinfo[:record_by] =~ /#{r}/}
         end
@@ -225,7 +225,7 @@ module SmuleAuto
               break
             end
           end
-          Love.insert(sid:sinfo[:sid], user:@user)
+          Love.insert(sid: sinfo[:sid], user:@user)
         rescue => errmsg
           Plog.error(errmsg)
         end
@@ -238,7 +238,7 @@ module SmuleAuto
         @spage.goto(asong[:href])
         @spage.set_song_favorite(false)
         @spage.set_song_tag('#thvfavs') if marking
-        @logger.dump_info(msg:'Unfav', stitle:asong[:stitle], record_by:asong[:record_by])
+        @logger.dump_info(msg:'Unfav', stitle: asong[:stitle], record_by: asong[:record_by])
       end
     end
 
@@ -283,7 +283,7 @@ module SmuleAuto
         limit = options[:limit]
         days  = options[:days]
         sapi    = API.new(options)
-        perfset = sapi.get_performances(user, limit:limit, days:days)
+        perfset = sapi.get_performances(user, limit: limit, days: days)
         content.add_new_songs(perfset, false)
         perfset
       end
@@ -384,7 +384,7 @@ module SmuleAuto
           fuser = r['handle']
           slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json", options)
           fset[fuser] = slist.size
-          @logger.info(user:fuser, size:slist.size)
+          @logger.info(user: fuser, size: slist.size)
           sleep(0.5)
         end
         fset.to_yaml
@@ -401,15 +401,15 @@ Filters is the list of SQL's into into DB.
       cli_wrap do
         _tdir_check
         content = SmuleDB.instance(user, options[:data_dir])
-        content.each(filter:filters.join('/')) do |_sid, sinfo|
+        content.each(filter: filters.join('/')) do |_sid, sinfo|
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
           if sfile && test(?f, sfile)
-            @logger.dump_info(sinfo:sinfo, _ofmt:'Y')
+            @logger.dump_info(sinfo: sinfo, _ofmt:'Y')
             system("set -x; open -g #{sfile}")
             sleep(1)
           elsif sfile
-            @logger.dump_error(msg:"#{sfile} not found", sinfo:sinfo)
+            @logger.dump_error(msg:"#{sfile} not found", sinfo: sinfo)
           end
         end
         true
@@ -437,9 +437,9 @@ it left off from the previous run.
       cli_wrap do
         _tdir_check
         content   = SmuleDB.instance(user, options[:data_dir])
-        following = content.singers.where(following:true).as_hash(:name)
+        following = content.singers.where(following: true).as_hash(:name)
         bar = TTY::ProgressBar.new("Following [:bar] :percent",
-                                   total:Performance.count)
+                                   total: Performance.count)
         Performance.where(Sequel.lit('record_by like ?', "%#{user}%")).
                           each do |sinfo|
           singers = sinfo[:record_by].split(',')
@@ -488,7 +488,7 @@ it left off from the previous run.
         SmuleDB.instance(user)
         case fix_type.to_sym
         when :mp3, :m4a
-          content.each(filter:data.join('/')) do |_sid, sinfo|
+          content.each(filter: data.join('/')) do |_sid, sinfo|
             asong = SmuleSong.new(sinfo)
             if asong.update_mp4tag(user) == :updated
               asong._run_command("open -g #{asong.ssfile}")
@@ -501,16 +501,16 @@ it left off from the previous run.
           end
           recs   = []
           filter = "stitle like '%#{data.shift}%'"
-          content.each(filter:filter) do |_sid, r|
+          content.each(filter: filter) do |_sid, r|
             recs << r
           end
           ccount = content.add_tag(recs, data.join(','))
         when :stitle
-          query  = Performance.where(stitle:nil)
+          query  = Performance.where(stitle: nil)
           ccount = query.count
           query.each do |r|
             stitle = to_search_str(r[:title])
-            r.update(stitle:stitle)
+            r.update(stitle: stitle)
           end
         when :favs
           query  = Performance.where(isfav:1, oldfav:1)
@@ -519,7 +519,7 @@ it left off from the previous run.
             r.update(oldfav:0)
           end
         when :slink
-          query  = Performance.where(created:Time.now-80*24*3600..Time.now).
+          query  = Performance.where(created: Time.now-80*24*3600..Time.now).
             where(Sequel.ilike(:record_by, "%#{user}%"))
           ccount = query.count
           progress_set(query.all, "symlink") do |r|
@@ -577,7 +577,7 @@ Filters is the list of SQL's into into DB.
 
     desc "to_open(user)", "Show list of potential to open songs"
     option :tags,  type: :string
-    option :favs,  type: :boolean, default:true
+    option :favs,  type: :boolean, default: true
     option :title, type: :string
     option :record_by, type: :string
     long_desc <<-LONGDESC
@@ -591,7 +591,7 @@ Filters is the list of SQL's into into DB.
       cli_wrap do
         _tdir_check
         SmuleDB.instance(user, options[:data_dir])
-        wset    = Performance.where(record_by:user)
+        wset    = Performance.where(record_by: user)
         opened  = {}
         wset.all.each do |r|
           opened[r[:stitle]] = true
@@ -616,7 +616,7 @@ Filters is the list of SQL's into into DB.
           wset = wset.where(Sequel.lit('stitle like ?', "%#{title}%"))
         end
 
-        Plog.dump(wset:wset)
+        Plog.dump(wset: wset)
         topen = {}
         wset.all.each do |r|
           next if opened[r[:stitle]]
@@ -643,9 +643,14 @@ Filters is the list of SQL's into into DB.
         end
         wset.all.map { |r| r.values }.to_yaml
         wset.each do |sinfo|
-          puts "\n%-60.60s %s" % [sinfo[:stitle], sinfo[:record_by]]
-          JSON.parse(sinfo[:comments]).each do |cuser, msg|
-            puts "  %-14.14s | %s" % [cuser, msg]
+          comments = JSON.parse(sinfo[:comments]).
+            select { |c, m| m && !m.empty? }
+          if comments.size > 0
+            puts "\n%-60.60s %20.20s %s" %
+              [sinfo[:stitle], sinfo[:record_by], sinfo[:created]]
+            comments.each do |cuser, msg|
+              puts "  %-14.14s | %s" % [cuser, msg]
+            end
           end
         end
         true
@@ -677,7 +682,7 @@ Filters is the list of SQL's into into DB.
           singers = content.top_partners(topc, woptions).
             map    { |k, _v| k }[options[:offset]..-1].
             select { |r| !exclude.include?(r) }
-          @logger.dump_info(singers:singers)
+          @logger.dump_info(singers: singers)
         end
         limit    = woptions[:limit]
         days     = woptions[:days]
@@ -690,7 +695,7 @@ Filters is the list of SQL's into into DB.
         allsets = []
         singers.each do |asinger|
           perfset = sapi.get_performances(asinger, limit:[limit, 30].min,
-                                          days:days)
+                                          days: days)
           perfset = perfset.select do |r|
             (r[:record_by].split(',') & BannedList).size == 0
           end

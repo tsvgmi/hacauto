@@ -95,7 +95,7 @@ module ChordMerger
   def merge_chord_lines(lyric)
     chords  = []
     result  = []
-    options = {shift_space:true}
+    options = {shift_space: true}
     lyric.split(/\n/).each do |l|
       l, is_chord_line = detect_and_clean_chord_line(l)
       if is_chord_line
@@ -116,7 +116,7 @@ module ChordMerger
             if l.size <= pos
               l += ' ' * 80
             end
-            #Plog.dump_error(start:l[0..pos-1], pos:pos, remain:l[pos..-1])
+            #Plog.dump_error(start: l[0..pos-1], pos: pos, remain: l[pos..-1])
 
             # Need to back until I find a space
             if options[:shift_space]
@@ -124,7 +124,7 @@ module ChordMerger
                 cpos = pos-1
                 while cpos > 0
                   if l[cpos] == ' '
-                    Plog.dump_error(pos:pos, cpos:cpos+1)
+                    Plog.dump_error(pos: pos, cpos: cpos+1)
                     pos = cpos+1
                     break
                   end
@@ -137,7 +137,7 @@ module ChordMerger
             end
 
             l.insert(pos, "[#{text}]")
-            #Plog.dump_error(l:l)
+            #Plog.dump_error(l: l)
           rescue => errmsg
             Plog.error errmsg
           end
@@ -168,7 +168,7 @@ class GuitarTwitt < MusicSource
     end
     
     
-    blob  = get_page_curl(url, raw:true)
+    blob  = get_page_curl(url, raw: true)
     blob  = JSON.parse(blob.sub(/^[^{]*/o, '').sub(/;\s*$/o, ''))['data']
     lyric = merge_chord_lines(blob.dig('tab_view', 'wiki_tab', 'content'))
     {
@@ -417,7 +417,7 @@ class HavSource < MusicSource
       lkey     = $1
       if lkey != chord
         offset = key_offset(lkey, chord)
-        Plog.info({lkey:lkey, chord:chord, offset:offset}.inspect)
+        Plog.info({lkey: lkey, chord: chord, offset: offset}.inspect)
         new_note = "Tone #{artist} là #{chord}.  Capo #{offset} chơi #{lkey}"
       end
     end
@@ -610,7 +610,7 @@ class NctSource < MusicSource
     genre = nil
     genre = data[-1].text.strip if data.size > 0
     lyric = page.css('#divLyric').text.strip
-    #Plog.dump_info(lyric:lyric)
+    #Plog.dump_info(lyric: lyric)
     {
       lyric:  lyric,
       title:  page.css('.name_title h1').text.strip,
@@ -913,7 +913,7 @@ class HacSource < MusicSource
     sdir    = options[:store] || '.'
     odir    = "#{sdir}/#{user}"
     unless test(?d, odir)
-      FileUtils.mkdir_p(odir, verbose:true)
+      FileUtils.mkdir_p(odir, verbose: true)
     end
 
     ofile = "#{odir}/#{sno}::#{song}.yml"
@@ -922,7 +922,7 @@ class HacSource < MusicSource
       return
     end
 
-    sinfo = {href:href, ofile:ofile}
+    sinfo = {href: href, ofile: ofile}
     sinfo.update(lyric_info(sinfo[:href]) || {})
     
     Plog.info("Writing to #{ofile}")
@@ -1010,10 +1010,10 @@ class HacSource < MusicSource
 
   def thanh_vien(count)
     url   = "#{@base_url}/user/month"
-    Plog.dump_info(url:url)
+    Plog.dump_info(url: url)
     page  = get_page_curl(url)
     tlist = page.css('td .one-line').map { |e| e['href'].split('/').last }[0..count-1]
-    Plog.dump_info(tlist:tlist)
+    Plog.dump_info(tlist: tlist)
     tlist
   end
 

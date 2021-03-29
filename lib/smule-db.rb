@@ -388,7 +388,9 @@ changes back into the database
         tdir           = _tdir_check(options[:data_dir])
         # Must call once to init db connection/model
         SmuleDB.instance(user, tdir)
-        records        = SongTag.all.sort_by { |r| r[:name]}.map{|r| r.values }
+        records        = SongTag.all.
+          sort_by { |r| r[:name] }.
+          map     { |r| r.values }
         insset, delset = _edit_file(records, options[:format])
         if delset.size > 0
           SongTag.where(id:delset.map { |r| r[:id] }).destroy

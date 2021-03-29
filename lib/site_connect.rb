@@ -24,7 +24,7 @@ module HtmlRes
     # Some sites does not have good SSL certs.  That's OK here.
     
     #Plog.dump_info(url:url)
-    fid  = open(url, ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE)
+    fid  = URI.open(url, ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE)
     page = Nokogiri::HTML(fid.read)
     fid.close
     page

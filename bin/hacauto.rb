@@ -224,7 +224,7 @@ EOH
     # Origin link is music already
     source = sinfo[:source]
     if source =~ /nhaccuatui|zing/
-      spage.type('#song-link', source, clear:true)
+      spage.type('#song-link', source, clear: true)
       system "open '#{source}'"
     else
       work_link = nil
@@ -237,7 +237,7 @@ EOH
           work_link = slink
           if spage
             begin
-              spage.type('#song-link', work_link, clear:true)
+              spage.type('#song-link', work_link, clear: true)
             rescue => errmsg
               Plog.error errmsg
             end
@@ -294,7 +294,7 @@ EOH
       end
     end
 
-    Plog.dump_info(pcount:sinfo[:pcount])
+    Plog.dump_info(pcount: sinfo[:pcount])
     begin
       spage.click_and_wait('#create-song-link', 4)
       spage.click_and_wait('#auto-caret-btn', 0)
@@ -354,7 +354,7 @@ EOH
         break if input != :next
       end
 
-      Plog.dump_info(sinfo:sinfo, text_mode:text_mode)
+      Plog.dump_info(sinfo: sinfo, text_mode: text_mode)
       if sinfo[:href]
         if text_mode
           puts sinfo.to_yaml
@@ -437,7 +437,7 @@ class SongStore
       if test(?f, url)
         @songs[@curptr] = YAML.safe_load_file(url)
       elsif url =~ /hopamchuan/
-        sinfo = {href:url}
+        sinfo = {href: url}
         @hac_source ||= HacSource.new(@options)
         sinfo.update(@hac_source.lyric_info(sinfo[:href]) || {})
         @songs[@curptr] = sinfo
@@ -446,7 +446,7 @@ class SongStore
           havinfo = HACAuto.hav_find_matching_song(url)
           @songs[@curptr] = {href: havinfo ? havinfo[:href] : url}
         else
-          @songs[@curptr] = {href:url}
+          @songs[@curptr] = {href: url}
         end
         @songs[@curptr][:name] = File.basename(@songs[@curptr][:href])
       else
@@ -782,10 +782,10 @@ class HACAuto
       spage.click_and_wait('#edit-playlist')
       spage.refresh
       if title != '.'
-        spage.type('.playlist-detail-title input', title, clear:true)
+        spage.type('.playlist-detail-title input', title, clear: true)
       end
       if description != '.'
-        spage.type('.playlist-detail-description input', description, clear:true)
+        spage.type('.playlist-detail-description input', description, clear: true)
       end
       spage.click_and_wait('#save-playlist')
     end
@@ -938,7 +938,7 @@ class HACAuto
           song_url = sitem.css('a.song-title')[0]['href']
           spage.goto(song_url)
           spage.click_and_wait('#edit-approve-song')
-          spage.type('#song-note', 'Hop an co ban', clear:true)
+          spage.type('#song-note', 'Hop an co ban', clear: true)
           spage.click_and_wait('#submit-edit-song')
         end
       end
@@ -1101,7 +1101,7 @@ class HACAuto
         content = YAML.safe_load_file(f)
         fsize   = File.size(f)
         total  += content.size
-        {name:f, fsize:fsize, count:content.size}
+        {name: f, fsize: fsize, count: content.size}
       end
       fentries.sort_by{ |e| e[:count]}.each do |e|
         puts "%-30s %6d %3d" % [e[:name], e[:fsize], e[:count]]
@@ -1181,7 +1181,7 @@ class HACAuto
             chords = []
           end
           l = l.strip.gsub(/\s+/, ' ')
-          #Plog.dump_info(cline:cline, l:l)
+          #Plog.dump_info(cline: cline, l: l)
           result << ' ' + l
         end
       end

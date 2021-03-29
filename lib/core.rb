@@ -6,12 +6,10 @@
 #---------------------------------------------------------------------------
 #++
 
-class YAML
-  class << self
-    def safe_load_file(file, options={})
-      options[:filename] = file
-      load(File.read(file), options)
-    end
+module YAML
+  def self.safe_load_file(file, options={})
+    options[:filename] = file
+    load(File.read(file), options)
   end
 end
 

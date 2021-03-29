@@ -59,7 +59,7 @@ module SmuleAuto
         listpos: @listpos,
         clist:   @clist.map { |r| r[:sid] },
       }
-      open(@state_file, "w") do |fod|
+      File.open(@state_file, "w") do |fod|
         fod.puts(data.to_yaml)
         @logger.info("Updating #{@state_file}")
       end
