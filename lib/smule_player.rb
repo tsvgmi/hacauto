@@ -37,7 +37,7 @@ module SmuleAuto
     end
 
     def toplay_list
-      @clist[@listpos..-1]
+      @clist[@listpos..]
     end
 
     def done_list
@@ -237,7 +237,7 @@ module SmuleAuto
         isfav = (sitem[:isfav] || sitem[:oldfav]) ? 'F' : ' '
         box   = TTY::Box.frame(top: 0, left: 15,
                 width: TTY::Screen.width - 20,
-                height:5) do
+                height: 5) do
 <<EOM
 [#{isfav}] #{sitem[:title]} - #{sitem[:created].strftime("%Y-%m-%d")} - #{bar[1..sitem[:stars].to_i]}
     #{sitem[:record_by]} - #{sitem[:listens]} plays, #{sitem[:loves]} loves - #{ptags[0..9]}
@@ -277,7 +277,7 @@ EOM
     end
 
     def play_asong(sitem)
-      res = {duration:0}
+      res = {duration: 0}
 
       File.open(@csong_file, 'w') do |fod|
         fod.puts sitem.to_yaml
@@ -326,7 +326,7 @@ EOM
     end
 
     def _set_favorite(sitem)
-      @scanner.spage.toogle_song_favorite(fav: true)
+      @scanner.spage.toggle_song_favorite(fav: true)
       sitem[:isfav] = true
     end
 
@@ -479,7 +479,7 @@ EOH
         return [:pausing, 0]
       when '?'
         TTY::Pager.new.page(HELP_SCREEN)
-        prompt.keypress("Press any key [:countdown]", timeout:3)
+        prompt.keypress("Press any key [:countdown]", timeout: 3)
       when '.'
         @playlist.next_song(ncrement: -1)
         return [:next, true]
@@ -503,7 +503,7 @@ EOH
         unless (param = prompt.ask('Browser Op alue?')).nil?
           _menu_eval do
             browser_op(sitem, psitem, param)
-            prompt.keypress("Press any key [:countdown]", timeout:3)
+            prompt.keypress("Press any key [:countdown]", timeout: 3)
           end
         end
       when 'C'
@@ -516,7 +516,7 @@ EOH
         if prompt.keypress('Are you sure? ') =~ /^y/i
           @content.delete_song(sitem)
           sitem = nil
-          prompt.keypress("Press any key [:countdown]", timeout:3)
+          prompt.keypress("Press any key [:countdown]", timeout: 3)
           return [:next, true]
         end
       when 'f'                            # Set filter
@@ -573,7 +573,7 @@ EOH
       when /p/i                           # List history
         offset = (key == 'P') ? prompt.ask('Prev track offset?').to_i : 0
         _list_show(nil, nil, @playlist.done_list.reverse, offset.to_i, 10)
-        prompt.keypress("Press any key [:countdown]", timeout:3)
+        prompt.keypress("Press any key [:countdown]", timeout: 3)
         print TTY::Cursor.clear_screen
       when 'R'                             # Reload script
         _menu_eval do
@@ -587,7 +587,7 @@ EOH
           rescue => e
             p e
           end
-          prompt.keypress("Press any key [:countdown]", timeout:3)
+          prompt.keypress("Press any key [:countdown]", timeout: 3)
         end
       when 's'                            # Sort current list
         choices = %w(random play love star date title
@@ -596,12 +596,12 @@ EOH
         @playlist.order = prompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
-          perfset   = @sapi.get_performances(@user, limit:50, days:1)
+          perfset   = @sapi.get_performances(@user, limit: 50, days: 1)
           new_count = @content.add_new_songs(perfset, isfav: false)
           perfset   = SmuleSong.collect_collabs(@user, 10)
           new_count += @content.add_new_songs(perfset, isfav: false)
           prompt.keypress("#{new_count} songs added [:countdown]",
-                          timeout:3)
+                          timeout: 3)
         end
       when 't'                             # Set tag
         unless (tag = prompt.ask('Tag value ?')).nil?
@@ -611,10 +611,10 @@ EOH
         return [:quit, true]
       when 'W'
         listen_for_download(enable: true)
-        prompt.keypress("Start watching [:countdown]", timeout:3)
+        prompt.keypress("Start watching [:countdown]", timeout: 3)
       when 'w'
         listen_for_download(enable: false)
-        prompt.keypress("Stop watching [:countdown]", timeout:3)
+        prompt.keypress("Stop watching [:countdown]", timeout: 3)
       when 'Z'                            # Debug
         require 'byebug'
 

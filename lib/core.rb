@@ -343,13 +343,13 @@ module Cli
 	type = GetoptLong::NO_ARGUMENT
 	optspec[2] = type
       end
-      optname = opt[2..-1]
+      optname = opt[2..]
       option[optname.intern] = default
       [opt, tmp, type]
     end
     begin
       GetoptLong.new(*newopt).each do |opt, arg|
-        optname = opt[2..-1]
+        optname = opt[2..]
         option[optname.intern] = (arg == '') ? true : arg
       end
     rescue => e
@@ -548,7 +548,7 @@ class Plog
       log_level, *logopts = logspec.split(':')
       logopts.each do |anopt|
         oname  = anopt[0]
-        #ovalue = anopt[1..-1]
+        #ovalue = anopt[1..]
         case oname
         when 's'
           logger.simple = true

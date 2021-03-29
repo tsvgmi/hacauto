@@ -397,9 +397,9 @@ class SongStore
       wfile = @files[0]
       Plog.info "Writing remaining #{csize} entries to #{wfile}"
       File.open(wfile, "w") do |fod|
-        fod.puts @songs[@curptr..-1].to_yaml
+        fod.puts @songs[@curptr..].to_yaml
       end
-      rmfiles = @files[1..-1]
+      rmfiles = @files[1..]
     else
       rmfiles = @files
     end

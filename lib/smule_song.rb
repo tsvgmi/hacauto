@@ -63,7 +63,8 @@ module SmuleAuto
       sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
       sc_play_continue:       ['a.sc-hYZPRl.gumLkx',      0],
       sc_play_toggle:         ['div.sc-fiKUUL',           0],
-      sc_song_menu:           ['button.sc-jbiwVq.dqCLEx', 1],
+      #sc_song_menu:           ['button.sc-jbiwVq.dqCLEx', 1],
+      sc_song_menu:           ['button.sc-eUWgFQ.hcHFJT', 1],
       sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
     }
 
@@ -80,7 +81,7 @@ module SmuleAuto
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 
-      locator = 'div.sc-hKKeuH.kXQUbk'
+      locator = 'div.sc-cRcunm.kXGAjw'
       cval = css("#{locator} svg path")[0][:fill]
 
       if fav && cval == "#FFCE42"
@@ -108,7 +109,7 @@ module SmuleAuto
       text = ' ' + tag
 
       click_smule_page(:sc_song_menu)
-      locator = 'span.sc-jgHCyG.jYOAjG'
+      locator = 'span.sc-gTgzIj.brYKCX'
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, "//html").click
         return false
@@ -169,12 +170,11 @@ module SmuleAuto
               if endtime
                 if endtime.text != "00:00"
                   if options[:href]
+                    sleep(1)
                     if sleep_round > 2
-                      sleep(1)
                       click_smule_page(:sc_play_continue, delay: 0)
                       click_smule_page(:sc_play_continue, delay: 0)
                     else
-                      sleep(1)
                       click_smule_page(:sc_play_toggle, delay: 0)
                     end
                   end
@@ -217,7 +217,7 @@ module SmuleAuto
       css('div.sc-hBmvGb.gugxcI').reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
-        msg  = (comment[1..-1] || []).join(' ')
+        msg  = (comment[1..] || []).join(' ')
         res << [user, msg]
       end
       click_smule_page(:sc_comment_close, delay: 0)
@@ -551,9 +551,8 @@ module SmuleAuto
         comment = "#{date} - #{href}"
         title   = clean_emoji(@info[:title]).gsub(/\'/, "")
 
-        command = "atomicparsley #{ofile}"
-
         # Get the artwork
+        command = "atomicparsley #{ofile}"
         lcfile  = File.basename(@info[:avatar])
         curl(@info[:avatar], ofile: lcfile)
         if test('f', lcfile) && `file #{lcfile}` =~ /JPEG/
