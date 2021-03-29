@@ -122,7 +122,7 @@ class AutoFill
     nil
   end
 
-  HelpText = <<EOH
+  HELP_TEXT = <<EOH
 b       - Debug program
 h       - Show this info
 p       - Redo previous
@@ -133,7 +133,7 @@ w       - Write current list
 x       - Exit program
 EOH
 
-  def get_command_from_user
+  def read_command_from_user
     while true
       $stderr.print "Command [b|h|p|r|s|t|w|x]? "
       $stderr.flush
@@ -143,7 +143,7 @@ EOH
         require 'byebug'
         byebug
       when /^(h|\?)/io
-        $stderr.puts HelpText
+        $stderr.puts HELP_TEXT
       when /^p/io
         return :previous
       when /^r/io
@@ -168,7 +168,7 @@ EOH
     end
   end
 
-  SongSite = [
+  SONG_SITES = [
     'http://amnhac.fm',
     'http://amusic.vn',
     'http://chacha.vn',
@@ -208,7 +208,7 @@ EOH
       href = l['href'].sub(%r{^/url\?q=}, '').sub(/\&.*$/, '')
       href = CGI.unescape(href)
       links0 << href
-      SongSite.select do |asite|
+      SONG_SITES.select do |asite|
         next unless href.start_with?(asite)
         links << href
         break
@@ -328,7 +328,7 @@ EOH
           Plog.info "Next to import is #{sinfo[:name]} - [#{store.curptr + 1}/#{store.songs.size}]"
         end
 
-        input = get_command_from_user
+        input = read_command_from_user
         return unless input
         if input == :skip
           sinfo = {}
@@ -455,7 +455,7 @@ class SongStore
 end
 
 class HACAuto
-  extendCli __FILE__
+  extend_cli __FILE__
 
   class << self
     def hav_find_matching_song(url)
@@ -833,7 +833,7 @@ class HACAuto
         slist.each_with_index do |sentry, index|
           sname, _surl = sentry[:name], sentry[:href]
           Plog.info "Next to import is #{sname} - [#{index + 1}/#{slist.size}]"
-          input = hacfill.get_command_from_user
+          input = hacfill.read_command_from_user
           break unless input
           unless input.is_a?(Symbol)
             hacfill.create_song(spage, sentry, coptions)
@@ -1104,13 +1104,13 @@ class HACAuto
       true
     end
 
-    RatingUsers = %w(mbtc9522 metacritic kelichi ceenee)
-    AdminUsers  = %w(gau307 kabigon91 trungdq88)
+    RATING_USERS = %w(mbtc9522 metacritic kelichi ceenee)
+    ADMIN_USERS  = %w(gau307 kabigon91 trungdq88)
     def _getOptions
       options = getOption
       if options[:top_exclude]
         top_users = HacSource.new(options).thanh_vien(options[:top_exclude].to_i)
-        options[:exclude_user] = (top_users + RatingUsers + AdminUsers).join(',')
+        options[:exclude_user] = (top_users + RATING_USERS + ADMIN_USERS).join(',')
       end
       options
     end

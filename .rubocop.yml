@@ -11,5 +11,8 @@ Layout/SpaceInsideHashLiteralBraces:
 Lint/Debugger:
   Enabled: false
 
+Naming/HeredocDelimiterNaming:
+  Enabled: false
+
 Style/NumericPredicate:
   Enabled: false

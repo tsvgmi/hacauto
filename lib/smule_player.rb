@@ -353,7 +353,7 @@ EOM
       prompt.keypress("[ME] Press any key to continue ...")
     end
 
-    HelpScreen = <<EOH
+    HELP_SCREEN = <<EOH
 Command:
 ? Help
 b Browser   command (see below)
@@ -478,7 +478,7 @@ EOH
       when ' '
         return [:pausing, 0]
       when '?'
-        TTY::Pager.new.page(HelpScreen)
+        TTY::Pager.new.page(HELP_SCREEN)
         prompt.keypress("Press any key [:countdown]", timeout:3)
       when '.'
         @playlist.next_song(-1)

@@ -46,19 +46,19 @@ module SmuleAuto
     def initialize(user, cdir: '.')
       dbname = File.join(cdir, DBNAME)
       @user  = user
-      @DB    = Sequel.sqlite(dbname)
+      @db    = Sequel.sqlite(dbname)
       Sequel::Model.plugin :insert_conflict
       YAML.safe_load_file('etc/db_models.yml').each do |model, minfo|
         klass = Class.new(Sequel::Model)
-        klass.dataset = @DB[minfo['table'].to_sym]
+        klass.dataset = @db[minfo['table'].to_sym]
         Object.const_set model, klass
       end
 
-      @all_content = @DB[:performances]
+      @all_content = @db[:performances]
       @content     = @all_content.where(Sequel.lit('record_by like ?',
                                                    "%#{user}%"))
-      @singers     = @DB[:singers]
-      @songtags    = @DB[:song_tags]
+      @singers     = @db[:singers]
+      @songtags    = @db[:song_tags]
     end
 
     def tags

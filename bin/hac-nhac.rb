@@ -853,8 +853,8 @@ class HacSource < MusicSource
       begin
         bar.log(url)
         page = get_page(url)
-      rescue OpenURI::HTTPError => errmsg
-        bar.log(errmsg.to_s)
+      rescue OpenURI::HTTPError => e
+        bar.log(e.to_s)
         next
       end
 

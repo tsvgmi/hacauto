@@ -139,15 +139,15 @@ module Cli
     if self.respond_to?(:cliResult)
       self.cliResult(result, obj)
     else
-      Cli.setShellResult(result)
+      Cli.set_shell_result(result)
     end
   end
 
   # Print the message on cli usage (flag/method) and exit script
   def cliUsage
     $stderr.puts "#{File.basename($0)} " +
-          Cli.showOptions(@cliOptions).join(" ") + " [object] method ..."
-    Cli.classUsage(self)
+          Cli.show_options(@cliOptions).join(" ") + " [object] method ..."
+    Cli.class_usage(self)
   end
 
   # Print a prompt and wait for y/n answer
@@ -249,7 +249,7 @@ module Cli
 
   # Print the usage message for the class (instance and class methods)
   # to be used in display help
-  def self.classUsage(klass)
+  def self.class_usage(klass)
     defs = {}
     mlist = klass.instance_methods(false).grep(/^[^_]/).map do |amethod|
       ["", amethod, klass.instance_method(amethod).arity]
@@ -292,19 +292,19 @@ module Cli
     if ENV['LOG_LEVEL'] && (ENV['LOG_LEVEL'] > "0")
       begin
 	result = yield
-	self.setShellResult(result)
+	self.set_shell_result(result)
       rescue => e
 	$stderr.puts "+ #{$0}: #{e}"
 	exit 1
       end
     else
       result = yield
-      self.setShellResult(result)
+      self.set_shell_result(result)
     end
   end
 
   # Map output to shell (at exit) for ruby class output
-  def self.setShellResult(result)
+  def self.set_shell_result(result)
     if result.kind_of?(TrueClass)
       exit(0)
     elsif result.kind_of?(FalseClass)
@@ -317,7 +317,7 @@ module Cli
     exit(0)
   end
 
-  def self.showOptions(options)
+  def self.show_options(options)
     options.map do |long, short, type, _default|
       if type == 1
         "[#{long}|#{short} value]"
@@ -354,7 +354,7 @@ module Cli
       end
     rescue => e
       puts e
-      puts "#{File.basename($0)} " + showOptions(options).join(" ") + "..."
+      puts "#{File.basename($0)} " + show_options(options).join(" ") + "..."
     end
     option
   end
@@ -460,7 +460,7 @@ module Kernel
 
   # Check if class is main CLI facing class and extend cli support
   # module to it
-  def extendCli(_file)
+  def extend_cli(_file)
     #if (file == $0)
       include Cli
       extend  Cli
@@ -470,7 +470,7 @@ end
 
 require 'logger'
 class PLogger < Logger
-  Format2    = "%s %s - [%s] %s\n"
+  FORMAT2    = "%s %s - [%s] %s\n"
   attr_accessor :simple, :clevel
 
   def initialize(*args)
@@ -487,9 +487,9 @@ class PLogger < Logger
       "%s - [%s] %s\n" % [severity[0..0], script, msg]
     else
       if timestamp.respond_to?(:strftime)
-        format(Format2, severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg)
+        format(FORMAT2, severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg)
       else
-        format(Format2, severity[0..0], timestamp, script, progname)
+        format(FORMAT2, severity[0..0], timestamp, script, progname)
       end
     end
   end

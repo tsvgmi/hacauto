@@ -53,7 +53,7 @@ module SmuleAuto
   end
 
   class SmulePage < SelPage
-    Locators = {
+    LOCATORS = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
       sc_comment_close:       ['div.sc-gsBrbv.dgedbA',    0],
       sc_comment_open:        ['div.sc-iitrsy',           2],
@@ -68,7 +68,7 @@ module SmuleAuto
     }
 
     def click_smule_page(elem, delay: 2)
-      elem = Locators[elem]
+      elem = LOCATORS[elem]
       unless elem
         raise "#{elem} not defined in Locators"
       end
@@ -124,7 +124,7 @@ module SmuleAuto
 
     def star_song(href)
       goto(href, 3)
-      elem = Locators[:sc_star]
+      elem = LOCATORS[:sc_star]
       unless elem
         raise "#{elem} not defined in Locators"
       end
@@ -282,11 +282,11 @@ module SmuleAuto
       end
 
       def song_dir
-        @tdir ||= '/Volumes/Voice/SMULE'
+        @song_dir ||= '/Volumes/Voice/SMULE'
       end
 
       def song_dir=(adir)
-        @tdir = adir
+        @song_dir = adir
       end
     end
 

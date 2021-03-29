@@ -28,7 +28,7 @@ def clean_emoji(str)
   str
 end
 
-AccentMap = {
+ACCENT_MAP = {
   /[áàảãạâấầẩẫậăắằẳẵặ]/ => 'a',
   /[ÁÀẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶ]/ => 'A',
   /[đ]/                 => 'd',
@@ -48,7 +48,7 @@ AccentMap = {
 def to_search_str(str)
   stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '').
     sub(/\s+[-=].*$/, '').sub(/"/, '').strip
-  AccentMap.each do |ptn, rep|
+  ACCENT_MAP.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
   end
   stitle.gsub(/\s+/, ' ').strip
@@ -88,7 +88,7 @@ end
 
 # Account to move songs to.  i.e. user close old account and open
 # new one and we want to associate with new account
-Alternate = {
+ALTERNATE = {
   'Annygermany'   => 'Nai_Anh_Anh',
   'Eddy2020_'     => 'Mina_________',
   '_Huong'        => '__HUONG',
@@ -98,7 +98,7 @@ Alternate = {
 
 def _record_by_map(record_by)
   record_by.map do |ri|
-    Alternate[ri] || ri
+    ALTERNATE[ri] || ri
   end
 end
 
@@ -668,7 +668,7 @@ Filters is the list of SQL's into into DB.
     option :play,    type: :boolean
     option :offset,  type: :numeric, default: 0
 
-    BannedList = %w[Joseph_TN]
+    BANNED_LIST = %w[Joseph_TN]
     def star_singers(user, count, *singers)
       cli_wrap do
         _tdir_check
@@ -700,7 +700,7 @@ Filters is the list of SQL's into into DB.
           perfset = sapi.get_performances(asinger, limit:[limit, 30].min,
                                           days: days)
           perfset = perfset.select do |r|
-            (r[:record_by].split(',') & BannedList).size == 0
+            (r[:record_by].split(',') & BANNED_LIST).size == 0
           end
           starred = scanner.star_set(perfset, count)
           allsets.concat(starred)
