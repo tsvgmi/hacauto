@@ -646,10 +646,11 @@ Filters is the list of SQL's into into DB.
           comments = JSON.parse(sinfo[:comments]).
             select { |_c, m| m && !m.empty? }
           if comments.size > 0
-            puts "\n%-60.60s %20.20s %s" %
-              [sinfo[:stitle], sinfo[:record_by], sinfo[:created]]
+            puts format("\n%<title>-60.60s %<record>20.20s %<created>s",
+                        title: sinfo[:stitle], record: sinfo[:record_by],
+                        created: sinfo[:created])
             comments.each do |cuser, msg|
-              puts "  %-14.14s | %s" % [cuser, msg]
+              puts format("  %<cuser>-14.14s | %<msg>s", cuser: cuser, msg: msg)
             end
           end
         end

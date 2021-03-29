@@ -5,6 +5,9 @@ Layout/HashAlignment:
 Layout/SpaceAroundEqualsInParameterDefault:
   EnforcedStyle: no_space
 
+Layout::SpaceInsideHashLiteralBraces:
+  EnforcedStyle: no_space
+
 Lint/Debugger:
   Enabled: false
 
