@@ -88,7 +88,6 @@ class SDriver
     browser  = (options[:browser] || 'firefox').to_sym
     Plog.debug("Goto #{@url} using #{browser}")
 
-    #capabilities = Selenium::WebDriver::Remote::W3C::Capabilities.firefox(accept_insecure_certs: true)
     capabilities = Selenium::WebDriver::Remote::Capabilities.firefox(accept_insecure_certs: true)
 
     foptions = Selenium::WebDriver::Firefox::Options.new(
@@ -102,7 +101,7 @@ class SDriver
       }
     )
     @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
-                                    options:foptions)
+                                      options: foptions)
     @driver.navigate.to(@url)
     sleep(1)
   end

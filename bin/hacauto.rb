@@ -490,7 +490,7 @@ class HACAuto
     end
 
     def gmusic_plist(plist)
-      _connect_site(:gmusic) do |spage|
+      _connect_site(site: :gmusic) do |spage|
         path = "listen#/app/#{plist}"
         spage.goto(path)
         spage.page.css('tr.song-row td[data-col="title"]')
@@ -856,7 +856,7 @@ class HACAuto
     def zing_song_list(url=nil)
       options = _getOptions
       slist   = []
-      _connect_site(:zing) do |spage|
+      _connect_site(site: :zing) do |spage|
         slist = ZingSource.new.browser_song_list(spage, url, options)
       end
       slist   = AutoFill.new(options).find_missing_song(slist)
@@ -871,7 +871,7 @@ class HACAuto
     def zing_xem_nhieu(url=nil)
       options = _getOptions
       slist   = []
-      _connect_site(:zing) do |spage|
+      _connect_site(site: :zing) do |spage|
         slist, _nlist = _collect_and_filter do
           ZingSource.new.browser_song_list(spage, url, options)
         end
@@ -1041,13 +1041,13 @@ class HACAuto
         slist, _nlist = _collect_and_filter do
           if source.is_a?(ZingSource)
             slist = nil
-            _connect_site(:zing) do |spage|
+            _connect_site(site: :zing) do |spage|
               slist = source.browser_song_list(spage, url, options)
             end
             slist
           elsif source.is_a?(NhacSource)
             slist = nil
-            _connect_site(:nhacvn) do |spage|
+            _connect_site(site: :nhacvn) do |spage|
               slist = source.browser_song_list(spage, url, options)
             end
             slist

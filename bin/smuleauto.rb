@@ -285,7 +285,7 @@ module SmuleAuto
         days  = options[:days]
         sapi    = API.new(options)
         perfset = sapi.get_performances(user, limit: limit, days: days)
-        content.add_new_songs(perfset, false)
+        content.add_new_songs(perfset, isfav: false)
         perfset
       end
     end
@@ -313,10 +313,10 @@ module SmuleAuto
         _tdir_check
         content  = SmuleDB.instance(user, cdir: options[:data_dir])
         newsongs = _collect_songs(user, content)
-        content.add_new_songs(newsongs, false)
+        content.add_new_songs(newsongs, isfav: false)
         if options[:with_collabs]
           newsongs = SmuleSong.collect_collabs(user, options[:days])
-          content.add_new_songs(newsongs, false)
+          content.add_new_songs(newsongs, isfav: false)
         end
         true
       end
@@ -328,7 +328,7 @@ module SmuleAuto
         _tdir_check
         content = SmuleDB.instance(user, cdir: options[:data_dir])
         favset  = API.new.get_favs(user)
-        content.add_new_songs(favset, true)
+        content.add_new_songs(favset, isfav: true)
         true
       end
     end
@@ -340,7 +340,7 @@ module SmuleAuto
       it to enable adding more.  The removed one will be tagged with #thvfavs
       if possible
     LONGDESC
-    def unfavs_old(user, count: 10)
+    def unfavs_old(user, count=10)
       cli_wrap do
         _tdir_check
         content  = SmuleDB.instance(user, cdir: options[:data_dir])
@@ -348,7 +348,7 @@ module SmuleAuto
         woptions = writable_options
         woptions[:logger] = @logger
         result  = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
-        content.add_new_songs(result, true)
+        content.add_new_songs(result, isfav: true)
         true
       end
     end
@@ -490,7 +490,7 @@ it left off from the previous run.
         when :mp3, :m4a
           content.each(filter: data.join('/')) do |_sid, sinfo|
             asong = SmuleSong.new(sinfo)
-            if asong.update_mp4tag(user) == :updated
+            if asong.update_mp4tag(excuser: user) == :updated
               asong._run_command("open -g #{asong.ssfile}")
             end
           end
@@ -551,7 +551,7 @@ it left off from the previous run.
           if v[:record_by] =~ /,#{old_name}$|^#{old_name},/
             asong = SmuleSong.new(v, moptions)
             if asong.move_song(old_name, new_name)
-              if asong.update_mp4tag(user) == :updated
+              if asong.update_mp4tag(excuser: user) == :updated
                 asong._run_command("open -g #{asong.ssfile}")
               end
             end

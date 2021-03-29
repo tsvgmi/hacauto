@@ -186,7 +186,7 @@ module SmuleAuto
       @user       = user
       @options    = options
       @roptions   = {}
-      @content    = SmuleDB.instance(user, tdir)
+      @content    = SmuleDB.instance(user, cdir: tdir)
       @tdir       = tdir
       @scanner    = Scanner.new(user, @options)
       @sapi       = API.new(options)
@@ -421,7 +421,7 @@ EOH
           begin
             if sitem && !@paused
               if refresh
-                _list_show(sitem, psitem, @playlist.toplay_list, 0, 10, false)
+                _list_show(sitem, psitem, @playlist.toplay_list, 0, 10, clear: false)
                 _show_msgs(sitem, psitem)
                 if sitem[:isfav] || sitem[:oldfav]
                   if sitem[:record_by] =~ /^THV_13,/
@@ -438,7 +438,7 @@ EOH
               key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
             end
           rescue => e
-            @logger.error(e)
+            @logger.dump_error(e: e, trace: e.backtrace)
             next
           end
           begin
@@ -481,7 +481,7 @@ EOH
         TTY::Pager.new.page(HELP_SCREEN)
         prompt.keypress("Press any key [:countdown]", timeout:3)
       when '.'
-        @playlist.next_song(-1)
+        @playlist.next_song(ncrement: -1)
         return [:next, true]
       when /^[\+=]/i                # Add/replace list
         choices = %w(favs isfav recent record_by star title query)
@@ -489,7 +489,7 @@ EOH
         param   = (ftype =~ /fav/) ? '' : prompt.ask("#{ftype} value ?")
         if param
           newset  = @content.select_set(ftype.to_sym, param)
-          @playlist.add_to_list(newset, key == '=')
+          @playlist.add_to_list(newset, replace: key == '=')
         end
       when '*'                            # Set stars
         if sitem
@@ -560,19 +560,19 @@ EOH
         play_length = prompt.ask('Max Play Length: ').to_i
         @roptions[:play_length] = play_length if play_length >= 15
       when /[>n]/                          # Play next song
-        @playlist.next_song(0)
+        @playlist.next_song(increment: 0)
         return [:next, true]
       when 'N'                            # Next n songs
         offset = (key == 'N') ? prompt.ask('Next track offset?').to_i : 0
         @logger.info("Skip #{offset} songs")
-        @playlist.next_song(offset)
+        @playlist.next_song(increment: offset)
         return [:next, true]
       when '<'                            # Play prev song
-        @playlist.next_song(-2, -1)
+        @playlist.next_song(increment: -2, nextinc: -1)
         return [:next, true]
       when /p/i                           # List history
         offset = (key == 'P') ? prompt.ask('Prev track offset?').to_i : 0
-        _list_show(nil, nil, @playlist.done_list.reverse, offset.to_i, 10, true)
+        _list_show(nil, nil, @playlist.done_list.reverse, offset.to_i, 10)
         prompt.keypress("Press any key [:countdown]", timeout:3)
         print TTY::Cursor.clear_screen
       when 'R'                             # Reload script
@@ -597,9 +597,9 @@ EOH
       when 'S'
         _menu_eval do
           perfset   = @sapi.get_performances(@user, limit:50, days:1)
-          new_count = @content.add_new_songs(perfset, false)
+          new_count = @content.add_new_songs(perfset, isfav: false)
           perfset   = SmuleSong.collect_collabs(@user, 10)
-          new_count += @content.add_new_songs(perfset, false)
+          new_count += @content.add_new_songs(perfset, isfav: false)
           prompt.keypress("#{new_count} songs added [:countdown]",
                           timeout:3)
         end
@@ -610,10 +610,10 @@ EOH
       when 'x'                            # Quit
         return [:quit, true]
       when 'W'
-        listen_for_download(true)
+        listen_for_download(enable: true)
         prompt.keypress("Start watching [:countdown]", timeout:3)
       when 'w'
-        listen_for_download(false)
+        listen_for_download(enable: false)
         prompt.keypress("Stop watching [:countdown]", timeout:3)
       when 'Z'                            # Debug
         require 'byebug'

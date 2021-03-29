@@ -62,7 +62,7 @@ module SmuleAuto
     end
 
     def tags
-      HashableSet.new(@songtags, :name, :tags)
+      HashableSet.new(@songtags, :name, vcol: :tags)
     end
 
     def update_song(sinfo)
@@ -361,7 +361,7 @@ module SmuleAuto
     desc "load_db user", "load_db"
     def load_db_for_user(user, cdir: '.')
       cli_wrap do
-        SmuleDB.instance(user, cdir).load_db
+        SmuleDB.instance(user, cdir: cdir).load_db
       end
     end
 
@@ -371,7 +371,7 @@ Dump the database into yaml file (for backup)
     LONGDESC
     def dump_db(user, cdir: '.')
       cli_wrap do
-        SmuleDB.instance(user, cdir).dump_db
+        SmuleDB.instance(user, cdir: cdir).dump_db
       end
     end
 
@@ -385,11 +385,11 @@ changes back into the database
       cli_wrap do
         tdir           = _tdir_check(options[:data_dir])
         # Must call once to init db connection/model
-        SmuleDB.instance(user, tdir)
+        SmuleDB.instance(user, cdir: tdir)
         records        = SongTag.all.
           sort_by { |r| r[:name] }.
           map     { |r| r.values }
-        insset, delset = _edit_file(records, options[:format])
+        insset, delset = _edit_file(records, format: options[:format])
         if delset.size > 0
           SongTag.where(id:delset.map { |r| r[:id] }).destroy
         end
@@ -407,9 +407,9 @@ changes back into the database
       cli_wrap do
         tdir    = _tdir_check(options[:data_dir])
         # Must call once to init db connection/model
-        SmuleDB.instance(user, tdir)
+        SmuleDB.instance(user, cdir: tdir)
         records = Singer.all.sort_by { |r| r[:name]}.map{|r| r.values }
-        insset, delset = _edit_file(records, options[:format])
+        insset, delset = _edit_file(records, format: options[:format])
         if delset.size > 0
           Singer.where(id:delset.map { |r| r[:id] }).destroy
         end
@@ -427,7 +427,7 @@ changes back into the database
     def rank_singer(user)
       cli_wrap do
         tdir    = _tdir_check
-        content = SmuleDB.instance(user, tdir)
+        content = SmuleDB.instance(user, cdir: tdir)
         days    = options[:days]
         limit   = options[:limit] || 100
         rank    = content.top_partners(limit, options)

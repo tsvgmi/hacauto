@@ -436,7 +436,7 @@ module Kernel
   #--------------------------------------------------------- def: hostname
   # Purpose  :
   #-----------------------------------------------------------------------
-  def hostname(shortform=nil)
+  def hostname(shortform: nil)
     require 'socket'
 
     if shortform
@@ -461,16 +461,16 @@ module Kernel
   # Check if class is main CLI facing class and extend cli support
   # module to it
   def extend_cli(_file)
-    #if (file == $0)
-      include Cli
-      extend  Cli
-    #end
+    # if (file == $0)
+    include Cli
+    extend  Cli
+    # end
   end
 end
 
 require 'logger'
 class PLogger < Logger
-  FORMAT2    = "%s %s - [%s] %s\n"
+  FORMAT2 = "%s %s - [%s] %s\n".freeze
   attr_accessor :simple, :clevel
 
   def initialize(*args)

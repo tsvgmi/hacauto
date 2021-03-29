@@ -78,7 +78,7 @@ module SmuleAuto
     end
 
     def toggle_song_favorite(fav: true)
-      click_smule_page(:sc_song_menu, 1)
+      click_smule_page(:sc_song_menu, delay: 1)
 
       locator = 'div.sc-hKKeuH.kXQUbk'
       cval = css("#{locator} svg path")[0][:fill]
@@ -97,7 +97,7 @@ module SmuleAuto
     end
 
     def set_like
-      click_smule_page(:sc_like, 0, 0)
+      click_smule_page(:sc_like, delay: 0)
     end
 
     def set_song_tag(tag)
@@ -137,7 +137,7 @@ module SmuleAuto
         Plog.error("Already starred")
         return false
       end
-      click_smule_page(:sc_star, 1)
+      click_smule_page(:sc_star, delay: 1)
       return true
     end
 
@@ -160,7 +160,7 @@ module SmuleAuto
 
       if toggling
         Plog.debug("Think play = #{doplay}, remain: #{remain}")
-        click_smule_page(:sc_play_toggle, 0)
+        click_smule_page(:sc_play_toggle, delay: 0)
         if doplay
           if css(play_locator).size == 2
             sleep_round = 0
@@ -171,11 +171,11 @@ module SmuleAuto
                   if options[:href]
                     if sleep_round > 2
                       sleep(1)
-                      click_smule_page(:sc_play_continue, 0)
-                      click_smule_page(:sc_play_continue, 0)
+                      click_smule_page(:sc_play_continue, delay: 0)
+                      click_smule_page(:sc_play_continue, delay: 0)
                     else
                       sleep(1)
-                      click_smule_page(:sc_play_toggle, 0)
+                      click_smule_page(:sc_play_toggle, delay: 0)
                     end
                   end
                   break
@@ -211,7 +211,7 @@ module SmuleAuto
     end
 
     def get_comments
-      click_smule_page(:sc_comment_open, 0.5)
+      click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
       #css('div.sc-ksPlPm.fiBdLJ').reverse.each do |acmt|
       css('div.sc-hBmvGb.gugxcI').reverse.each do |acmt|
@@ -220,8 +220,8 @@ module SmuleAuto
         msg  = (comment[1..-1] || []).join(' ')
         res << [user, msg]
       end
-      click_smule_page(:sc_comment_close, 0)
-      click_smule_page(:sc_play_toggle, 0)
+      click_smule_page(:sc_comment_close, delay: 0)
+      click_smule_page(:sc_play_toggle, delay: 0)
       res
     end
 
@@ -538,7 +538,7 @@ module SmuleAuto
     end
 
     def update_mp4tag(excuser: nil)
-      if mp4_tagged?(excuser)
+      if mp4_tagged?(excuser: excuser)
         return :was_tagged
       end
       ofile = ssfile
@@ -555,7 +555,7 @@ module SmuleAuto
 
         # Get the artwork
         lcfile  = File.basename(@info[:avatar])
-        curl(@info[:avatar], lcfile)
+        curl(@info[:avatar], ofile: lcfile)
         if test('f', lcfile) && `file #{lcfile}` =~ /JPEG/
           command += " --artwork REMOVE_ALL --artwork #{lcfile}"
         end
@@ -605,7 +605,7 @@ module SmuleAuto
         end
         csize  = media_size(sfile)
         fmsize = media_size(file)
-        if (csize == fmsize) && mp4_tagged?(user)
+        if (csize == fmsize) && mp4_tagged?(excuser: user)
           @logger.info("Verify same media size and tags: #{csize}")
           sofile
           #_run_command("open -g #{sfile}") if @options[:open]
@@ -616,7 +616,7 @@ module SmuleAuto
 
       @logger.info("Song missing or bad tag on local disk.  Create")
       FileUtils.cp(file, sfile, verbose: true)
-      update_mp4tag(user)
+      update_mp4tag(excuser: user)
       sofile
 
       if @options[:open]
