@@ -54,7 +54,7 @@ def to_search_str(str)
   stitle.gsub(/\s+/, ' ').strip
 end
 
-def curl(path, ofile:nil)
+def curl(path, ofile: nil)
   cmd = 'curl -s -H "User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"'
   cmd += " -o #{ofile}" if ofile
   `#{cmd} '#{path}'`
@@ -126,7 +126,7 @@ module SmuleAuto
       limit     = (options[:limit] || 10_000).to_i
       first_day = Time.now - (options[:days] || 7).to_i*24*3600
       bar       = TTY::ProgressBar.new("Checking songs [:bar] :percent",
-                                       total:100)
+                                       total: 100)
       catch(:done) do
         while true
           ourl = "#{url}?offset=#{offset}"
@@ -181,7 +181,7 @@ module SmuleAuto
 
     def get_favs(user)
       @logger.info("Getting favorites for #{user}")
-      options = {limit:10_000, days:365*10}
+      options = {limit: 10_000, days: 365*10}
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
   end
@@ -233,7 +233,7 @@ module SmuleAuto
       stars
     end
 
-    def set_unfavs(songs, marking:true)
+    def set_unfavs(songs, marking: true)
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.set_song_favorite(false)
@@ -293,11 +293,11 @@ module SmuleAuto
       desc:'Browser to use (firefox|chrome)'
     class_option :data_dir, type: :string, default:'./data',
       desc:'Data directory to keep database'
-    class_option :days,     type: :numeric, default:7,
+    class_option :days,     type: :numeric, default: 7,
       desc:'Days to look back'
     class_option :force,    type: :boolean
     class_option :limit,    type: :numeric, desc:'Max # of songs to process',
-      default:10_000
+      default: 10_000
     class_option :logfile,  type: :string
     class_option :skip_auth,  type: :boolean, 
       desc:'Login account from browser (not anonymous)'
@@ -339,7 +339,7 @@ module SmuleAuto
       it to enable adding more.  The removed one will be tagged with #thvfavs
       if possible
     LONGDESC
-    def unfavs_old(user, count:10)
+    def unfavs_old(user, count: 10)
       cli_wrap do
         _tdir_check
         content  = SmuleDB.instance(user, options[:data_dir])
@@ -378,7 +378,7 @@ module SmuleAuto
       cli_wrap do
         fset    = {}
         api     = API.new
-        options = {limit:25, days:365*10}
+        options = {limit: 25, days: 365*10}
         users   = JSON.parse(curl("https://www.smule.com/#{user}/followers/json"))
         users['list'].each do |r| 
           fuser = r['handle']
@@ -513,10 +513,10 @@ it left off from the previous run.
             r.update(stitle: stitle)
           end
         when :favs
-          query  = Performance.where(isfav:1, oldfav:1)
+          query  = Performance.where(isfav: 1, oldfav: 1)
           ccount = query.count
           query.each do |r|
-            r.update(oldfav:0)
+            r.update(oldfav: 0)
           end
         when :slink
           query  = Performance.where(created: Time.now-80*24*3600..Time.now).
@@ -660,11 +660,11 @@ Filters is the list of SQL's into into DB.
 
     desc "star_singers(count, singers)", "star_singers"
     option :top,     type: :numeric
-    option :days,    type: :numeric, default:15
+    option :days,    type: :numeric, default: 15
     option :exclude, type: :string
-    option :pause,   type: :numeric, default:5
+    option :pause,   type: :numeric, default: 5
     option :play,    type: :boolean
-    option :offset,  type: :numeric, default:0
+    option :offset,  type: :numeric, default: 0
 
     BannedList = %w[Joseph_TN]
     def star_singers(user, count, *singers)
@@ -723,7 +723,7 @@ Filters is the list of SQL's into into DB.
     option :verify,  type: :boolean
     option :open,    type: :boolean, desc: 'Opening mp4 after download'
     option :logfile, type: :string
-    def watch_mp4(dir, user, csong_file:'cursong.yml')
+    def watch_mp4(dir, user, csong_file: 'cursong.yml')
       cli_wrap do
         woptions = writable_options
         unless (value = woptions[:logfile]).nil?

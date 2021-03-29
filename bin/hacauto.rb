@@ -464,7 +464,7 @@ class HACAuto
       HavSource.new.find_matching_song(linfo[:title]).first
     end
 
-    def _connect_site(site=:hac)
+    def _connect_site(site: :hac)
       if @sdriver
         do_close = false
       else

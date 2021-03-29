@@ -91,7 +91,7 @@ module SmuleAuto
       true
     end
 
-    def next_song(increment:1, nextinc:1)
+    def next_song(increment: 1, nextinc: 1)
       req_file = 'toplay.dat'
       if test('f', req_file)
         sids = File.read(req_file).split
@@ -127,7 +127,7 @@ module SmuleAuto
       @clist.size - @listpos
     end
 
-    def add_to_list(newset, replace:false)
+    def add_to_list(newset, replace: false)
       newset = sort_selection(newset)
       if replace
         @clist   = newset
@@ -201,7 +201,7 @@ module SmuleAuto
       @logger.info("Playing #{@playlist.clist.size} songs")
     end
 
-    def listen_for_download(enable:true)
+    def listen_for_download(enable: true)
       dir = '/var/folders/vh'
       if enable
         @listener.stop if @listener
@@ -217,7 +217,7 @@ module SmuleAuto
       end
     end
 
-    def _list_show(sitem, psitem, cselect, start, limit, clear:true)
+    def _list_show(sitem, psitem, cselect, start, limit, clear: true)
       bar    = '*' * 10
       tags   = @content.tags
       table  = TTY::Table.new
