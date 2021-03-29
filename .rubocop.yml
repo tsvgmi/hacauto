@@ -16,3 +16,7 @@ Naming/HeredocDelimiterNaming:
 
 Style/NumericPredicate:
   Enabled: false
+
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: comma
+
