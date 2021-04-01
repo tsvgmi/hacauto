@@ -1,4 +1,6 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 #---------------------------------------------------------------------------
 # File:        hac-nhac.rb
 # Date:        2018-04-01 01:46:33 -0700
@@ -14,7 +16,7 @@ class MusicSource
     options.delete(:check_lyrics)
 
     Plog.info("Collecting #{self.class} from #{url}")
-    links = song_list(url, options).uniq { |e| e[:href]}
+    links = song_list(url, options).uniq { |e| e[:href] }
 
     # Filter for having lyrics only
     if check_lyrics
@@ -38,9 +40,9 @@ class MusicSource
         ChordZoneSource.new
       when /hopamchuan/
         HacSource.new(options)
-      when %r{hopamhay}
+      when /hopamhay/
         HahSource.new
-      when %r{hopamviet.vn}
+      when /hopamviet.vn/
         HavSource.new
       when /keeng.vn/
         KeengSource.new
@@ -56,7 +58,7 @@ class MusicSource
         GuitarTwitt.new
       when /chordsworld.com/
         ChordsWorld.new
-      when %r{zing}
+      when /zing/
         ZingSource.new
       else
         raise "Cannot create source for #{url}"
@@ -71,21 +73,19 @@ module ChordMerger
     s_space = true
     cword   = ''
     cindex  = 0
-    (line + ' ').split('').each_with_index do |c, index|
+    ("#{line} ").split('').each_with_index do |c, index|
       if s_space
         if c !~ /\s/
           cword   = c
           cindex  = index
           s_space = false
         end
+      elsif c =~ /\s/
+        chords << [cword, cindex]
+        cword   = ''
+        s_space = true
       else
-        if c =~ /\s/
-          chords << [cword, cindex]
-          cword   = ''
-          s_space = true
-        else
-          cword += c
-        end
+        cword += c
       end
     end
     chords
@@ -100,59 +100,46 @@ module ChordMerger
       l, is_chord_line = detect_and_clean_chord_line(l)
       if is_chord_line
         # Multiple chord lines together
-        if chords.size > 0
-          result << chords.map { |cword, _cindex| "[#{cword}]" }.join(' ')
-        end
+        result << chords.map { |cword, _cindex| "[#{cword}]" }.join(' ') unless chords.empty?
         chords = _pick_chords(l)
         next
       end
-      if l =~ /^(\s*)\[(.*)\]\s*$/
-        l = "#{$1}#{$2}:"
-      end
-      if chords.size > 0
+      l = "#{Regexp.last_match(1)}#{Regexp.last_match(2)}:" if l =~ /^(\s*)\[(.*)\]\s*$/
+      unless chords.empty?
         # Reverse to avoid changing the disturbing existing text until touched
         chords.reverse.each do |text, pos|
-          begin
-            if l.size <= pos
-              l += ' ' * 80
-            end
-            #Plog.dump_error(start: l[0..pos-1], pos: pos, remain: l[pos..-1])
+          l += ' ' * 80 if l.size <= pos
+          # Plog.dump_error(start: l[0..pos-1], pos: pos, remain: l[pos..])
 
-            # Need to back until I find a space
-            if options[:shift_space]
-              if (pos > 0) && (l[pos] != ' ') && (l[pos - 1] != ' ')
-                cpos = pos - 1
-                while cpos > 0
-                  if l[cpos] == ' '
-                    Plog.dump_error(pos: pos, cpos: cpos + 1)
-                    pos = cpos + 1
-                    break
-                  end
-                  cpos -= 1
-                end
-                if cpos == 0
-                  pos = 0
-                end
+          # Need to back until I find a space
+          if options[:shift_space] && ((pos > 0) && (l[pos] != ' ') && (l[pos - 1] != ' '))
+            cpos = pos - 1
+            while cpos > 0
+              if l[cpos] == ' '
+                Plog.dump_error(pos: pos, cpos: cpos + 1)
+                pos = cpos + 1
+                break
               end
+              cpos -= 1
             end
-
-            l.insert(pos, "[#{text}]")
-            #Plog.dump_error(l: l)
-          rescue => e
-            Plog.error e
+            pos = 0 if cpos == 0
           end
+
+          l.insert(pos, "[#{text}]")
+          # Plog.dump_error(l: l)
+        rescue StandardError => e
+          Plog.error e
         end
         chords = []
       end
       l = l.strip.gsub(/\s+/, ' ')
-      result << ' ' + l
+      result << " #{l}"
     end
     result.join("\n")
   end
 end
 
 class GuitarTwitt < MusicSource
-  
   # WIP:  Not parseable?
   def lyric_info(url)
     require 'byebug'
@@ -166,16 +153,15 @@ class GuitarTwitt < MusicSource
       nap = Nokogiri::HTML(ap.to_html.gsub('<br>', '<p>'))
       ltext.concat(nap.css('p'))
     end
-    
-    
+
     blob  = get_page_curl(url, raw: true)
     blob  = JSON.parse(blob.sub(/^[^{]*/o, '').sub(/;\s*$/o, ''))['data']
     lyric = merge_chord_lines(blob.dig('tab_view', 'wiki_tab', 'content'))
     {
       lyric:  lyric,
       title:  blob.dig('tab', 'song_name'),
-      artist: (blob.dig('tab', 'recording', 'recording_artists') || []).
-                map { |r| r.dig('artist', 'name') }.join(', '),
+      artist: (blob.dig('tab', 'recording', 'recording_artists') || [])
+        .map { |r| r.dig('artist', 'name') }.join(', '),
       author: blob.dig('tab', 'artist_name'),
       source: url,
     }
@@ -189,7 +175,7 @@ class ChordsWorld < MusicSource
     words = l.split
     cline = true
     words.each do |w|
-      if w !~ /^\[?[-A-G][Mmb#ajdimsu0-9]*(\/[A-Gb#]*)?\]?$/o
+      if w !~ %r{^\[?[-A-G][Mmb#ajdimsu0-9]*(/[A-Gb#]*)?\]?$}o
         cline = false
         break
       end
@@ -200,16 +186,16 @@ class ChordsWorld < MusicSource
 
   def lyric_info(url)
     require 'json'
-      require 'byebug'
+    require 'byebug'
 
-      byebug
+    byebug
 
     Plog.info("Extract lyrics from #{url}")
     page  = get_page_curl(url)
     blob  = page.css('.contentprotect')
     lyric = merge_chord_lines(blob.text)
-    lyric = lyric.split("\n").select { |l| l !~ /adsbygoogle/ }.join("\n")
-    etitle =  page.css('.entry-title').text
+    lyric = lyric.split("\n").reject { |l| l =~ /adsbygoogle/ }.join("\n")
+    etitle = page.css('.entry-title').text
     artist, title = etitle.split(/\s+-\s+/, 2)
     {
       lyric:  lyric,
@@ -225,13 +211,13 @@ class TabGuitarSource < MusicSource
 
   def detect_and_clean_chord_line(l)
     if l.include?('[ch]')
-      l = l.gsub(/\[\/?ch\]/, '')
+      l = l.gsub(%r{\[/?ch\]}, '')
       cline = true
     else
       cline = true
       words = l.split
       words.each do |w|
-        if w !~ /^\[?[-A-G][Mmb#ajdimsu0-9]*(\/[A-Gb#]*)?\]?$/o
+        if w !~ %r{^\[?[-A-G][Mmb#ajdimsu0-9]*(/[A-Gb#]*)?\]?$}o
           cline = false
           break
         end
@@ -246,14 +232,14 @@ class TabGuitarSource < MusicSource
     Plog.info("Extract lyrics from #{url}")
     page   = get_page_curl(url)
     jscode = JSON.parse(page.css('div.js-store')[0]['data-content'])
-    blob   = jscode.dig(*%w(store page data))
-    lyric  = merge_chord_lines(blob.dig(*%w(tab_view wiki_tab content)).
-                               gsub(/\[\/?tab\]/, ''))
+    blob   = jscode.dig(*%w[store page data])
+    lyric  = merge_chord_lines(blob.dig(*%w[tab_view wiki_tab content])
+                               .gsub(%r{\[/?tab\]}, ''))
     {
       lyric:  lyric,
       title:  blob.dig('tab', 'song_name'),
-      artist: (blob.dig('tab', 'recording', 'recording_artists') || []).
-                map { |r| r.dig('artist', 'name') }.join(', '),
+      artist: (blob.dig('tab', 'recording', 'recording_artists') || [])
+        .map { |r| r.dig('artist', 'name') }.join(', '),
       author: blob.dig('tab', 'artist_name'),
       source: url,
     }
@@ -263,7 +249,7 @@ end
 class NhacSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
-    page  = get_page(url)
+    page = get_page(url)
     sdetails = page.css('.h2-song-detail')
     ndetails = page.css('.name_detail').text.strip.split(/\s+-\s+/)
     {
@@ -281,7 +267,7 @@ class NhacSource < MusicSource
     limit = (options[:limit] || 9999).to_i
     case url
     when %r{^https://nhac.vn/?$}
-      links = page.css('.info_song_home')[0..limit - 1].map do |atrack|
+      page.css('.info_song_home')[0..limit - 1].map do |atrack|
         {
           name: atrack.css('.name a')[0].text.strip,
           href: atrack.css('.name a')[0]['href'],
@@ -289,18 +275,17 @@ class NhacSource < MusicSource
         }
       end
     else
-      links = page.css('.item-in-list .h4-song-item')[0..limit - 1].
-        map do |atrack|
+      page.css('.item-in-list .h4-song-item')[0..limit - 1]
+          .map do |atrack|
         tlinks = atrack.css('a')
-        info   = {
+        info = {
           name:   tlinks[0].text.strip,
-          href:   tlinks[0]['href'],
-          artist: tlinks[1].text.strip,
+                  href:   tlinks[0]['href'],
+                  artist: tlinks[1].text.strip,
         }
         info
-      end.uniq { |e| e[:href]}
+      end.uniq { |e| e[:href] }
     end
-    links
   end
 
   def browser_song_list(spage, url, options={})
@@ -309,7 +294,7 @@ class NhacSource < MusicSource
     page  = spage.page
     case url
     when %r{^https://nhac.vn/?$}
-      links = page.css('.info_song_home')[0..limit - 1].map do |atrack|
+      page.css('.info_song_home')[0..limit - 1].map do |atrack|
         {
           name: atrack.css('.name a')[0].text.strip,
           href: atrack.css('.name a')[0]['href'],
@@ -317,8 +302,8 @@ class NhacSource < MusicSource
         }
       end
     when %r{/album/}
-      links = page.css('.items .present')[0..limit - 1].
-        map do |atrack|
+      page.css('.items .present')[0..limit - 1]
+          .map do |atrack|
         info = {
           name:   atrack.css('a')[0].text.strip,
           href:   atrack.css('a')[0]['href'],
@@ -327,25 +312,24 @@ class NhacSource < MusicSource
         info
       end
     else
-      links = page.css('.item-in-list .h4-song-item')[0..limit - 1].
-        map do |atrack|
+      page.css('.item-in-list .h4-song-item')[0..limit - 1]
+          .map do |atrack|
         tlinks = atrack.css('a')
         info = {
           name:   tlinks[0].text.strip,
-          href:   tlinks[0]['href'],
-          artist: tlinks[1].text.strip,
+                  href:   tlinks[0]['href'],
+                  artist: tlinks[1].text.strip,
         }
         info
-      end.uniq { |e| e[:href]}
+      end.uniq { |e| e[:href] }
     end
-    links
   end
 end
 
 class KeengSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
-    page  = get_page(url)
+    page = get_page(url)
     {
       lyric:  page.css('.info-show')[0].text.strip,
       title:  page.css('#song_name').text.strip,
@@ -357,41 +341,41 @@ class KeengSource < MusicSource
   end
 
   def song_list(url, options={})
-    page   = get_page(url)
+    page = get_page(url)
     limit = (options[:limit] || 9999).to_i
-    case url
-    when %r{^http://keeng.vn/?$}
-      links = page.css('.song-hot-info')[0..limit - 1].map do |atrack|
-        tinfo  = atrack.css('.song-hot-h3 a')[0]
-        {
-          name:   tinfo.text.strip,
-          href:   tinfo['href'],
-          artist: atrack.css('.song-hot-singer')[0].text.strip,
-        }
-      end
-    when %r{/video/}
-      links = page.css('.ka-content')[0..limit - 1].
-        map do |atrack|
-        tinfo = atrack.css('.ka-info-h3 a')
-        {
-          name:   tinfo.text.strip,
-          href:   tinfo[0]['href'],
-          artist: atrack.css('a.singer-audio').text.strip,
-        }
-      end
-    else
-      links = page.css('.ka-info')[0..limit - 1].
-        map do |atrack|
-        tinfo = atrack.css('.ka-info-h3 a')
-        {
-          name:   tinfo.text.strip,
-          href:   tinfo[0]['href'],
-          genre:  atrack.css('.category-song').text.strip,
-          artist: atrack.css('.ka-info-singer a').text.strip,
-        }
-      end
-    end
-    links.select { |r| r[:href] !~ /album/ }
+    links = case url
+            when %r{^http://keeng.vn/?$}
+              page.css('.song-hot-info')[0..limit - 1].map do |atrack|
+                tinfo = atrack.css('.song-hot-h3 a')[0]
+                {
+                  name:   tinfo.text.strip,
+                  href:   tinfo['href'],
+                  artist: atrack.css('.song-hot-singer')[0].text.strip,
+                }
+              end
+            when %r{/video/}
+              page.css('.ka-content')[0..limit - 1]
+                  .map do |atrack|
+                tinfo = atrack.css('.ka-info-h3 a')
+                {
+                  name:   tinfo.text.strip,
+                  href:   tinfo[0]['href'],
+                  artist: atrack.css('a.singer-audio').text.strip,
+                }
+              end
+            else
+              page.css('.ka-info')[0..limit - 1]
+                  .map do |atrack|
+                tinfo = atrack.css('.ka-info-h3 a')
+                {
+                  name:   tinfo.text.strip,
+                  href:   tinfo[0]['href'],
+                  genre:  atrack.css('.category-song').text.strip,
+                  artist: atrack.css('.ka-info-singer a').text.strip,
+                }
+              end
+            end
+    links.reject { |r| r[:href] =~ /album/ }
   end
 end
 
@@ -401,20 +385,19 @@ class HavSource < MusicSource
     Plog.info("Extract lyrics from #{url}")
     page  = get_page(url)
     links = page.css('.ibar a').map { |l| l.text.strip }
-    if links[0] == 'Sheet'
-      links.shift
-    end
-    chord, artist = "", ""
-    if page.css('#fullsong span.label-primary').size > 0
+    links.shift if links[0] == 'Sheet'
+    chord = ''
+    artist = ''
+    unless page.css('#fullsong span.label-primary').empty?
       selperf = 0
       chord   = page.css('#fullsong span.label-primary')[selperf].text.strip
       artist  = page.css('#fullsong a')[selperf].text.strip.sub(/\s*\(.*$/, '')
     end
     lyric    = page.css('#lyric').text.strip
     pcount   = page.css('.ibar')[0].text.strip.split.last
-    new_note = ""
+    new_note = ''
     if chord && !chord.empty? && (lyric =~ /\[([a-z0-9#]+)\]/im)
-      lkey     = $1
+      lkey     = Regexp.last_match(1)
       if lkey != chord
         offset = key_offset(lkey, chord)
         Plog.info({lkey: lkey, chord: chord, offset: offset}.inspect)
@@ -422,7 +405,7 @@ class HavSource < MusicSource
       end
     end
 
-    ret = {
+    {
       lyric:  lyric,
       lnote:  new_note,
       title:  page.css('.ibar h3').text.strip.split("\n")[0],
@@ -430,9 +413,8 @@ class HavSource < MusicSource
       genre:  links[-2],
       artist: artist,
       chord:  chord,
-      pcount: pcount.to_i
+      pcount: pcount.to_i,
     }
-    ret
   end
 
   def scan_song_list(curl, options={})
@@ -440,30 +422,27 @@ class HavSource < MusicSource
     links  = []
     curl   = curl.sub(/\.html$/, '')
     limit  = (options[:limit] || 0).to_i
-    while true
-      if curl =~ /search.html/
-        url = "#{curl}&per_page=#{offset}"
-      else
-        url = "#{curl}/#{offset}"
-      end
+    loop do
+      url = if curl =~ /search.html/
+              "#{curl}&per_page=#{offset}"
+            else
+              "#{curl}/#{offset}"
+            end
       Plog.info("Checking #{url}")
       page   = get_page(url)
       plinks = page.css('.fa-music + a')
       break if plinks.size <= 0
+
       new_links = plinks.map do |plink|
-        if block_given?
-          yield plink.text.strip, plink['href']
-        end
-        { 
+        yield plink.text.strip, plink['href'] if block_given?
+        {
           name: plink.text.strip,
           href: plink['href'],
         }
       end
       links  += new_links
       offset += 10
-      if !limit.zero? && (offset > limit)
-        break
-      end
+      break if !limit.zero? && (offset > limit)
     end
     links
   end
@@ -472,7 +451,7 @@ class HavSource < MusicSource
     page   = get_page(url)
     plinks = page.css('.ct-box p a')
     result = plinks.map do |plink|
-      { 
+      {
         name:   plink.text.strip,
         href:   plink['href'],
       }
@@ -481,7 +460,7 @@ class HavSource < MusicSource
     result += plinks.map do |pinfo|
       name = pinfo.css('.fa-music+a')[0].text.strip
       href = pinfo.css('.fa-music+a')[0]['href']
-      { 
+      {
         name:   name,
         href:   href,
       }
@@ -500,7 +479,7 @@ class HavSource < MusicSource
       return []
     end
     plinks.map do |plink|
-      { 
+      {
         sname:  name,
         name:   plink.text.strip,
         href:   plink['href'],
@@ -522,10 +501,8 @@ class HavSource < MusicSource
       end
       result += plinks
     end
-    if result.size > slist.size
-      Plog.info "Found more matching songs than requested"
-    end
-    result = result.uniq { |e| e[:href]}
+    Plog.info 'Found more matching songs than requested' if result.size > slist.size
+    result = result.uniq { |e| e[:href] }
     [result, not_founds]
   end
 end
@@ -534,14 +511,15 @@ end
 class HahSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
-    page  = get_page(url)
+    page = get_page(url)
     page.css('#wide .pre script').remove
 
     titles = page.css('.lyrics-title a').map { |r| r.text.strip }
     title  = titles[0]
     author = titles[1]
     genre  = titles[-1]
-    artist, chord = nil, nil
+    artist = nil
+    chord = nil
 
     ['#fullsong a', '.single-lyric-video a'].each do |spec|
       unless (element = page.css(spec)[0]).nil?
@@ -566,16 +544,14 @@ class HahSource < MusicSource
     guide = page.css('.huong-dan-dem-hat').text.strip
 
     lyric = page.css('.pLgn').map { |r| r.text.strip }.join("\n")
-    if lyric.empty?
-      lyric = page.css('#wide .pre').text
-    end
+    lyric = page.css('#wide .pre').text if lyric.empty?
     lyric = lyric.gsub(/_/, '').gsub(/\[\]/, '')
-    lyric = <<EOL
-#{guide}
-===
-#{lyric}
-EOL
-    ret = {
+    lyric = <<~EOL
+      #{guide}
+      ===
+      #{lyric}
+    EOL
+    {
       title:  title,
       author: author,
       genre:  genre,
@@ -583,21 +559,19 @@ EOL
       chord:  chord,
       lyric:  lyric,
     }
-    ret
   end
 
   def song_list(url, options={})
     page    = get_page(url)
     list_no = (options[:list_no] || 1).to_i
     section = page.css('.latest-lyrics')[list_no]
-    res = section.css('h5 a').map do |r|
+    section.css('h5 a').map do |r|
       name    = r.text.strip.sub(/\s*–.*$/, '')
       {
         name:  name,
-        href:  r['href']
+        href:  r['href'],
       }
     end
-    res
   end
 end
 
@@ -608,9 +582,9 @@ class NctSource < MusicSource
     page  = get_page(url)
     data  = page.css('.detail_info_playing_now a')
     genre = nil
-    genre = data[-1].text.strip if data.size > 0
+    genre = data[-1].text.strip unless data.empty?
     lyric = page.css('#divLyric').text.strip
-    #Plog.dump_info(lyric: lyric)
+    # Plog.dump_info(lyric: lyric)
     {
       lyric:  lyric,
       title:  page.css('.name_title h1').text.strip,
@@ -624,14 +598,14 @@ class NctSource < MusicSource
     url  ||= 'http://www.nhaccuatui.com/'
     page   = get_page(url)
     Plog.info("Check list at #{url}")
-    if url =~ /playlist|chu-de/
-      links = _songs_playlist(page, options)
-    elsif url =~ /nghe-si/
-      links = _songs_artist(page, options)
+    case url
+    when /playlist|chu-de/
+      _songs_playlist(page, options)
+    when /nghe-si/
+      _songs_artist(page, options)
     else
-      links = _songs_main(page, options)
+      _songs_main(page, options)
     end
-    links
   end
 
   def _songs_playlist(page, options={})
@@ -687,11 +661,14 @@ end
 class ZingSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
-    page  = get_page(url)
+    page = get_page(url)
     title, artist = page.css('h1')[0].text.strip.split(/\s+-\s+/)
     genre = page.css('a.genre-track-log')[-1].text.strip
     lyrics = page.css('p.fn-wlyrics')
-    if lyrics.size > 0
+    if lyrics.empty
+      Plog.error "No lyrics found for #{url}"
+      nil
+    else
       lyric = page.css('p.fn-wlyrics')[0].text.strip
       {
         lyric:  lyric,
@@ -700,17 +677,14 @@ class ZingSource < MusicSource
         genre:  genre,
         source: url,
       }
-    else
-      Plog.error "No lyrics found for #{url}"
-      nil
     end
   end
 
   def song_list(url, _options={})
-    page   = get_page(url)
+    page = get_page(url)
     # Artist page
     base_url = 'https://mp3.zing.vn'
-    links    = page.css('li[data-type="song"]').map do |atrack|
+    page.css('li[data-type="song"]').map do |atrack|
       aref = atrack.css('a')[0]
       name, artist = aref.text.strip.split(/\s+-\s+/)
       {
@@ -719,17 +693,16 @@ class ZingSource < MusicSource
         artist: artist,
       }
     end
-    links
   end
 
   def browser_song_list(spage, url, _options={})
     uri      = URI.parse(url)
-    base_url = uri.scheme + '://' + uri.host
+    base_url = "#{uri.scheme}://#{uri.host}"
     slist    = []
     spage.goto(url) if url
     case url
     when /zing-chart-tuan/
-      slist = spage.page.css(".e-item").map do |sitem|
+      slist = spage.page.css('.e-item').map do |sitem|
         sinfo  = sitem.css('.title-item a')[0]
         href   = base_url + sinfo['href']
         name   = sinfo.text.strip
@@ -742,7 +715,7 @@ class ZingSource < MusicSource
         }
       end
     when nil, 'https://mp3.zing.vn', /zing-chart/
-      slist = spage.page.css(".desc-song").map do |sitem|
+      slist = spage.page.css('.desc-song').map do |sitem|
         sinfo  = sitem.css('a.fn-name')[0]
         href   = base_url + sinfo['href']
         name   = sinfo.text.strip
@@ -755,7 +728,7 @@ class ZingSource < MusicSource
         }
       end
 
-      slist += spage.page.css("li.dot a").map do |sitem|
+      slist += spage.page.css('li.dot a').map do |sitem|
         name = sitem['title']
         href = sitem['href']
         {
@@ -765,12 +738,12 @@ class ZingSource < MusicSource
       end
     when /top100/
       # Scroll a few times to the end of page
-      (1..5).each do
-        spage.execute_script("window.scrollTo(0,10000)")
+      5.times do
+        spage.execute_script('window.scrollTo(0,10000)')
         sleep 1
       end
       spage.refresh
-      slist = spage.page.css(".e-item").map do |sitem|
+      slist = spage.page.css('.e-item').map do |sitem|
         sinfo = sitem.css('a.fn-name')[0]
         href  = base_url + sinfo['href']
         name  = sinfo.text.strip
@@ -782,32 +755,32 @@ class ZingSource < MusicSource
         }
       end
     when /album|playlist/
-      if url =~ /beta.mp3.zing.vn/
-        slist = spage.page.css(".card-info").map do |sitem|
-          sinfo  = sitem.css('.title a')[0]
-          href   = base_url + (sinfo['href'] || '')
-          name   = sinfo.text.strip
-          artist = sitem.css('.artist').text.strip
-          {
-            name:   name,
-            artist: artist.gsub(/\s+/, ' '),
-            href:   href,
-          }
-        end
-      else
-        slist = spage.page.css(".fn-playlist-item").map do |sitem|
-          sinfo  = sitem.css('a.fn-name')[0]
-          href   = base_url + sinfo['href']
-          name   = sinfo.text.strip
-          artist = sitem.css('.fn-artist').text.strip
-          {
-            name:   name,
-            artist: artist.gsub(/\s+/, ' '),
-            href:   href,
-          }
-        end
-      end
-      slist = slist.select { |r| r[:href] !~ /album/ }
+      slist = if url =~ /beta.mp3.zing.vn/
+                spage.page.css('.card-info').map do |sitem|
+                  sinfo  = sitem.css('.title a')[0]
+                  href   = base_url + (sinfo['href'] || '')
+                  name   = sinfo.text.strip
+                  artist = sitem.css('.artist').text.strip
+                  {
+                    name:   name,
+                    artist: artist.gsub(/\s+/, ' '),
+                    href:   href,
+                  }
+                end
+              else
+                spage.page.css('.fn-playlist-item').map do |sitem|
+                  sinfo  = sitem.css('a.fn-name')[0]
+                  href   = base_url + sinfo['href']
+                  name   = sinfo.text.strip
+                  artist = sitem.css('.fn-artist').text.strip
+                  {
+                    name:   name,
+                    artist: artist.gsub(/\s+/, ' '),
+                    href:   href,
+                  }
+                end
+              end
+      slist = slist.reject { |r| r[:href] =~ /album/ }
     else
       Plog.error "Unsupported URL for zing: #{url}"
     end
@@ -826,9 +799,7 @@ class SpotifySource < MusicSource
         name:    name,
         artist:  artist,
       }
-      if block_given?
-        yield info
-      end
+      yield info if block_given?
       tracks << info
     end
     tracks
@@ -839,7 +810,7 @@ class HacSource < MusicSource
   attr_reader :base_url
 
   def initialize(options={})
-    @base_url = options[:hac_url] || "https://hopamchuan.com"
+    @base_url = options[:hac_url] || 'https://hopamchuan.com'
     super
   end
 
@@ -860,7 +831,7 @@ class HacSource < MusicSource
 
       bar.advance
       found_item = nil
-      [:perfect, :name_only, :first].each do |phase|
+      %i[perfect name_only first].each do |phase|
         page.css('.song-item').each do |sitem|
           case phase
           when :perfect
@@ -872,7 +843,7 @@ class HacSource < MusicSource
               break
             end
           when :name_only
-            title  = sitem.css('a.song-title').text.strip.sub(/\s*\(.*$/o, '')
+            title = sitem.css('a.song-title').text.strip.sub(/\s*\(.*$/o, '')
             if title == ck_name
               Plog.info "Match #{sinfo} on name from HAC"
               found_item = sitem
@@ -898,23 +869,25 @@ class HacSource < MusicSource
         not_founds << sinfo
       end
     end
-    found_set = found_set.uniq { |e| e[:href]}
+    found_set = found_set.uniq { |e| e[:href] }
     [found_set, not_founds]
   end
 
   def download_song(href, options={})
-    path  = href.split('/').compact
+    path = href.split('/').compact
     if path.size >= 7
-      sno, song, user = path[-3], path[-2], path[-1]
+      sno = path[-3]
+      song = path[-2]
+      user = path[-1]
     else
-      sno, song, user = path[-2], path[-1], "unknown"
+      sno = path[-2]
+      song = path[-1]
+      user = 'unknown'
     end
 
     sdir    = options[:store] || '.'
     odir    = "#{sdir}/#{user}"
-    unless test('d', odir)
-      FileUtils.mkdir_p(odir, verbose: true)
-    end
+    FileUtils.mkdir_p(odir, verbose: true) unless test('d', odir)
 
     ofile = "#{odir}/#{sno}::#{song}.yml"
     if !options[:force] && test('s', ofile)
@@ -924,11 +897,11 @@ class HacSource < MusicSource
 
     sinfo = {href: href, ofile: ofile}
     sinfo.update(lyric_info(sinfo[:href]) || {})
-    
+
     Plog.info("Writing to #{ofile}")
-    File.open(ofile, "w") do |fod|
+    File.open(ofile, 'w') do |fod|
       fod.puts sinfo.to_yaml
-      #fod.puts JSON.pretty_generate(sinfo)
+      # fod.puts JSON.pretty_generate(sinfo)
     end
     sinfo
   end
@@ -948,7 +921,7 @@ class HacSource < MusicSource
   def _fix_chords(lyric)
     output = ''
     lyric.scan(/([^\[]*)\[([^\]]+)\]/m).each do |text, chord|
-      chord = chord.split.join("] [")
+      chord = chord.split.join('] [')
       output += "#{text}[#{chord}]"
     end
     last_span = lyric.sub(/^.*\]/m, '')
@@ -959,15 +932,15 @@ class HacSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
     page      = get_page(url)
-    lnote     = page.css('.song-lyric-note .chord_lyric_line').
-                    map { |r| r.text.strip }.join("\n").strip
+    lnote     = page.css('.song-lyric-note .chord_lyric_line')
+                    .map { |r| r.text.strip }.join("\n").strip
     lnote     = _fix_chords(lnote)
-    lyric     = page.css('#song-lyric > .pre > .chord_lyric_line').
-                    map { |r| r.text.gsub(/\r/, '').gsub(/\s+\]/, ']').strip }.join("\n")
+    lyric     = page.css('#song-lyric > .pre > .chord_lyric_line')
+                    .map { |r| r.text.gsub(/\r/, '').gsub(/\s+\]/, ']').strip }.join("\n")
     lyric     = _fix_chords(lyric)
     artist    = page.css('.perform-singer-list .author-item').map { |r| r.text.strip }
-    author    = page.css("#song-detail-info tr")[1].css("td")[0].text.strip
-    genre     = page.css("#song-detail-info tr")[1].css("td")[1].text.strip
+    author    = page.css('#song-detail-info tr')[1].css('td')[0].text.strip
+    genre     = page.css('#song-detail-info tr')[1].css('td')[1].text.strip
     perf_link = page.css('.perform a').last['href']
     song_key  = (lnote + lyric).scan(/\[([^\]]+)\]/)[0][0]
     {
@@ -989,10 +962,11 @@ class HacSource < MusicSource
       page = get_page("#{url}?offset=#{offset}")
       list = page.css('.playlist-item')
       break if list.size <= 0
+
       result += list.map do |item|
         alink = item.css('.playlist-item-title a')[0]
         href  = alink['href']
-        sname = href.split('/')[-2..-1].join('/')
+        sname = href.split('/')[-2..].join('/')
         list_id = href.split('/')[-2].to_i
         count = item.css('.playlist-item-count').text.strip.to_i
         {
@@ -1009,7 +983,7 @@ class HacSource < MusicSource
   end
 
   def thanh_vien(count)
-    url   = "#{@base_url}/user/month"
+    url = "#{@base_url}/user/month"
     Plog.dump_info(url: url)
     page  = get_page_curl(url)
     tlist = page.css('td .one-line').map { |e| e['href'].split('/').last }[0..count - 1]
@@ -1028,6 +1002,7 @@ class HacSource < MusicSource
       page  = get_page(purl)
       songs = page.css('.song-item')
       break if songs.size <= 0
+
       page.css('.song-item').each do |sitem|
         href = sitem.css('a.song-title')[0]['href']
         song_id = href.split('/')[4]
@@ -1036,8 +1011,8 @@ class HacSource < MusicSource
           name:    sitem.css('.song-title').text.strip,
           href:    href,
           artist:  sitem.css('.song-singers').text.strip.sub(/^-\s*/, ''),
-          preview: sitem.css('.song-preview-lyric').text.strip.
-                      gsub(/\[[^\]]*\]/, ''),
+          preview: sitem.css('.song-preview-lyric').text.strip
+                        .gsub(/\[[^\]]*\]/, ''),
         }
         entries << entry
       end
@@ -1057,12 +1032,12 @@ class HacSource < MusicSource
       end
     end
 
-    limit = (options[:limit] || 100000).to_i
+    limit = (options[:limit] || 100_000).to_i
     if (value = options[:page]).nil?
       offset = 0
       incr = 10
     else
-      offset = (value.to_i) * 10
+      offset = value.to_i * 10
       incr = -10
     end
     loop do
@@ -1072,11 +1047,12 @@ class HacSource < MusicSource
       page   = get_page(purl)
       sitems = page.css('.song-item')
       break if sitems.size <= 0
+
       sitems.each do |atrack|
         aref    = atrack.css('a.song-title')[0]
-        artist  = atrack.css('.song-singers').
-          map { |r| r.text.strip.sub(/^-\s+/, '').split(/\s*,\s*/) }.
-          flatten.join(', ')
+        artist  = atrack.css('.song-singers')
+                        .map { |r| r.text.strip.sub(/^-\s+/, '').split(/\s*,\s*/) }
+                        .flatten.join(', ')
         preview = atrack.css('.song-preview-lyric')[0].text.strip
         name    = aref.text.strip
         info = {
@@ -1086,17 +1062,13 @@ class HacSource < MusicSource
           preview: preview,
           chords:  atrack.css('.song-chords span').map { |v| v.text.strip }.join(' '),
         }
-        if block_given?
-          yield info
-        end
+        yield info if block_given?
         collected += 1
         links[name] ||= {}
         links[name].update(info)
       end
       offset += incr
-      if collected >= limit
-        break
-      end
+      break if collected >= limit
     end
     slist = links.keys.sort.map { |aname| links[aname] }
     if ofile
@@ -1106,4 +1078,3 @@ class HacSource < MusicSource
     end
   end
 end
-

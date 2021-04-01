@@ -1,10 +1,12 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 #---------------------------------------------------------------------------
 # File:        smuleauto.rb
 # Date:        2021-01-01 22:13:22 -0800
 # $Id$
 #---------------------------------------------------------------------------
-require_relative "../etc/toolenv"
+require_relative '../etc/toolenv'
 require 'nokogiri'
 require 'yaml'
 require 'cgi'
@@ -20,8 +22,9 @@ require 'smule-db'
 require 'smule_song'
 
 def clean_emoji(str)
-  str=str.force_encoding('utf-8').encode
-  arr_regex=[/[\u{1f600}-\u{1f64f}]/,/[\u{2702}-\u{27b0}]/,/[\u{1f680}-\u{1f6ff}]/,/[\u{24C2}-\u{1F251}]/,/[\u{1f300}-\u{1f5ff}]/]
+  str = str.force_encoding('utf-8').encode
+  arr_regex = [/[\u{1f600}-\u{1f64f}]/, /[\u{2702}-\u{27b0}]/, /[\u{1f680}-\u{1f6ff}]/, /[\u{24C2}-\u{1F251}]/,
+               /[\u{1f300}-\u{1f5ff}]/]
   arr_regex.each do |regex|
     str = str.gsub regex, ''
   end
@@ -31,8 +34,8 @@ end
 ACCENT_MAP = {
   /[áàảãạâấầẩẫậăắằẳẵặ]/ => 'a',
   /[ÁÀẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶ]/ => 'A',
-  /[đ]/                 => 'd',
-  /[Đ]/                 => 'D',
+  /đ/                 => 'd',
+  /Đ/                 => 'D',
   /[éèẻẽẹêếềểễệ]/       => 'e',
   /[ÉÈẺẼẸÊẾỀỂỄỆ]/       => 'E',
   /[íìỉĩị]/             => 'i',
@@ -43,11 +46,11 @@ ACCENT_MAP = {
   /[ÚÙỦŨỤƯỨỪỬỮỰ]/       => 'U',
   /[ýỳỷỹỵ]/             => 'y',
   /[ÝỲỶỸỴ]/             => 'Y',
-}
+}.freeze
 
 def to_search_str(str)
-  stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '').
-    sub(/\s+[-=].*$/, '').sub(/"/, '').strip
+  stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '')
+                           .sub(/\s+[-=].*$/, '').sub(/"/, '').strip
   ACCENT_MAP.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
   end
@@ -67,7 +70,7 @@ def time_since(since)
   when /hr?$/
     since.to_i * 3600
   when /d$/
-    since.to_i * 24*3600
+    since.to_i * 24 * 3600
   when /mo$/
     since.to_i * 24 * 30 * 3600
   when /yr$/
@@ -78,9 +81,10 @@ def time_since(since)
 end
 
 def created_value(value)
-  if value.is_a?(String)
+  case value
+  when String
     value = Time.parse(value)
-  elsif value.is_a?(Date)
+  when Date
     value = value.to_time
   end
   value
@@ -94,7 +98,7 @@ ALTERNATE = {
   '_Huong'        => '__HUONG',
   '__MinaTrinh__' => 'Mina_________',
   'tim_chet'      => 'ngotngao_mantra',
-}
+}.freeze
 
 def _record_by_map(record_by)
   record_by.map do |ri|
@@ -106,11 +110,11 @@ module SmuleAuto
   class ConfigFile
     def initialize(cfile)
       @cfile = cfile
-      if test('f', @cfile)
-        @content = YAML.safe_load_file(@cfile)
-      else
-        @content = {}
-      end
+      @content = if test('f', @cfile)
+                   YAML.safe_load_file(@cfile)
+                 else
+                   {}
+                 end
     end
   end
 
@@ -124,11 +128,11 @@ module SmuleAuto
       allset    = []
       offset    = 0
       limit     = (options[:limit] || 10_000).to_i
-      first_day = Time.now - (options[:days] || 7).to_i*24*3600
-      bar       = TTY::ProgressBar.new("Checking songs [:bar] :percent",
+      first_day = Time.now - (options[:days] || 7).to_i * 24 * 3600
+      bar       = TTY::ProgressBar.new('Checking songs [:bar] :percent',
                                        total: 100)
       catch(:done) do
-        while true
+        loop do
           ourl = "#{url}?offset=#{offset}"
           bar.log(ourl) if @options[:verbose]
           output = curl(ourl)
@@ -163,7 +167,7 @@ module SmuleAuto
               bar.log("Created less than #{first_day}")
               throw :done
             end
-            throw :done if (allset.size >= limit)
+            throw :done if allset.size >= limit
           end
           offset = result['next_offset']
           throw :done if offset < 0
@@ -181,7 +185,7 @@ module SmuleAuto
 
     def get_favs(user)
       @logger.info("Getting favorites for #{user}")
-      options = {limit: 10_000, days: 365*10}
+      options = {limit: 10_000, days: 365 * 10}
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
   end
@@ -196,9 +200,9 @@ module SmuleAuto
       @spage     = SmulePage.new(@connector.driver)
       @logger    = options[:logger] || PLogger.new($stderr)
       sleep(1)
-      at_exit {
+      at_exit do
         @connector.close
-      }
+      end
     end
 
     def star_set(song_set, count)
@@ -207,10 +211,10 @@ module SmuleAuto
         href = sinfo[:href]
         next if href =~ /ensembles$/
         next if sinfo[:record_by].include?(@user)
-        next if Love.first(sid: sinfo[:sid], user:@user)
-        if @options[:exclude]
-          next if @options[:exclude].find{ |r| sinfo[:record_by] =~ /#{r}/}
-        end
+        next if Love.first(sid: sinfo[:sid], user: @user)
+
+        next if @options[:exclude]&.find { |r| sinfo[:record_by] =~ /#{r}/ }
+
         begin
           if @spage.star_song(sinfo[:href])
             @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
@@ -221,12 +225,10 @@ module SmuleAuto
               sleep(@options[:pause])
             end
             count -= 1
-            if count <= 0
-              break
-            end
+            break if count <= 0
           end
-          Love.insert(sid: sinfo[:sid], user:@user)
-        rescue => e
+          Love.insert(sid: sinfo[:sid], user: @user)
+        rescue StandardError => e
           Plog.error(e)
         end
       end
@@ -238,14 +240,14 @@ module SmuleAuto
         @spage.goto(asong[:href])
         @spage.toggle_song_favorite(fav: false)
         @spage.set_song_tag('#thvfavs') if marking
-        @logger.dump_info(msg:'Unfav', stitle: asong[:stitle],
+        @logger.dump_info(msg: 'Unfav', stitle: asong[:stitle],
                           record_by: asong[:record_by])
       end
     end
 
     def unfavs_old(count, result)
       new_size = result.size - count
-      set_unfavs(result[new_size..-1])
+      set_unfavs(result[new_size..])
       result[0..new_size - 1]
     end
   end
@@ -272,12 +274,11 @@ module SmuleAuto
         if (sdir = options[:song_dir]).nil?
           raise "Target dir #{sdir} not accessible to download music to"
         end
+
         SmuleSong.song_dir = sdir
 
         ddir = options[:data_dir]
-        unless test('d', ddir)
-          raise "Target dir #{ddir} not accessible to keep database in"
-        end
+        raise "Target dir #{ddir} not accessible to keep database in" unless test('d', ddir)
       end
 
       def _collect_songs(user, content)
@@ -290,24 +291,24 @@ module SmuleAuto
       end
     end
 
-    class_option :browser,  type: :string, default:'firefox',
-      desc:'Browser to use (firefox|chrome)'
-    class_option :data_dir, type: :string, default:'./data',
-      desc:'Data directory to keep database'
+    class_option :browser,  type: :string, default: 'firefox',
+      desc: 'Browser to use (firefox|chrome)'
+    class_option :data_dir, type: :string, default: './data',
+      desc: 'Data directory to keep database'
     class_option :days,     type: :numeric, default: 7,
-      desc:'Days to look back'
+      desc: 'Days to look back'
     class_option :force,    type: :boolean
-    class_option :limit,    type: :numeric, desc:'Max # of songs to process',
+    class_option :limit,    type: :numeric, desc: 'Max # of songs to process',
       default: 10_000
     class_option :logfile,  type: :string
-    class_option :skip_auth,  type: :boolean, 
-      desc:'Login account from browser (not anonymous)'
-    class_option :song_dir, type: :string, default:'/Volumes/Voice/SMULE',
-      desc:'Data directory to keep songs (m4a)'
+    class_option :skip_auth, type: :boolean,
+      desc: 'Login account from browser (not anonymous)'
+    class_option :song_dir, type: :string, default: '/Volumes/Voice/SMULE',
+      desc: 'Data directory to keep songs (m4a)'
     class_option :verbose,  type: :boolean
 
-    desc "collect_songs user", "Collect all songs and collabs of user"
-    option :with_collabs,  type: :boolean
+    desc 'collect_songs user', 'Collect all songs and collabs of user'
+    option :with_collabs, type: :boolean
     def collect_songs(user)
       cli_wrap do
         _tdir_check
@@ -322,7 +323,7 @@ module SmuleAuto
       end
     end
 
-    desc "scan_favs user", "Scan list of favorites for user"
+    desc 'scan_favs user', 'Scan list of favorites for user'
     def scan_favs(user)
       cli_wrap do
         _tdir_check
@@ -333,8 +334,7 @@ module SmuleAuto
       end
     end
 
-
-    desc "unfavs_old user [count=10]", "Remove earliest songs of favs"
+    desc 'unfavs_old user [count=10]', 'Remove earliest songs of favs'
     long_desc <<~LONGDESC
       Smule has limit of 500 favs.  So once in a while we need to remove
       it to enable adding more.  The removed one will be tagged with #thvfavs
@@ -347,26 +347,26 @@ module SmuleAuto
         favset   = API.new.get_favs(user)
         woptions = writable_options
         woptions[:logger] = @logger
-        result  = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
+        result = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
         content.add_new_songs(result, isfav: true)
         true
       end
     end
 
-    desc "scan_follows user", "Scan the follower/following list"
+    desc 'scan_follows user', 'Scan the follower/following list'
     def scan_follows(user)
       cli_wrap do
         _tdir_check
         fset = []
-        %w(following followers).each do |agroup|
+        %w[following followers].each do |agroup|
           users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
-          users = users['list'].map { |r| 
+          users = users['list'].map do |r|
             {
               name:       r['handle'],
               avatar:     r['pic_url'],
               account_id: r['account_id'],
             }
-          }
+          end
           fset << users
         end
         SmuleDB.instance(user, cdir: options[:data_dir]).set_follows(fset[0], fset[1])
@@ -374,14 +374,14 @@ module SmuleAuto
       end
     end
 
-    desc "check_follows(user)", "check_follows"
+    desc 'check_follows(user)', 'check_follows'
     def check_follows(user)
       cli_wrap do
         fset    = {}
         api     = API.new
-        options = {limit: 25, days: 365*10}
+        options = {limit: 25, days: 365 * 10}
         users   = JSON.parse(curl("https://www.smule.com/#{user}/followers/json"))
-        users['list'].each do |r| 
+        users['list'].each do |r|
           fuser = r['handle']
           slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json", options)
           fset[fuser] = slist.size
@@ -392,11 +392,11 @@ module SmuleAuto
       end
     end
 
-    desc "open_on_itune(user, *filters)", "Open songs on iTunes"
+    desc 'open_on_itune(user, *filters)', 'Open songs on iTunes'
     long_desc <<~LONGDESC
-Open the songs on itunes.  This is done to force itune to refresh the MP3
-header and update its database.
-Filters is the list of SQL's into into DB.
+      Open the songs on itunes.  This is done to force itune to refresh the MP3
+      header and update its database.
+      Filters is the list of SQL's into into DB.
     LONGDESC
     def open_on_itune(user, *filters)
       cli_wrap do
@@ -406,25 +406,25 @@ Filters is the list of SQL's into into DB.
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
           if sfile && test('f', sfile)
-            @logger.dump_info(sinfo: sinfo, _ofmt:'Y')
+            @logger.dump_info(sinfo: sinfo, _ofmt: 'Y')
             system("set -x; open -g #{sfile}")
             sleep(1)
           elsif sfile
-            @logger.dump_error(msg:"#{sfile} not found", sinfo: sinfo)
+            @logger.dump_error(msg: "#{sfile} not found", sinfo: sinfo)
           end
         end
         true
       end
     end
 
-    desc "play user", "Play songs from user"
-    option :download,  type: :boolean, desc:'Download while playing'
+    desc 'play user', 'Play songs from user'
+    option :download, type: :boolean, desc: 'Download while playing'
     long_desc <<~LONGDESC
-Start a CLI player to play songs from user.  Player support various command to
-control the song and how to play.
-
-Player keep the play state on the file splayer.state to allow it to resume where
-it left off from the previous run.
+            Start a CLI player to play songs from user.  Player support various command to
+            control the song and how to play.
+      #{'      '}
+            Player keep the play state on the file splayer.state to allow it to resume where
+            it left off from the previous run.
     LONGDESC
     def play(user)
       cli_wrap do
@@ -433,50 +433,45 @@ it left off from the previous run.
       end
     end
 
-    desc "show_following user", "Show the activities for following list"
+    desc 'show_following user', 'Show the activities for following list'
     def show_following(user)
       cli_wrap do
         _tdir_check
         content   = SmuleDB.instance(user, cdir: options[:data_dir])
         following = content.singers.where(following: true).as_hash(:name)
-        bar = TTY::ProgressBar.new("Following [:bar] :percent",
+        bar = TTY::ProgressBar.new('Following [:bar] :percent',
                                    total: Performance.count)
-        Performance.where(Sequel.lit('record_by like ?', "%#{user}%")).
-                          each do |sinfo|
+        Performance.where(Sequel.lit('record_by like ?', "%#{user}%"))
+                   .each do |sinfo|
           singers = sinfo[:record_by].split(',')
-          singers.select { |r| r != user }.each do |osinger|
-            unless (finfo = following[osinger]).nil?
-              finfo[:last_join] ||= Time.at(0)
-              finfo[:last_join] = [created_value(sinfo[:created]),
-                                   created_value(finfo[:last_join])].max
-              finfo[:songs] ||= 0
-              finfo[:songs] += 1
+          singers.reject { |r| r == user }.each do |osinger|
+            next if (finfo = following[osinger]).nil?
 
-              if sinfo[:isfav] || sinfo[:oldfav]
-                finfo[:favs] ||= 0
-                finfo[:favs] += 1
-              end
+            finfo[:last_join] ||= Time.at(0)
+            finfo[:last_join] = [created_value(sinfo[:created]),
+                                 created_value(finfo[:last_join])].max
+            finfo[:songs] ||= 0
+            finfo[:songs] += 1
+
+            if sinfo[:isfav] || sinfo[:oldfav]
+              finfo[:favs] ||= 0
+              finfo[:favs] += 1
             end
           end
           bar.advance
         end
         following.each do |_asinger, finfo|
-          if finfo[:last_join]
-            finfo[:last_days] = (Time.now - finfo[:last_join])/(24*3600)
-          end
+          finfo[:last_days] = (Time.now - finfo[:last_join]) / (24 * 3600) if finfo[:last_join]
         end
         following.sort_by { |_k, v| v[:last_days] || 9999 }.each do |asinger, finfo|
-          puts "%-20.20s - %3d songs, %3d favs, %4d days, %s" %
-            [asinger, finfo[:songs] || 0,
-             finfo[:favs] || 0,
-             finfo[:last_days] || 9999,
-             finfo[:follower] ? 'follower' : '']
+          puts format('%-20.20s - %3d songs, %3d favs, %4d days, %s', asinger, finfo[:songs] || 0, finfo[:favs] || 0,
+                      finfo[:last_days] || 9999, finfo[:follower] ? 'follower' : '')
         end
         true
       end
     end
 
-    desc "fix_content user <fix_type>", "Fixing something on the database"
+    desc 'fix_content user <fix_type>', 'Fixing something on the database'
     long_desc <<~LONGDESC
       Just a place holder to fix data content.  Code will be implemented
       as needed
@@ -490,13 +485,11 @@ it left off from the previous run.
         when :mp3, :m4a
           content.each(filter: data.join('/')) do |_sid, sinfo|
             asong = SmuleSong.new(sinfo)
-            if asong.update_mp4tag(excuser: user) == :updated
-              asong._run_command("open -g #{asong.ssfile}")
-            end
+            asong._run_command("open -g #{asong.ssfile}") if asong.update_mp4tag(excuser: user) == :updated
           end
         when :tags
           if data.size <= 1
-            @logger.error("No data specified for tag")
+            @logger.error('No data specified for tag')
             return false
           end
           recs   = []
@@ -519,11 +512,11 @@ it left off from the previous run.
             r.update(oldfav: 0)
           end
         when :slink
-          query  = Performance.
-            where(created: Time.now - 80 * 24 * 3600..Time.now).
-            where(Sequel.ilike(:record_by, "%#{user}%"))
+          query  = Performance
+                   .where(created: Time.now - 80 * 24 * 3600..Time.now)
+                   .where(Sequel.ilike(:record_by, "%#{user}%"))
           ccount = query.count
-          progress_set(query.all, "symlink") do |r|
+          progress_set(query.all, 'symlink') do |r|
             SmuleSong.new(r).sofile
           end
         end
@@ -532,7 +525,7 @@ it left off from the previous run.
       end
     end
 
-    desc "move_singer user old_name new_name", "Move songs from old singer to new singer"
+    desc 'move_singer user old_name new_name', 'Move songs from old singer to new singer'
     long_desc <<~LONGDESC
       Singer changes login all the times.  That would change control data as
       well as storage folder.  This needs to run to track user
@@ -544,49 +537,47 @@ it left off from the previous run.
         moptions = writable_options
         moptions.update(
           pbar:   "Move content from #{old_name}",
-          filter: "record_by=#{old_name}",
+          filter: "record_by=#{old_name}"
         )
-        Performance.
-          where(Sequel.ilike(:record_by, "%#{old_name}%")).each do |v|
-          if v[:record_by] =~ /,#{old_name}$|^#{old_name},/
-            asong = SmuleSong.new(v, moptions)
-            if asong.move_song(old_name, new_name)
-              if asong.update_mp4tag(excuser: user) == :updated
-                asong._run_command("open -g #{asong.ssfile}")
-              end
-            end
-            v.save
+        Performance
+          .where(Sequel.ilike(:record_by, "%#{old_name}%")).each do |v|
+          next unless v[:record_by] =~ /,#{old_name}$|^#{old_name},/
+
+          asong = SmuleSong.new(v, moptions)
+          if asong.move_song(old_name, new_name) && (asong.update_mp4tag(excuser: user) == :updated)
+            asong._run_command("open -g #{asong.ssfile}")
           end
+          v.save
         end
         true
       end
     end
 
-    desc "song_info url", "Get the song info from URL and update into database"
-    option :update,  type: :boolean, desc:'Updating database'
+    desc 'song_info url', 'Get the song info from URL and update into database'
+    option :update, type: :boolean, desc: 'Updating database'
     long_desc <<~LONGDESC
-Check the URL's and update into database
-Done if any downloaded files are missed or processed incorrectly
-Filters is the list of SQL's into into DB.
+      Check the URL's and update into database
+      Done if any downloaded files are missed or processed incorrectly
+      Filters is the list of SQL's into into DB.
     LONGDESC
     def song_info(url)
       cli_wrap do
-        SmuleDB.instance("THV_13", cdir: ".")
+        SmuleDB.instance('THV_13', cdir: '.')
         SmuleSong.update_from_url(url, options).to_yaml
       end
     end
 
-    desc "to_open(user)", "Show list of potential to open songs"
+    desc 'to_open(user)', 'Show list of potential to open songs'
     option :tags,  type: :string
     option :favs,  type: :boolean, default: true
     option :title, type: :string
     option :record_by, type: :string
     long_desc <<~LONGDESC
-List the candidates for open from the matching filter.
-Filters is the list of SQL's into into DB.
-* Song which has not been opened
-* Was a favorites
-* Sorted by date
+      List the candidates for open from the matching filter.
+      Filters is the list of SQL's into into DB.
+      * Song which has not been opened
+      * Was a favorites
+      * Sorted by date
     LONGDESC
     def to_open(user, *filter)
       cli_wrap do
@@ -599,12 +590,10 @@ Filters is the list of SQL's into into DB.
         end
 
         wset = Performance.where(Sequel.lit('record_by like ?', "%#{user}%"))
-        wset = wset.order(:created).
-          join_table(:left, :song_tags, name: :stitle)
+        wset = wset.order(:created)
+                   .join_table(:left, :song_tags, name: :stitle)
 
-        if filter.size > 0
-          wset = wset.where(Sequel.lit(filter.join(' ')))
-        end
+        wset = wset.where(Sequel.lit(filter.join(' '))) unless filter.empty?
         wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1')) if options[:fav]
         unless (value = options[:tags]).nil?
           wset = wset.where(Sequel.lit('tags like ?', "%#{value}%"))
@@ -633,34 +622,32 @@ Filters is the list of SQL's into into DB.
       end
     end
 
-    desc "dump_comment(user)", "dump_comment"
+    desc 'dump_comment(user)', 'dump_comment'
     def dump_comment(user, *filter)
       cli_wrap do
         _tdir_check
         SmuleDB.instance(user, cdir: options[:data_dir])
         wset = Comment.where(Sequel.lit("record_by like '%#{user}%'"))
-        if filter.size > 0
-          wset = wset.where(Sequel.lit(filter.join(' ')))
-        end
+        wset = wset.where(Sequel.lit(filter.join(' '))) unless filter.empty?
         Plog.dump(wset: wset)
-        wset.all.map { |r| r.values }.to_yaml
+        wset.all.map(&:values).to_yaml
         wset.each do |sinfo|
-          comments = JSON.parse(sinfo[:comments]).
-                     select { |_c, m| m && !m.empty? }
-          if comments.size > 0
-            puts format("\n%<title>-60.60s %<record>20.20s %<created>s",
-                        title: sinfo[:stitle], record: sinfo[:record_by],
-                        created: sinfo[:created])
-            comments.each do |cuser, msg|
-              puts format("  %<cuser>-14.14s | %<msg>s", cuser: cuser, msg: msg)
-            end
+          comments = JSON.parse(sinfo[:comments])
+                         .select { |_c, m| m && !m.empty? }
+          next if comments.empty?
+
+          puts format("\n%<title>-60.60s %<record>20.20s %<created>s",
+                      title: sinfo[:stitle], record: sinfo[:record_by],
+                      created: sinfo[:created])
+          comments.each do |cuser, msg|
+            puts format('  %<cuser>-14.14s | %<msg>s', cuser: cuser, msg: msg)
           end
         end
         true
       end
     end
 
-    desc "star_singers(count, singers)", "star_singers"
+    desc 'star_singers(count, singers)', 'star_singers'
     option :top,     type: :numeric
     option :days,    type: :numeric, default: 15
     option :exclude, type: :string
@@ -668,23 +655,23 @@ Filters is the list of SQL's into into DB.
     option :play,    type: :boolean
     option :offset,  type: :numeric, default: 0
 
-    BANNED_LIST = %w[Joseph_TN]
+    BANNED_LIST = %w[Joseph_TN].freeze
     def star_singers(user, count, *singers)
       cli_wrap do
         _tdir_check
         woptions = writable_options
         content = SmuleDB.instance(user, cdir: woptions[:data_dir])
-        unless (exclude = woptions[:exclude]).nil?
-          exclude = exclude.split(',')
-        else
-          exclude = []
-        end
+        exclude = if (exclude = woptions[:exclude]).nil?
+                    []
+                  else
+                    exclude.split(',')
+                  end
         woptions[:exclude] = exclude
         unless (topc = woptions[:top]).nil?
           topc += exclude.size
-          singers = content.top_partners(topc, woptions).
-            map    { |k, _v| k }[options[:offset]..-1].
-            select { |r| !exclude.include?(r) }
+          singers = content.top_partners(topc, woptions)
+                           .map    { |k, _v| k }[options[:offset]..]
+                           .reject { |r| exclude.include?(r) }
           @logger.dump_info(singers: singers)
         end
         limit    = woptions[:limit]
@@ -692,15 +679,15 @@ Filters is the list of SQL's into into DB.
         sapi     = API.new(woptions)
 
         woptions[:logger] = @logger
-        scanner  = Scanner.new(user, woptions)
+        scanner = Scanner.new(user, woptions)
 
         count   = count.to_i
         allsets = []
         singers.each do |asinger|
-          perfset = sapi.get_performances(asinger, limit:[limit, 30].min,
+          perfset = sapi.get_performances(asinger, limit: [limit, 30].min,
                                           days: days)
           perfset = perfset.select do |r|
-            (r[:record_by].split(',') & BANNED_LIST).size == 0
+            (r[:record_by].split(',') & BANNED_LIST).empty?
           end
           starred = scanner.star_set(perfset, count)
           allsets.concat(starred)
@@ -721,7 +708,7 @@ Filters is the list of SQL's into into DB.
       end
     end
 
-    desc "watch_mp4(dir)", "watch_mp4"
+    desc 'watch_mp4(dir)', 'watch_mp4'
     option :verify,  type: :boolean
     option :open,    type: :boolean, desc: 'Opening mp4 after download'
     option :logfile, type: :string
@@ -738,7 +725,4 @@ Filters is the list of SQL's into into DB.
   end
 end
 
-if (__FILE__ == $0)
-  SmuleAuto::Main.start(ARGV)
-end
-
+SmuleAuto::Main.start(ARGV) if __FILE__ == $PROGRAM_NAME

@@ -1,4 +1,6 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 #---------------------------------------------------------------------------
 # File:        core.rb
 # Date:        Tue Nov 13 15:52:52 -0800 2007
@@ -24,33 +26,34 @@ module ThorAddition
 
   def cli_wrap
     if ENV['BYEBUG']
-      say_status Time.now, "#{File.basename(__FILE__)}:#{__LINE__} " + "Entering debug mode", :yellow
+      say_status Time.now, "#{File.basename(__FILE__)}:#{__LINE__} " + 'Entering debug mode', :yellow
       ENV.delete('BYEBUG')
       require 'byebug'
       byebug
     end
     Signal.trap('SIGINT')  { exit(1) }
-    Signal.trap('SIGQUIT') { Elog.info "Quitting from signal."; exit(0) }
+    Signal.trap('SIGQUIT') { Elog.info 'Quitting from signal.'; exit(0) }
 
-    if options[:logfile]
-      @logger = PLogger.new(value)
-    else
-      @logger = PLogger.new($stderr)
-    end
+    @logger = if options[:logfile]
+                PLogger.new(value)
+              else
+                PLogger.new($stderr)
+              end
 
     result = yield
 
-    if result.is_a?(FalseClass)
-      return(1)
-    end
-    if result.is_a?(TrueClass)
+    return(1) if result.is_a?(FalseClass)
+
+    case result
+    when TrueClass
       return(0)
-    elsif result.is_a?(String)
+    when String
       puts result
     else
       puts result.inspect
     end
-    return 0
+
+    0
   end
 
   def writable_options
@@ -60,12 +63,11 @@ end
 
 def progress_set(wset, title=nil)
   title ||= caller[0].split.last.gsub(/['"`]/, '')
-  tstring = "%-16.16s [:bar] :percent" % title
-  bar     = TTY::ProgressBar.new(tstring, total:wset.size)
+  tstring = '%-16.16s [:bar] :percent' % title
+  bar     = TTY::ProgressBar.new(tstring, total: wset.size)
   wset.each do |entry|
-    unless yield entry, bar
-      break
-    end
+    break unless yield entry, bar
+
     bar.advance
   end
 end
@@ -77,9 +79,10 @@ module Cli
     @options ||= {}
     @options.merge!(opt)
   end
+
   def getOption(name=nil)
     @options ||= {}
-    return name ? @options[name] : @options
+    name ? @options[name] : @options
   end
 
   # Common handling of most CLI facing script.  It parse the command
@@ -103,41 +106,39 @@ module Cli
   #
   # * If the class support cliResult method, it will be called with
   #   the result and object (for instance invocation).
-  # * Otherwise, a default handling of the result is done (i.e. 
+  # * Otherwise, a default handling of the result is done (i.e.
   #   printing of output and set exit cod)
   def handleCli(*optset)
-    imethods = self.instance_methods(false)
-    if imethods.size > 0
-      optset << ['--class', '-c']
-    end
+    imethods = instance_methods(false)
+    optset << ['--class', '-c'] unless imethods.empty?
     @cliOptions = optset
     opt = Cli.parseOptions(*optset)
     setOptions(opt)
     obj = nil
     if opt[:class] || (imethods.size <= 0)
-      (ARGV.length > 0) || self.cliUsage
+      !ARGV.empty? || cliUsage
       method = ARGV.shift.gsub(/-/, '_')
-      result = self.send(method, *ARGV)
+      result = send(method, *ARGV)
     elsif block_given?
       result = yield opt
     # Class handle CLI instantiation?
-    elsif self.respond_to?(:cliNew)
+    elsif respond_to?(:cliNew)
       # ARGV could change during cliNew, so we check both places
-      (ARGV.length > 0) || self.cliUsage
-      obj = self.cliNew
-      (ARGV.length > 0) || self.cliUsage
+      !ARGV.empty? || cliUsage
+      obj = cliNew
+      !ARGV.empty? || cliUsage
       method = ARGV.shift.gsub(/-/, '_')
       result = obj.send(method, *ARGV)
     else
-      (ARGV.length > 0) || self.cliUsage
-      obj    = self.new(ARGV.shift)
+      !ARGV.empty? || cliUsage
+      obj    = new(ARGV.shift)
       method = ARGV.shift.gsub(/-/, '_')
       result = obj.send(method, *ARGV)
     end
 
     # Class handle result?
-    if self.respond_to?(:cliResult)
-      self.cliResult(result, obj)
+    if respond_to?(:cliResult)
+      cliResult(result, obj)
     else
       Cli.set_shell_result(result)
     end
@@ -145,26 +146,24 @@ module Cli
 
   # Print the message on cli usage (flag/method) and exit script
   def cliUsage
-    $stderr.puts "#{File.basename($0)} " +
-          Cli.show_options(@cliOptions).join(" ") + " [object] method ..."
+    warn "#{File.basename($PROGRAM_NAME)} " +
+         Cli.show_options(@cliOptions).join(' ') + ' [object] method ...'
     Cli.class_usage(self)
   end
 
   # Print a prompt and wait for y/n answer
-  def self.confirm(prompt, default="n")
+  def self.confirm(prompt, default='n')
     $stderr.print "#{prompt} (y/n) [n]? "
     ans = $stdin.gets
-    if !ans || (ans == "")
-      ans = default
-    end
-    return (ans =~ /[Yy]/) ? true : false
+    ans = default if !ans || (ans == '')
+    ans =~ /[Yy]/ ? true : false
   end
 
   # Print a prompt and get back a string
   def self.getInput(prompt, default='')
     $stderr.print "#{prompt} [#{default}]: "
     result = $stdin.gets
-    return (result != "\n") ? result.chomp : default
+    result != "\n" ? result.chomp : default
   end
 
   # Get user input from a specification template.  Template is a
@@ -172,7 +171,8 @@ module Cli
   # type:: u|l|D = convert to uppercase, lowercase, mysql date format
   # flag:: R = required
   def self.getInputTemplate(*template)
-    maxprlen, maxdeflen = 0, 0
+    maxprlen = 0
+    maxdeflen = 0
     template.each do |alist|
       _type, _flag, prompt, defval = alist
       maxprlen  = prompt.length if maxprlen < prompt.length
@@ -181,25 +181,26 @@ module Cli
     result = []
     template.each do |alist|
       type, flag, prompt, defval = alist
-      print "%#{maxprlen}s [%#{maxdeflen}s]: " % [prompt, defval]
+      print format("%#{maxprlen}s [%#{maxdeflen}s]: ", prompt, defval)
       answer = $stdin.gets.strip
-      answer = defval if (defval && (answer == ''))
+      answer = defval if defval && (answer == '')
       case type
       when 'l'
-	answer = answer.downcase
+        answer = answer.downcase
       when 'u'
-	answer = answer.upcase
+        answer = answer.upcase
       when 'D'
-	answer = answer.mysqlDate
+        answer = answer.mysqlDate
       end
-      return [] if ((flag =~ /R/) && (answer == ''))
+      return [] if (flag =~ /R/) && (answer == '')
+
       result << answer
     end
     result
   end
 
   # Print a message and just wait till user press enter
-  def self.pause(msg="... Press return to continue ...")
+  def self.pause(msg='... Press return to continue ...')
     $stderr.print msg
     $stdin.gets
   end
@@ -209,24 +210,20 @@ module Cli
   def self.select(alist, aprompt=nil)
     maxwidth = 10
     alist.each do |entry|
-      if entry.size > maxwidth
-        maxwidth = entry.size
-      end
+      maxwidth = entry.size if entry.size > maxwidth
     end
     swidth = ENV['COLUMNS'] || 80
     swidth = swidth.to_i - 2
-    cols   = swidth/(maxwidth + 5)
-    cols   = 1 if (cols <= 0)
-    pwidth = (swidth/cols) - 5
+    cols   = swidth / (maxwidth + 5)
+    cols   = 1 if cols <= 0
+    pwidth = (swidth / cols) - 5
     pcol   = (alist.size + cols - 1) / cols
     loop do
-      0.upto(pcol-1) do |ridx|
-        0.upto(cols-1) do |cidx|
-          idx   = ridx + cidx*pcol
+      0.upto(pcol - 1) do |ridx|
+        0.upto(cols - 1) do |cidx|
+          idx   = ridx + cidx * pcol
           entry = alist[idx]
-          if entry
-            $stderr.print("%2d. %-#{pwidth}s " % [idx+1, entry])
-          end
+          $stderr.print(format("%2d. %-#{pwidth}s ", idx + 1, entry)) if entry
         end
         $stderr.puts
       end
@@ -237,11 +234,11 @@ module Cli
         ans = $stdin.gets
       end
       return nil unless ans
+
       ans.chomp!
-      next if (ans == '')
-      if (ans =~ /^[0-9]+$/)
-	return alist[ans.to_i - 1]
-      end
+      next if ans == ''
+      return alist[ans.to_i - 1] if ans =~ /^[0-9]+$/
+
       break
     end
     nil
@@ -252,64 +249,65 @@ module Cli
   def self.class_usage(klass)
     defs = {}
     mlist = klass.instance_methods(false).grep(/^[^_]/).map do |amethod|
-      ["", amethod, klass.instance_method(amethod).arity]
+      ['', amethod, klass.instance_method(amethod).arity]
     end +
-    (klass.singleton_methods - Cli.instance_methods).map do |amethod|
-      ["#{klass}.", amethod, klass.method(amethod).arity]
-    end
+            (klass.singleton_methods - Cli.instance_methods).map do |amethod|
+              ["#{klass}.", amethod, klass.method(amethod).arity]
+            end
     mlist.sort.each do |c, f, m|
       if defs[f]
-        $stderr.puts "  - #{c}#{f}(#{defs[f]})"
+        warn "  - #{c}#{f}(#{defs[f]})"
       else
         vlist =
-          if (m < 0)
-            Array.new(-m, "v").join(", ") + ", ..."
+          if m < 0
+            "#{Array.new(-m, 'v').join(', ')}, ..."
           else
-            Array.new(m, "v").join(", ")
+            Array.new(m, 'v').join(', ')
           end
-        $stderr.puts "  - #{c}#{f}(#{vlist})"
+        warn "  - #{c}#{f}(#{vlist})"
       end
     end
     $stderr.print "<Return> to quit or 'h' for help ..."
     result = $stdin.gets.chomp
     exit unless result =~ /^[hH]/
-    exec "tman -r #{$0}"
+    exec "tman -r #{$PROGRAM_NAME}"
   end
 
   # Wait for an interval seconds and print progress dot ...
   def self.wait(interval, comment=nil)
-    $stderr.print "#{comment}" if comment
+    $stderr.print comment.to_s if comment
     $stderr.print "[#{interval}]: "
-    interval.downto(1) {
-      $stderr.print "."
+    interval.downto(1) do
+      $stderr.print '.'
       $stderr.flush
       sleep(1)
-    }
-    $stderr.puts ""
+    end
+    warn ''
   end
 
   def self.shellResult
-    if ENV['LOG_LEVEL'] && (ENV['LOG_LEVEL'] > "0")
+    if ENV['LOG_LEVEL'] && (ENV['LOG_LEVEL'] > '0')
       begin
-	result = yield
-	self.set_shell_result(result)
-      rescue => e
-	$stderr.puts "+ #{$0}: #{e}"
-	exit 1
+        result = yield
+        set_shell_result(result)
+      rescue StandardError => e
+        warn "+ #{$PROGRAM_NAME}: #{e}"
+        exit 1
       end
     else
       result = yield
-      self.set_shell_result(result)
+      set_shell_result(result)
     end
   end
 
   # Map output to shell (at exit) for ruby class output
   def self.set_shell_result(result)
-    if result.kind_of?(TrueClass)
+    case result
+    when TrueClass
       exit(0)
-    elsif result.kind_of?(FalseClass)
+    when FalseClass
       exit(1)
-    elsif result.kind_of?(String)
+    when String
       puts result
     else
       puts result.inspect
@@ -336,12 +334,12 @@ module Cli
   def self.parseOptions(*options)
     require 'getoptlong'
 
-    option = Hash.new
+    option = {}
     newopt = options.collect do |optspec|
       opt, tmp, type, default = optspec
-      if (type == nil)
-	type = GetoptLong::NO_ARGUMENT
-	optspec[2] = type
+      if type.nil?
+        type = GetoptLong::NO_ARGUMENT
+        optspec[2] = type
       end
       optname = opt[2..]
       option[optname.intern] = default
@@ -350,11 +348,11 @@ module Cli
     begin
       GetoptLong.new(*newopt).each do |opt, arg|
         optname = opt[2..]
-        option[optname.intern] = (arg == '') ? true : arg
+        option[optname.intern] = arg == '' ? true : arg
       end
-    rescue => e
+    rescue StandardError => e
       puts e
-      puts "#{File.basename($0)} " + show_options(options).join(" ") + "..."
+      puts "#{File.basename($PROGRAM_NAME)} " + show_options(options).join(' ') + '...'
     end
     option
   end
@@ -371,34 +369,28 @@ module Pf
     require 'socket'
 
     result = Socket.getaddrinfo(addr, 0, nil, Socket::SOCK_STREAM)[0][2]
-    if shortform && (result !~ /^[0-9.]+$/)
-      result.sub!(/\..*$/, '')
-    end
+    result.sub!(/\..*$/, '') if shortform && (result !~ /^[0-9.]+$/)
     result
   end
 
   # Run a system command with optional trace
   def self.system(command, trace=nil, logfile=nil)
-    $stderr.puts "+ #{command}" if trace
+    warn "+ #{command}" if trace
     Plog.debug("+ #{command}")
-    if logfile
-      command = "(time #{command} 2>&1; echo \":exit: $?\") | tee -a #{logfile}"
-    end
+    command = "(time #{command} 2>&1; echo \":exit: $?\") | tee -a #{logfile}" if logfile
     rc = Kernel.system(command)
     if logfile
       fid = File.open(logfile)
-      if File.size(logfile) > 10
-        fid.seek(-10, IO::SEEK_END)
-      end
-      rc = (fid.read.split.last == "0")
+      fid.seek(-10, IO::SEEK_END) if File.size(logfile) > 10
+      rc = (fid.read.split.last == '0')
       fid.close
     end
     rc
   end
 
- # Exec a command with optional trace
+  # Exec a command with optional trace
   def self.exec(command, trace=0)
-    $stderr.puts "+ #{command}" if trace != 0
+    warn "+ #{command}" if trace != 0
     Plog.debug("+ #{command}")
     Kernel.exec(command)
   end
@@ -416,16 +408,17 @@ end
 # Extension to normal File class
 class File
   # Equivalent perl method to check if file is text only
-  def File.isText?(file, bsize=256)
+  def self.isText?(file, bsize=256)
     return true if File.extname(file) =~ /\.(java|c|h|m)/
     return false if File.size(file) == 0
+
     text = true
     File.open(file) do |fid|
       fid.read(bsize).each_byte do |abyte|
-	if (abyte < 9) || (abyte > 0x7e)
-	  text = false
-	  break
-	end
+        if (abyte < 9) || (abyte > 0x7e)
+          text = false
+          break
+        end
       end
     end
     text
@@ -450,18 +443,16 @@ module Kernel
   # Purpose  : Emulate the tcl catch command
   #-----------------------------------------------------------------------
   def catcherr
-    begin
-      yield
-      0
-    rescue
-      1
-    end
+    yield
+    0
+  rescue StandardError
+    1
   end
 
   # Check if class is main CLI facing class and extend cli support
   # module to it
   def extend_cli(_file)
-    # if (file == $0)
+    # if (file == $PROGRAM_NAME)
     include Cli
     extend  Cli
     # end
@@ -470,7 +461,7 @@ end
 
 require 'logger'
 class PLogger < Logger
-  FORMAT2 = "%s %s - [%s] %s\n".freeze
+  FORMAT2 = "%s %s - [%s] %s\n"
   attr_accessor :simple, :clevel
 
   def initialize(*args)
@@ -482,15 +473,13 @@ class PLogger < Logger
 
   def format_message(severity, timestamp, progname, msg)
     # Look like this changes from diff versions.  So we need to detect
-    script = caller[@slevel+@clevel].sub(/:in .*$/, '').sub(/^.*\//, '')
+    script = caller[@slevel + @clevel].sub(/:in .*$/, '').sub(%r{^.*/}, '')
     if @simple
-      "%s - [%s] %s\n" % [severity[0..0], script, msg]
+      format("%s - [%s] %s\n", severity[0..0], script, msg)
+    elsif timestamp.respond_to?(:strftime)
+      format(FORMAT2, severity[0..0], timestamp.strftime('%y/%m/%d %T'), script, msg)
     else
-      if timestamp.respond_to?(:strftime)
-        format(FORMAT2, severity[0..0], timestamp.strftime("%y/%m/%d %T"), script, msg)
-      else
-        format(FORMAT2, severity[0..0], timestamp, script, progname)
-      end
+      format(FORMAT2, severity[0..0], timestamp, script, progname)
     end
   end
 
@@ -507,29 +496,27 @@ class PLogger < Logger
   end
 
   def dump_info(obj)
-    _fmt_obj(obj) { |msg| self.info(msg) }
+    _fmt_obj(obj) { |msg| info(msg) }
   end
 
   def dump_error(obj)
-    _fmt_obj(obj) { |msg| self.error(msg) }
+    _fmt_obj(obj) { |msg| error(msg) }
   end
 
   def dump(obj)
-    _fmt_obj(obj) { |msg| self.debug(msg) }
+    _fmt_obj(obj) { |msg| debug(msg) }
   end
 end
 
 class Plog
-=begin
---- Class: Plog
-    Singleton class for application based global log
-=end
+  # --- Class: Plog
+  #     Singleton class for application based global log
   @@xglog        = nil
-  @@timestampFmt = "%Y-%m-%d %H:%M:%S"
+  @@timestampFmt = '%Y-%m-%d %H:%M:%S'
   @@dotrace      = false
   class << self
-
     private
+
     def myLogs
       # Beside singleton imp,  this is also done to defer log creation
       # to absolute needed to allow application to control addition
@@ -538,27 +525,28 @@ class Plog
     end
 
     public
+
     def setLogger
       logspec = (ENV['LOG_LEVEL'] || '')
-      if logspec =~  /:f/
-        logger = PLogger.new($'.sub(/:.*$/, ''))
-      else
-        logger = PLogger.new($stderr)
-      end
+      logger = if logspec =~ /:f/
+                 PLogger.new(Regexp.last_match.post_match.sub(/:.*$/, ''))
+               else
+                 PLogger.new($stderr)
+               end
       log_level, *logopts = logspec.split(':')
       logopts.each do |anopt|
-        oname  = anopt[0]
-        #ovalue = anopt[1..]
+        oname = anopt[0]
+        # ovalue = anopt[1..]
         case oname
         when 's'
           logger.simple = true
         end
       end
-      if log_level && !log_level.empty?
-        logger.level = log_level.to_i
-      else
-        logger.level = Logger::INFO
-      end
+      logger.level = if log_level && !log_level.empty?
+                       log_level.to_i
+                     else
+                       Logger::INFO
+                     end
       logger.datetime_format = @@timestampFmt
       @@xglog = logger
     end
@@ -601,12 +589,13 @@ class Psyslog
   @@glog = nil
   class << self
     private
+
     def myLog
       unless @@glog
-	require 'syslog'
+        require 'syslog'
 
-	@@glog = Syslog
-	@@glog.open(File.basename($0), Syslog::LOG_PID|Syslog::LOG_CONS,
+        @@glog = Syslog
+        @@glog.open(File.basename($PROGRAM_NAME), Syslog::LOG_PID | Syslog::LOG_CONS,
                     Syslog::LOG_DAEMON)
       end
       @@glog
@@ -617,4 +606,3 @@ class Psyslog
     end
   end
 end
-
