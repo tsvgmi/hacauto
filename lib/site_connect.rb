@@ -12,6 +12,7 @@ require 'selenium-webdriver'
 require 'openssl'
 require 'open-uri'
 
+# Docs for HtmlRes
 module HtmlRes
   def get_page_curl(url, options={})
     content = `curl -ks #{url}`
@@ -33,6 +34,7 @@ module HtmlRes
   end
 end
 
+# Docs for SelPage
 class SelPage
   attr_reader :sdriver, :page, :clicks
 
@@ -77,8 +79,13 @@ class SelPage
   def method_missing(method, *argv)
     @sdriver.send(method.to_s, *argv)
   end
+
+  def respond_to_missing?(_method)
+    true
+  end
 end
 
+# Docs for SDriver
 class SDriver
   attr_reader :driver, :auser
 
@@ -145,12 +152,12 @@ class SDriver
   end
 
   def type(selector, data, options={})
-    if data
-      Plog.debug "Enter on #{selector} - #{data[0..19]}"
-      elem = @driver.find_element(:css, selector)
-      elem.clear unless options[:append]
-      elem.send_keys(data)
-    end
+    return unless data
+
+    Plog.debug "Enter on #{selector} - #{data[0..19]}"
+    elem = @driver.find_element(:css, selector)
+    elem.clear unless options[:append]
+    elem.send_keys(data)
   end
 
   def goto(path)
@@ -162,8 +169,13 @@ class SDriver
   def method_missing(method, *argv)
     @driver.send(method.to_s, *argv)
   end
+
+  def respond_to_missing?(_method)
+    true
+  end
 end
 
+# Docs for SiteConnect
 class SiteConnect
   attr_reader :driver
 

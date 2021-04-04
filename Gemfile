@@ -1,6 +1,8 @@
+# frozen_string_literal: true
+
 source 'http://rubygems.org'
 
-#gem 'progress_bar'
+# gem 'progress_bar'
 gem 'activesupport'
 gem 'byebug'
 gem 'code-scanning-rubocop'
@@ -24,8 +26,7 @@ gem 'webdrivers'
 
 group 'music' do
   gem 'midi'
-  gem 'mp4info', :git => 'https://github.com/arbarlow/ruby-mp4info.git'
+  gem 'mp4info', git: 'https://github.com/arbarlow/ruby-mp4info.git'
   gem 'ruby-mp3info'
   gem 'taglib-ruby'
 end
-

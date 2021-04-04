@@ -15,6 +15,7 @@ require 'core'
 require 'sequel/adapters/sqlite'
 module Sequel
   module SQLite
+    # Docs for Dataset
     class Dataset
       def size
         count
@@ -24,6 +25,7 @@ module Sequel
 end
 
 module SmuleAuto
+  # Docs for HashableSet
   class HashableSet
     def initialize(dataset, key, vcol: nil)
       @dataset = dataset
@@ -40,6 +42,7 @@ module SmuleAuto
     end
   end
 
+  # Docs for SmuleDB
   class SmuleDB
     DBNAME = 'smule.db'
 
@@ -314,6 +317,7 @@ module SmuleAuto
     end
   end
 
+  # Docs for Main
   class Main < Thor
     include ThorAddition
 

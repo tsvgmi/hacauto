@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 Sequel.migration do
   up do
     create_table :comments do
@@ -5,7 +7,7 @@ Sequel.migration do
       String  :sid, unique: true, null: false
       String  :stitle
       String  :record_by
-      String  :comments, size:1024
+      String  :comments, size: 1024
       Date    :updated_at
     end
   end

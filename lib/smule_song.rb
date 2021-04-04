@@ -10,6 +10,7 @@
 #++
 
 module SmuleAuto
+  # Docs for FirefoxWatch
   class FirefoxWatch
     def initialize(user, tmpdir, csong_file='cursong.yml', options={})
       @user       = user
@@ -52,6 +53,7 @@ module SmuleAuto
     end
   end
 
+  # Docs for SmulePage
   class SmulePage < SelPage
     LOCATORS = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
@@ -119,7 +121,7 @@ module SmuleAuto
       type('textarea#message', text, append: true) # Enter tag
       click_and_wait('input#recording-save')
 
-      toggle_play(true)
+      toggle_play(doplay: true)
     end
 
     def star_song(href)
@@ -139,7 +141,7 @@ module SmuleAuto
     end
 
     # Play or pause song
-    def toggle_play(doplay=true, options={})
+    def toggle_play(doplay: true, href: nil)
       remain = 0
       refresh
 
@@ -164,7 +166,7 @@ module SmuleAuto
             while true
               endtime = css(play_locator)[1]
               if endtime && (endtime.text != '00:00')
-                if options[:href]
+                if href
                   sleep(1)
                   if sleep_round > 2
                     click_smule_page(:sc_play_continue, delay: 0)
@@ -224,7 +226,7 @@ module SmuleAuto
     end
 
     def song_note
-      locator = 'span.sc-jgHCyG.koUJIA'
+      locator = 'span.sc-gTgzIj.dLCNLt'
       if css(locator).empty?
         Plog.error("#{locator} not found (song note)")
         ''
@@ -234,6 +236,7 @@ module SmuleAuto
     end
   end
 
+  # Docs for SmuleSong
   class SmuleSong
     class << self
       def check_and_download(info_file, media_file, user, options={})
@@ -448,8 +451,8 @@ module SmuleAuto
       spinner.auto_spin
 
       spage.goto(href)
-      %w[div.error-gone div.page-error].each do |_acss|
-        next if spage.empty?
+      %w[div.error-gone div.page-error].each do |acss|
+        next if spage.css(acss).empty?
 
         Plog.info('Song is gone')
         spinner.stop('Done!')
@@ -457,7 +460,7 @@ module SmuleAuto
       end
 
       msgs = spage.get_comments
-      spage.toggle_play(true, href: href)
+      spage.toggle_play(doplay: true, href: href)
       spinner.stop('Done!')
 
       # Should pickup for joined file where info was not picked up
@@ -594,10 +597,10 @@ module SmuleAuto
       update_mp4tag(excuser: user)
       sofile
 
-      if @options[:open]
-        _run_command("open -g #{sfile}")
-        sleep(2)
-      end
+      return unless @options[:open]
+
+      _run_command("open -g #{sfile}")
+      sleep(2)
     end
 
     def self.collect_collabs(user, days)

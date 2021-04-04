@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 Sequel.migration do
   up do
     create_table :singers do
       primary_key :id
-      Integer :account_id, unique:true
+      Integer :account_id, unique: true
       String  :name, null: false
       String  :avatar
       String  :following

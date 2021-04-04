@@ -107,6 +107,7 @@ def _record_by_map(record_by)
 end
 
 module SmuleAuto
+  # Docs for ConfigFile
   class ConfigFile
     def initialize(cfile)
       @cfile = cfile
@@ -118,6 +119,7 @@ module SmuleAuto
     end
   end
 
+  # Docs for API
   class API
     def initialize(options={})
       @options = options
@@ -190,6 +192,7 @@ module SmuleAuto
     end
   end
 
+  # Docs for Scanner
   class Scanner
     attr_reader :spage
 
@@ -221,7 +224,7 @@ module SmuleAuto
             stars << sinfo
             if @options[:pause]
               sleep(1)
-              @spage.toggle_play(true)
+              @spage.toggle_play(doplay: true)
               sleep(@options[:pause])
             end
             count -= 1
@@ -252,24 +255,12 @@ module SmuleAuto
     end
   end
 
+  # rubocop:disable Metrics/ClassLength
+  # Docs for Main
   class Main < Thor
     include ThorAddition
 
     no_commands do
-      def _connect_site(site: :smule)
-        if @sconnector
-          do_close = false
-        else
-          @sconnector = SiteConnect.new(site, options)
-          do_close    = true
-        end
-        yield SelPage.new(@sconnector.driver)
-        if do_close
-          @sconnector.close
-          @sconnector = nil
-        end
-      end
-
       def _tdir_check
         if (sdir = options[:song_dir]).nil?
           raise "Target dir #{sdir} not accessible to download music to"
@@ -464,8 +455,10 @@ module SmuleAuto
           finfo[:last_days] = (Time.now - finfo[:last_join]) / (24 * 3600) if finfo[:last_join]
         end
         following.sort_by { |_k, v| v[:last_days] || 9999 }.each do |asinger, finfo|
-          puts format('%-20.20s - %3d songs, %3d favs, %4d days, %s', asinger, finfo[:songs] || 0, finfo[:favs] || 0,
-                      finfo[:last_days] || 9999, finfo[:follower] ? 'follower' : '')
+          puts(format('%<singer>-20.20s - %<songs>3d songs, %<favs>3d favs, %<days>4d days, %<isfollow>s',
+                      singer: asinger, songs: finfo[:songs] || 0,
+                      favs: finfo[:favs] || 0, days: finfo[:last_days] || 9999,
+                      isfollow: finfo[:follower] ? 'follower' : ''))
         end
         true
       end
@@ -723,6 +716,7 @@ module SmuleAuto
       end
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end
 
 SmuleAuto::Main.start(ARGV) if __FILE__ == $PROGRAM_NAME

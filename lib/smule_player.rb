@@ -17,6 +17,7 @@ require 'tty-pager'
 module SmuleAuto
   STATE_FILE = 'splayer.state'
 
+  # Docs for PlayList
   class PlayList
     attr :clist, :filter, :listpos
 
@@ -177,6 +178,7 @@ module SmuleAuto
     end
   end
 
+  # Docs for SmulePlayer
   class SmulePlayer
     def initialize(user, tdir, options={})
       @user       = user
@@ -187,6 +189,7 @@ module SmuleAuto
       @scanner    = Scanner.new(user, @options)
       @sapi       = API.new(options)
       @csong_file = options[:csong_file] || './cursong.yml'
+      @wqueue     = Queue.new
       @playlist   = PlayList.new(File.join(@tdir, STATE_FILE), @content)
       @logger     = options[:logger] || PLogger.new($stderr)
       at_exit do
@@ -199,16 +202,13 @@ module SmuleAuto
 
     def listen_for_download(enable: true)
       dir = '/var/folders/vh'
-      if enable
-        @listener&.stop
-        @listener = FirefoxWatch
-                    .new(@user, dir.strip, 'cursong.yml',
-                         verify: true, open: true, logger: PLogger.new('watcher.log'))
-                    .start
-      elsif @listener
-        @listener.stop
-        @listener = nil
-      end
+      @listener&.stop
+      @listener = if enable
+                    FirefoxWatch
+                      .new(@user, dir.strip, @csong_file,
+                           verify: true, open: true, logger: PLogger.new('watcher.log'))
+                      .start
+                  end
     end
 
     def _list_show(sitem, psitem, cselect, start, limit, clear: true)
@@ -275,6 +275,7 @@ module SmuleAuto
       File.open(@csong_file, 'w') do |fod|
         fod.puts sitem.to_yaml
       end
+      @wqueue << sitem
       psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage)
 
       if psecs == :deleted
@@ -436,7 +437,7 @@ module SmuleAuto
             case hc
             when :pausing
               @paused = !@paused
-              remain  = @scanner.spage.toggle_play(!@paused)
+              remain  = @scanner.spage.toggle_play(doplay: !@paused)
               # This is buggy.  If there is limit on playtime, it would
               # be overritten by this
               endt = Time.now + remain if remain > 0
@@ -457,6 +458,9 @@ module SmuleAuto
       end
     end
 
+    # rubocop:disable Metrics/AbcSize
+    # rubocop:disable Metrics/CyclomaticComplexity
+    # rubocop:disable Metrics/MethodLength
     # Return 2 parameters
     # 1. How to handle: :pausing, :quit, :next
     # 2. Whether to refresh display (display content change)
@@ -558,6 +562,7 @@ module SmuleAuto
         _list_show(nil, nil, @playlist.done_list.reverse, offset.to_i, 10)
         prompt.keypress('Press any key [:countdown]', timeout: 3)
         print TTY::Cursor.clear_screen
+      # rubocop:disable Security/Eval
       when 'R' # Reload script
         _menu_eval do
           begin
@@ -572,6 +577,7 @@ module SmuleAuto
           end
           prompt.keypress('Press any key [:countdown]', timeout: 3)
         end
+      # rubocop:enable Security/Eval
       when 's' # Sort current list
         choices = %w[random play love star date title
                      play.d love.d star.d date.d title.d]
@@ -606,5 +612,8 @@ module SmuleAuto
       end
       [true, true]
     end
+    # rubocop:enable Metrics/AbcSize
+    # rubocop:enable Metrics/CyclomaticComplexity
+    # rubocop:enable Metrics/MethodLength
   end
 end
