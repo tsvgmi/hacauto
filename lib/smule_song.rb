@@ -13,13 +13,13 @@ module SmuleAuto
   # Docs for FirefoxWatch
   class FirefoxWatch
     def initialize(user, tmpdir, csong_file='cursong.yml', options={})
-      @user       = user
-      watch_dir   = `find #{tmpdir} -name 'rust_mozprofile*' 2>/dev/null`
-                    .split("\n").max_by { |d| File.mtime(d) }
-      @watch_dir  = watch_dir
-      @csong_file = csong_file
-      @logger     = options[:logger] || PLogger.new($stderr)
-      @options    = options
+      @user         = user
+      watch_dir     = `find #{tmpdir} -name 'rust_mozprofile*' 2>/dev/null`
+                      .split("\n").max_by { |d| File.mtime(d) }
+      @watch_dir    = watch_dir
+      @csong_source = csong_file
+      @logger       = options[:logger] || PLogger.new($stderr)
+      @options      = options
 
       @logger.info("Watching #{@watch_dir}")
       @logger.dump_info(msg: "Watching #{@watch_dir}")
@@ -29,7 +29,7 @@ module SmuleAuto
       return if added.size <= 0
 
       added.each do |f|
-        SmuleSong.check_and_download(@csong_file, f, @user, @options)
+        SmuleSong.check_and_download(@csong_source, f, @user, @options)
       rescue Errno::ENOENT
         # Ignore this error.  Just glitch b/c I could not see fast
         # enough.  Likely non-mp4 file anyway
@@ -57,15 +57,17 @@ module SmuleAuto
   class SmulePage < SelPage
     LOCATORS = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
+      # sc_comment_close:       ['div.sc-hjWSAi.jEjURK',    0],
       sc_comment_close:       ['div.sc-gsBrbv.dgedbA',    0],
-      sc_comment_open:        ['div.sc-iitrsy',           2],
+      # sc_comment_open:        ['div.sc-iitrs',            2],
+      sc_comment_open:        ['div.sc-hYAvag.jfgTmU',    2],
       sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
       sc_expose_play_control: ['div.sc-pZCuu',            0],
       sc_favorite_toggle:     ['span.sc-ptfmh.gtVEMN',    -1],
       sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
       sc_play_continue:       ['a.sc-hYZPRl.gumLkx',      0],
       sc_play_toggle:         ['div.sc-fiKUUL',           0],
-      # sc_song_menu:           ['button.sc-jbiwVq.dqCLEx', 1],
+      # sc_play_toggle:        ['div.sc-iumJyn',           0],
       sc_song_menu:           ['button.sc-eUWgFQ.hcHFJT', 1],
       sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
     }.freeze
@@ -102,7 +104,7 @@ module SmuleAuto
       click_smule_page(:sc_like, delay: 0)
     end
 
-    def set_song_tag(tag)
+    def add_song_tag(tag)
       if song_note =~ /#{tag}/
         Plog.debug "Message already containing #{tag}"
         return false
@@ -145,7 +147,7 @@ module SmuleAuto
       remain = 0
       refresh
 
-      paths    = css('div.sc-fiKUUL svg path').size
+      paths    = css('div.sc-iumJyn svg path').size
       toggling = true
       if doplay && paths == 2
         Plog.debug('Already playing.  Do nothing')
@@ -206,11 +208,11 @@ module SmuleAuto
       remain
     end
 
-    def get_comments
+    def comment_from_page
       click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
-      # css('div.sc-ksPlPm.fiBdLJ').reverse.each do |acmt|
       css('div.sc-hBmvGb.gugxcI').reverse.each do |acmt|
+        # css('div.sc-iLcRNb.idNCQo').reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..] || []).join(' ')
@@ -239,12 +241,19 @@ module SmuleAuto
   # Docs for SmuleSong
   class SmuleSong
     class << self
-      def check_and_download(info_file, media_file, user, options={})
+      def check_and_download(info_source, media_file, user, options={})
         fsize = File.size(media_file)
         return if fsize < 1_000_000 || `file #{media_file}` !~ /Apple.*Audio/
 
-        sinfo = if info_file.is_a?(Hash)
-                  info_file
+        sinfo = case info_source
+                when Hash
+                  info_source
+                when Queue
+                  cqueue = info_source
+                  entry  = nil
+                  entry = cqueue.pop until cqueue.empty?
+                  Plog.dump(entry: entry)
+                  entry
                 else
                   YAML.safe_load_file(info_file)
                 end
@@ -258,9 +267,9 @@ module SmuleAuto
         sinfo = Performance.first(sid: sid) || Performance.new(sid: sid, href: href)
         song  = SmuleSong.new(sinfo, options)
         result = if url =~ /ensembles$/
-                   song.get_ensemble_asset
+                   song.ensemble_asset_from_page
                  else
-                   [song.get_asset]
+                   [song.asset_from_page]
                  end
         if options[:update]
           result.each do |sdata|
@@ -370,26 +379,32 @@ module SmuleAuto
       output
     end
 
-    def get_ensemble_asset
+    def ensemble_asset_from_page
+      Plog.dump(url: @surl)
       source    = HTTP.follow.get(@surl, ssl_context: @ssl_context).to_s
       asset_str = (source.split("\n").grep(/DataStore.Pages.Duet/)[0] || '')
                   .sub(/^\s+DataStore.Pages.Duet = {/, '{').sub(/;$/, '')
-      res = JSON.parse(asset_str, symbolize_names: true) || {}
-      main_out = _extract_info(res[:recording])
-      outputs  = [main_out]
-      res[:performances][:list].each do |jinfo|
-        collab_out = _extract_info(jinfo).update(
-          psecs:         main_out[:psecs],
-          song_info_url: main_out[:song_info_url],
-          orig_city:     main_out[:orig_city],
-          lyrics:        main_out[:lyrics]
-        )
-        outputs << collab_out
+      outputs   = []
+      begin
+        res = JSON.parse(asset_str, symbolize_names: true) || {}
+        main_out = _extract_info(res[:recording])
+        outputs  << main_out
+        res[:performances][:list].each do |jinfo|
+          collab_out = _extract_info(jinfo).update(
+            psecs:         main_out[:psecs],
+            song_info_url: main_out[:song_info_url],
+            orig_city:     main_out[:orig_city],
+            lyrics:        main_out[:lyrics]
+          )
+          outputs << collab_out
+        end
+      rescue JSON::ParserError => errmsg
+        Plog.dump_error(url:@surl, errmsg:errmsg)
       end
       outputs
     end
 
-    def get_asset
+    def asset_from_page
       olink    = @surl.sub(%r{/ensembles$}, '')
       source   = HTTP.follow.get(olink, ssl_context: @ssl_context).to_s
       document = Nokogiri::HTML(source)
@@ -450,23 +465,31 @@ module SmuleAuto
                                  format: :pulse_2)
       spinner.auto_spin
 
-      spage.goto(href)
-      %w[div.error-gone div.page-error].each do |acss|
-        next if spage.css(acss).empty?
-
-        Plog.info('Song is gone')
-        spinner.stop('Done!')
-        return :deleted
+      10.times do |count|
+        spage.goto(href)
+        unless spage.css('.error-gone').empty?
+          Plog.info('Song is gone')
+          spinner.stop('Done!')
+          return :deleted
+        end
+        # Keep retry if there are server error
+        unless spage.css('.page-error').empty?
+          Plog.info("Page error [#{count}]: #{spage.css('.page-error').text}")
+          sleep(2)
+          redo
+        end
+        break
       end
 
-      msgs = spage.get_comments
+      msgs = spage.comment_from_page
       spage.toggle_play(doplay: true, href: href)
       spinner.stop('Done!')
 
       # Should pickup for joined file where info was not picked up
       # at first
-      asset = get_asset
-      return 0 unless asset
+      if (asset = asset_from_page).nil?
+        return 0
+      end
 
       @info[:other_city] = asset[:other_city] if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s == ''
 
@@ -548,7 +571,7 @@ module SmuleAuto
         command += " --year '#{release}'"
         command += " --comment '#{comment}'"
 
-        lyric = @info[:lyrics] || get_asset[:lyrics]
+        lyric = @info[:lyrics] || asset_from_page[:lyrics]
         if lyric
           tmpf = Tempfile.new('lyric')
           tmpf.puts(lyric)
@@ -616,7 +639,7 @@ module SmuleAuto
       end
       result = []
       progress_set(collab_list, 'Checking collabs') do |sinfo, _bar|
-        result.concat(SmuleSong.new(sinfo, verbose: true).get_ensemble_asset)
+        result.concat(SmuleSong.new(sinfo, verbose: true).ensemble_asset_from_page)
         true
       end
       result

@@ -388,7 +388,7 @@ module SmuleAuto
     option :format, type: :string, default: 'json'
     def edit_tag(user)
       cli_wrap do
-        tdir = _tdir_check(options[:data_dir])
+        tdir = _tdir_check
         # Must call once to init db connection/model
         SmuleDB.instance(user, cdir: tdir)
         records        = SongTag.all
@@ -405,10 +405,10 @@ module SmuleAuto
     end
 
     desc 'edit_singer', 'edit_singer'
-    option :format, type: :string, default: 'json'
+    option :format, type: :string, default: 'yaml'
     def edit_singer(user)
       cli_wrap do
-        tdir = _tdir_check(options[:data_dir])
+        tdir = _tdir_check
         # Must call once to init db connection/model
         SmuleDB.instance(user, cdir: tdir)
         records = Singer.all.sort_by { |r| r[:name] }.map(&:values)

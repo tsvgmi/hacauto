@@ -159,9 +159,9 @@ module SmuleAuto
         when /^random/
           cselect.shuffle
         when /^play/
-          cselect.sort_by { |v| v[:listens] }
+          cselect.sort_by { |v| v[:listens].to_i }
         when /^love/
-          cselect.sort_by { |v| v[:loves] }.reverse
+          cselect.sort_by { |v| v[:loves].to_i }.reverse
         when /^star/
           cselect.sort_by { |v| v[:stars].to_i }.reverse
         when /^date/
@@ -188,7 +188,6 @@ module SmuleAuto
       @tdir       = tdir
       @scanner    = Scanner.new(user, @options)
       @sapi       = API.new(options)
-      @csong_file = options[:csong_file] || './cursong.yml'
       @wqueue     = Queue.new
       @playlist   = PlayList.new(File.join(@tdir, STATE_FILE), @content)
       @logger     = options[:logger] || PLogger.new($stderr)
@@ -203,43 +202,44 @@ module SmuleAuto
     def listen_for_download(enable: true)
       dir = '/var/folders/vh'
       @listener&.stop
+      @wqueue.clear
       @listener = if enable
                     FirefoxWatch
-                      .new(@user, dir.strip, @csong_file,
+                      .new(@user, dir.strip, @wqueue,
                            verify: true, open: true, logger: PLogger.new('watcher.log'))
                       .start
                   end
     end
 
-    def _list_show(sitem, psitem, cselect, start, limit, clear: true)
+    def _list_show(curset:, curitem: nil, psitem: nil, start: 0, limit: 10, clear: true)
       bar    = '*' * 10
       tags   = @content.tags
       table  = TTY::Table.new
       cursor = TTY::Cursor
       print cursor.clear_screen if clear
       print cursor.move_to
-      if sitem
-        unless (avatar = sitem[:avatar]).nil?
+      if curitem
+        unless (avatar = curitem[:avatar]).nil?
           lfile = "cache/#{File.basename(avatar)}"
           system "curl -so #{lfile} #{avatar}" unless test('f', lfile)
           print cursor.move_to(0, 0)
           system "imgcat -r 5 <#{lfile}"
         end
-        ptags = tags[sitem[:stitle]] || ''
-        isfav = sitem[:isfav] || sitem[:oldfav] ? 'F' : ' '
+        ptags = tags[curitem[:stitle]] || ''
+        isfav = curitem[:isfav] || curitem[:oldfav] ? 'F' : ' '
         box   = TTY::Box.frame(top: 0, left: 15,
                 width: TTY::Screen.width - 20,
                 height: 5) do
           <<~EOM
-            [#{isfav}] #{sitem[:title]} - #{sitem[:created].strftime('%Y-%m-%d')} - #{bar[1..sitem[:stars].to_i]}
-                #{sitem[:record_by]} - #{sitem[:listens]} plays, #{sitem[:loves]} loves - #{ptags[0..9]}
+            [#{isfav}] #{curitem[:title]} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
+                #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags[0..9]}
             #{(psitem || {})[:snote]}
           EOM
         end
         puts box
       end
       start.upto(start + limit - 1) do |i|
-        witem = cselect[i]
+        witem = curset[i]
         next unless witem
 
         ptags = tags[witem[:stitle]] || ''
@@ -272,18 +272,19 @@ module SmuleAuto
     def play_asong(sitem)
       res = {duration: 0}
 
-      File.open(@csong_file, 'w') do |fod|
-        fod.puts sitem.to_yaml
-      end
+      Plog.dump(sitem: sitem)
       @wqueue << sitem
       psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage)
 
       if psecs == :deleted
         @content.delete_song(sitem)
         return res
-      elsif psecs <= 0
+      elsif psecs == :error
         return res
       end
+      psecs = psecs.to_i
+      return res if psecs <= 0
+
       duration = if (plength = @roptions[:play_length]).nil?
                    psecs
                  else
@@ -395,7 +396,7 @@ module SmuleAuto
         if (sitem = @playlist.next_song).nil?
           endt = Time.now + 1
         else
-          _list_show(sitem, nil, @playlist.toplay_list, 0, 10)
+          _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
           if (duration = psitem[:duration]) <= 0
             next
@@ -414,11 +415,12 @@ module SmuleAuto
           begin
             if sitem && !@paused
               if refresh
-                _list_show(sitem, psitem, @playlist.toplay_list, 0, 10, clear: false)
+                _list_show(curset: @playlist.toplay_list,
+                           clear: false, curitem: sitem, psitem: psitem)
                 _show_msgs(sitem, psitem)
                 if (sitem[:isfav] || sitem[:oldfav]) && (sitem[:record_by] =~ /^THV_13,/)
                   _menu_eval do
-                    @scanner.spage.set_song_tag('#thvfavs')
+                    @scanner.spage.add_song_tag('#thvfavs')
                   end
                 end
               end
@@ -516,7 +518,7 @@ module SmuleAuto
       when 'F' # Set as favorite and tag
         _menu_eval do
           _set_favorite(sitem)
-          @scanner.spage.set_song_tag('#thvfavs')
+          @scanner.spage.add_song_tag('#thvfavs')
         end
 
       when 'h'
@@ -536,7 +538,7 @@ module SmuleAuto
         offset      = 10
         toplay_list = @playlist.toplay_list
         while offset < toplay_list.size
-          _list_show(nil, nil, toplay_list, offset, 10)
+          _list_show(curset: toplay_list, start: offset)
           key = prompt.keypress('Press any key to continue ...')
           break if key == 'q'
 
@@ -559,7 +561,7 @@ module SmuleAuto
         return [:next, true]
       when /p/i                           # List history
         offset = key == 'P' ? prompt.ask('Prev track offset?').to_i : 0
-        _list_show(nil, nil, @playlist.done_list.reverse, offset.to_i, 10)
+        _list_show(curset: @playlist.done_list.reverse, start: offset.to_i)
         prompt.keypress('Press any key [:countdown]', timeout: 3)
         print TTY::Cursor.clear_screen
       # rubocop:disable Security/Eval
@@ -573,7 +575,7 @@ module SmuleAuto
               end
             end
           rescue StandardError => e
-            p e
+            Plog.dump_error(e:e)
           end
           prompt.keypress('Press any key [:countdown]', timeout: 3)
         end
@@ -585,7 +587,7 @@ module SmuleAuto
         @playlist.order = prompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
-          perfset   = @sapi.get_performances(@user, limit: 50, days: 1)
+          perfset   = @sapi.get_performances(@user, limit: 500, days: 2)
           new_count = @content.add_new_songs(perfset, isfav: false)
           perfset   = SmuleSong.collect_collabs(@user, 10)
           new_count += @content.add_new_songs(perfset, isfav: false)

@@ -135,6 +135,7 @@ module SmuleAuto
                                        total: 100)
       catch(:done) do
         loop do
+          p offset
           ourl = "#{url}?offset=#{offset}"
           bar.log(ourl) if @options[:verbose]
           output = curl(ourl)
@@ -142,7 +143,13 @@ module SmuleAuto
             sleep 2
             next
           end
-          result = JSON.parse(output)
+          begin
+            result = JSON.parse(output)
+          rescue JSON::ParserError => errmsg
+            p errmsg
+            sleep 2
+            next
+          end
           slist  = result['list']
           slist.each do |info|
             record_by = [info.dig('owner', 'handle')]
@@ -242,7 +249,7 @@ module SmuleAuto
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.toggle_song_favorite(fav: false)
-        @spage.set_song_tag('#thvfavs') if marking
+        @spage.add_song_tag('#thvfavs') if marking
         @logger.dump_info(msg: 'Unfav', stitle: asong[:stitle],
                           record_by: asong[:record_by])
       end
@@ -270,6 +277,8 @@ module SmuleAuto
 
         ddir = options[:data_dir]
         raise "Target dir #{ddir} not accessible to keep database in" unless test('d', ddir)
+
+        ddir
       end
 
       def _collect_songs(user, content)
@@ -601,10 +610,15 @@ module SmuleAuto
 
         Plog.dump(wset: wset)
         topen = {}
-        wset.all.each do |r|
-          next if opened[r[:stitle]]
+        begin
+          wset.all.each do |r|
+            next if opened[r[:stitle]]
 
-          topen[r[:stitle]] = [r[:created], r[:tags]]
+            topen[r[:stitle]] = [r[:created], r[:tags]]
+          end
+        rescue => e
+          Plog.error(e)
+          return false
         end
         table = []
         topen.sort_by { |_k, v| v[0] }.each do |name, sinfo|

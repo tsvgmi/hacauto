@@ -8,6 +8,7 @@
 #---------------------------------------------------------------------------
 #++
 
+# A laod file with more options
 module YAML
   def self.safe_load_file(file, options={})
     options[:filename] = file
@@ -15,6 +16,7 @@ module YAML
   end
 end
 
+# Thor Extension
 module ThorAddition
   def self.included(klass)
     klass.class_eval do
@@ -26,13 +28,16 @@ module ThorAddition
 
   def cli_wrap
     if ENV['BYEBUG']
-      say_status Time.now, "#{File.basename(__FILE__)}:#{__LINE__} " + 'Entering debug mode', :yellow
+      say_status(Time.now, "#{File.basename(__FILE__)}:#{__LINE__} Entering debug mode", :yellow)
       ENV.delete('BYEBUG')
       require 'byebug'
       byebug
     end
     Signal.trap('SIGINT')  { exit(1) }
-    Signal.trap('SIGQUIT') { Elog.info 'Quitting from signal.'; exit(0) }
+    Signal.trap('SIGQUIT') do
+      Elog.info('Quitting from signal.')
+      exit(0)
+    end
 
     @logger = if options[:logfile]
                 PLogger.new(value)
@@ -42,9 +47,9 @@ module ThorAddition
 
     result = yield
 
-    return(1) if result.is_a?(FalseClass)
-
     case result
+    when FalseClass
+      return(1)
     when TrueClass
       return(0)
     when String
@@ -52,7 +57,6 @@ module ThorAddition
     else
       puts result.inspect
     end
-
     0
   end
 
@@ -63,8 +67,9 @@ end
 
 def progress_set(wset, title=nil)
   title ||= caller[0].split.last.gsub(/['"`]/, '')
-  tstring = '%-16.16s [:bar] :percent' % title
+  tstring = format('%<title>-16.16s [:bar] :percent', title: title)
   bar     = TTY::ProgressBar.new(tstring, total: wset.size)
+  Plog.dump(set:wset)
   wset.each do |entry|
     break unless yield entry, bar
 
@@ -75,12 +80,12 @@ end
 # Functions to support CLI interaction (i.e. options processing,
 # help, result interpretation, exit handling)
 module Cli
-  def setOptions(opt)
+  def set_options(opt)
     @options ||= {}
     @options.merge!(opt)
   end
 
-  def getOption(name=nil)
+  def get_option(name=nil)
     @options ||= {}
     name ? @options[name] : @options
   end
@@ -108,15 +113,15 @@ module Cli
   #   the result and object (for instance invocation).
   # * Otherwise, a default handling of the result is done (i.e.
   #   printing of output and set exit cod)
-  def handleCli(*optset)
+  def handle_cli(*optset)
     imethods = instance_methods(false)
     optset << ['--class', '-c'] unless imethods.empty?
-    @cliOptions = optset
-    opt = Cli.parseOptions(*optset)
-    setOptions(opt)
+    @cli_options = optset
+    opt = Cli.parse_options(*optset)
+    set_options(opt)
     obj = nil
     if opt[:class] || (imethods.size <= 0)
-      !ARGV.empty? || cliUsage
+      !ARGV.empty? || cli_usage
       method = ARGV.shift.gsub(/-/, '_')
       result = send(method, *ARGV)
     elsif block_given?
@@ -124,79 +129,38 @@ module Cli
     # Class handle CLI instantiation?
     elsif respond_to?(:cliNew)
       # ARGV could change during cliNew, so we check both places
-      !ARGV.empty? || cliUsage
+      !ARGV.empty? || cli_usage
       obj = cliNew
-      !ARGV.empty? || cliUsage
+      !ARGV.empty? || cli_usage
       method = ARGV.shift.gsub(/-/, '_')
       result = obj.send(method, *ARGV)
     else
-      !ARGV.empty? || cliUsage
+      !ARGV.empty? || cli_usage
       obj    = new(ARGV.shift)
       method = ARGV.shift.gsub(/-/, '_')
       result = obj.send(method, *ARGV)
     end
 
     # Class handle result?
-    if respond_to?(:cliResult)
-      cliResult(result, obj)
+    if respond_to?(:cli_result)
+      cli_result(result, obj)
     else
-      Cli.set_shell_result(result)
+      Cli.shell_result = result
     end
   end
 
   # Print the message on cli usage (flag/method) and exit script
-  def cliUsage
-    warn "#{File.basename($PROGRAM_NAME)} " +
-         Cli.show_options(@cliOptions).join(' ') + ' [object] method ...'
+  def cli_usage
+    warn "#{File.basename($PROGRAM_NAME)} #{Cli.show_options(@cli_options).join(' ')} [object] method ...'
     Cli.class_usage(self)
   end
 
   # Print a prompt and wait for y/n answer
   def self.confirm(prompt, default='n')
-    $stderr.print "#{prompt} (y/n) [n]? "
+    $stderr.print " # {prompt} (y/n) [n]? "
     ans = $stdin.gets
     ans = default if !ans || (ans == '')
     ans =~ /[Yy]/ ? true : false
-  end
-
-  # Print a prompt and get back a string
-  def self.getInput(prompt, default='')
-    $stderr.print "#{prompt} [#{default}]: "
-    result = $stdin.gets
-    result != "\n" ? result.chomp : default
-  end
-
-  # Get user input from a specification template.  Template is a
-  # list of tuple: type, flag, prompt, default value.
-  # type:: u|l|D = convert to uppercase, lowercase, mysql date format
-  # flag:: R = required
-  def self.getInputTemplate(*template)
-    maxprlen = 0
-    maxdeflen = 0
-    template.each do |alist|
-      _type, _flag, prompt, defval = alist
-      maxprlen  = prompt.length if maxprlen < prompt.length
-      maxdeflen = defval.length if maxdeflen < defval.length
-    end
-    result = []
-    template.each do |alist|
-      type, flag, prompt, defval = alist
-      print format("%#{maxprlen}s [%#{maxdeflen}s]: ", prompt, defval)
-      answer = $stdin.gets.strip
-      answer = defval if defval && (answer == '')
-      case type
-      when 'l'
-        answer = answer.downcase
-      when 'u'
-        answer = answer.upcase
-      when 'D'
-        answer = answer.mysqlDate
-      end
-      return [] if (flag =~ /R/) && (answer == '')
-
-      result << answer
-    end
-    result
   end
 
   # Print a message and just wait till user press enter
@@ -285,23 +249,8 @@ module Cli
     warn ''
   end
 
-  def self.shellResult
-    if ENV['LOG_LEVEL'] && (ENV['LOG_LEVEL'] > '0')
-      begin
-        result = yield
-        set_shell_result(result)
-      rescue StandardError => e
-        warn "+ #{$PROGRAM_NAME}: #{e}"
-        exit 1
-      end
-    else
-      result = yield
-      set_shell_result(result)
-    end
-  end
-
   # Map output to shell (at exit) for ruby class output
-  def self.set_shell_result(result)
+  def self.shell_result=(result)
     case result
     when TrueClass
       exit(0)
@@ -331,7 +280,7 @@ module Cli
   # the runtime configuration
   #
   # options is a list of tuple: long name, short name, type, default
-  def self.parseOptions(*options)
+  def self.parse_options(*options)
     require 'getoptlong'
 
     option = {}
@@ -352,12 +301,13 @@ module Cli
       end
     rescue StandardError => e
       puts e
-      puts "#{File.basename($PROGRAM_NAME)} " + show_options(options).join(' ') + '...'
+      puts "#{File.basename($PROGRAM_NAME)} #{show_options(options).join(' ')} ...."
     end
     option
   end
 end
 
+# Pf definition
 module Pf
   def self.hostaddr(name)
     require 'socket'
@@ -394,37 +344,9 @@ module Pf
     Plog.debug("+ #{command}")
     Kernel.exec(command)
   end
-
-  # Run command as root (via sudo)
-  def self.suRun(command, trace=0)
-    if Process.uid == 0
-      Pf.system(command, trace)
-    else
-      Pf.system("sudo #{command}", trace)
-    end
-  end
 end
 
-# Extension to normal File class
-class File
-  # Equivalent perl method to check if file is text only
-  def self.isText?(file, bsize=256)
-    return true if File.extname(file) =~ /\.(java|c|h|m)/
-    return false if File.size(file) == 0
-
-    text = true
-    File.open(file) do |fid|
-      fid.read(bsize).each_byte do |abyte|
-        if (abyte < 9) || (abyte > 0x7e)
-          text = false
-          break
-        end
-      end
-    end
-    text
-  end
-end
-
+# Kernel extension
 module Kernel
   #--------------------------------------------------------- def: hostname
   # Purpose  :
@@ -460,8 +382,9 @@ module Kernel
 end
 
 require 'logger'
+# PLogger handling
 class PLogger < Logger
-  FORMAT2 = "%s %s - [%s] %s\n"
+  FORMAT2 = "%<sev>s %<time>s - [%<script>s] %<msg>s\n"
   attr_accessor :simple, :clevel
 
   def initialize(*args)
@@ -475,11 +398,14 @@ class PLogger < Logger
     # Look like this changes from diff versions.  So we need to detect
     script = caller[@slevel + @clevel].sub(/:in .*$/, '').sub(%r{^.*/}, '')
     if @simple
-      format("%s - [%s] %s\n", severity[0..0], script, msg)
+      format("%<sev>s - [%<script>s] %<msg>s\n",
+             sev: severity[0..0], script: script, msg: msg)
     elsif timestamp.respond_to?(:strftime)
-      format(FORMAT2, severity[0..0], timestamp.strftime('%y/%m/%d %T'), script, msg)
+      format(FORMAT2, sev: severity[0..0], time: timestamp.strftime('%y/%m/%d %T'),
+             script: script, msg: msg)
     else
-      format(FORMAT2, severity[0..0], timestamp, script, progname)
+      format(FORMAT2, sev: severity[0..0], time: timestamp,
+             script: script, msg: progname)
     end
   end
 
@@ -508,25 +434,23 @@ class PLogger < Logger
   end
 end
 
+# --- Class: Plog
+#     Singleton class for application based global log
 class Plog
-  # --- Class: Plog
-  #     Singleton class for application based global log
-  @@xglog        = nil
-  @@timestampFmt = '%Y-%m-%d %H:%M:%S'
-  @@dotrace      = false
+  TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S'
   class << self
     private
 
-    def myLogs
+    def my_logs
       # Beside singleton imp,  this is also done to defer log creation
       # to absolute needed to allow application to control addition
       # logger setting
-      @@xglog ||= setLogger
+      @my_logs ||= set_logger
     end
 
     public
 
-    def setLogger
+    def set_logger
       logspec = (ENV['LOG_LEVEL'] || '')
       logger = if logspec =~ /:f/
                  PLogger.new(Regexp.last_match.post_match.sub(/:.*$/, ''))
@@ -547,8 +471,8 @@ class Plog
                      else
                        Logger::INFO
                      end
-      logger.datetime_format = @@timestampFmt
-      @@xglog = logger
+      logger.datetime_format = TIMESTAMP_FMT
+      @my_logs = logger
     end
 
     def _fmt_obj(obj)
@@ -558,51 +482,58 @@ class Plog
         else
           obj.inspect
         end
-      myLogs.clevel = 3
+      my_logs.clevel = 3
       yield msg
-      myLogs.clevel = 0
+      my_logs.clevel = 0
     end
 
     def dump_info(obj)
-      _fmt_obj(obj) { |msg| myLogs.info(msg) }
+      _fmt_obj(obj) { |msg| my_logs.info(msg) }
     end
 
     def dump_error(obj)
-      _fmt_obj(obj) { |msg| myLogs.error(msg) }
+      _fmt_obj(obj) { |msg| my_logs.error(msg) }
     end
 
     def dump(obj)
-      _fmt_obj(obj) { |msg| myLogs.debug(msg) }
+      _fmt_obj(obj) { |msg| my_logs.debug(msg) }
     end
 
     def method_missing(symbol, *args)
-      myLogs.clevel = 1
-      result = myLogs.send(symbol, *args)
-      myLogs.clevel = 0
+      my_logs.clevel = 1
+      result = my_logs.send(symbol, *args)
+      my_logs.clevel = 0
       result
+    end
+
+    def respond_to_missing?(_method_name, _include_private=false)
+      true
     end
   end
 end
 
 # Singleton class for application writing to syslog
 class Psyslog
-  @@glog = nil
   class << self
     private
 
-    def myLog
-      unless @@glog
+    def my_log
+      unless @glog
         require 'syslog'
 
-        @@glog = Syslog
-        @@glog.open(File.basename($PROGRAM_NAME), Syslog::LOG_PID | Syslog::LOG_CONS,
-                    Syslog::LOG_DAEMON)
+        @glog = Syslog
+        @glog.open(File.basename($PROGRAM_NAME), Syslog::LOG_PID | Syslog::LOG_CONS,
+                   Syslog::LOG_DAEMON)
       end
-      @@glog
+      @glog
     end
 
     def method_missing(symbol, *args)
-      myLog.send(symbol, *args)
+      my_log.send(symbol, *args)
+    end
+
+    def respond_to_missing?(_method, _include_private=false)
+      true
     end
   end
 end
