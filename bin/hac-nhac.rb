@@ -8,6 +8,7 @@
 #---------------------------------------------------------------------------
 #++
 # nhac.vn source
+# Docs for class MusicSource
 class MusicSource
   include HtmlRes
 
@@ -67,6 +68,7 @@ class MusicSource
   end
 end
 
+# Docs for module ChordMerger
 module ChordMerger
   def _pick_chords(line)
     chords  = []
@@ -139,6 +141,7 @@ module ChordMerger
   end
 end
 
+# Docs for class GuitarTwitt < MusicSource
 class GuitarTwitt < MusicSource
   # WIP:  Not parseable?
   def lyric_info(url)
@@ -168,11 +171,12 @@ class GuitarTwitt < MusicSource
   end
 end
 
+# Docs for class ChordsWorld < MusicSource
 class ChordsWorld < MusicSource
   include ChordMerger
 
-  def detect_and_clean_chord_line(l)
-    words = l.split
+  def detect_and_clean_chord_line(line)
+    words = line.split
     cline = true
     words.each do |w|
       if w !~ %r{^\[?[-A-G][Mmb#ajdimsu0-9]*(/[A-Gb#]*)?\]?$}o
@@ -181,7 +185,7 @@ class ChordsWorld < MusicSource
       end
     end
     cline = false if words.size <= 0
-    [l, cline]
+    [line, cline]
   end
 
   def lyric_info(url)
@@ -206,16 +210,17 @@ class ChordsWorld < MusicSource
   end
 end
 
+# Docs for class TabGuitarSource < MusicSource
 class TabGuitarSource < MusicSource
   include ChordMerger
 
-  def detect_and_clean_chord_line(l)
-    if l.include?('[ch]')
-      l = l.gsub(%r{\[/?ch\]}, '')
+  def detect_and_clean_chord_line(line)
+    if line.include?('[ch]')
+      line = line.gsub(%r{\[/?ch\]}, '')
       cline = true
     else
       cline = true
-      words = l.split
+      words = line.split
       words.each do |w|
         if w !~ %r{^\[?[-A-G][Mmb#ajdimsu0-9]*(/[A-Gb#]*)?\]?$}o
           cline = false
@@ -224,7 +229,7 @@ class TabGuitarSource < MusicSource
       end
       cline = false if words.size <= 0
     end
-    [l, cline]
+    [line, cline]
   end
 
   def lyric_info(url)
@@ -246,6 +251,7 @@ class TabGuitarSource < MusicSource
   end
 end
 
+# Docs for class NhacSource < MusicSource
 class NhacSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
@@ -263,69 +269,72 @@ class NhacSource < MusicSource
   end
 
   def song_list(url, options={})
-    page  = get_page(url)
-    limit = (options[:limit] || 9999).to_i
-    case url
-    when %r{^https://nhac.vn/?$}
-      page.css('.info_song_home')[0..limit - 1].map do |atrack|
-        {
-          name: atrack.css('.name a')[0].text.strip,
-          href: atrack.css('.name a')[0]['href'],
-          artist: atrack.css('.singer a')[0].text.strip,
-        }
-      end
-    else
-      page.css('.item-in-list .h4-song-item')[0..limit - 1]
-          .map do |atrack|
-        tlinks = atrack.css('a')
-        info = {
-          name:   tlinks[0].text.strip,
-                  href:   tlinks[0]['href'],
-                  artist: tlinks[1].text.strip,
-        }
-        info
-      end.uniq { |e| e[:href] }
-    end
+    page   = get_page(url)
+    limit  = (options[:limit] || 9999).to_i
+    result = case url
+             when %r{^https://nhac.vn/?$}
+               page.css('.info_song_home')[0..limit - 1].map do |atrack|
+                 {
+                   name: atrack.css('.name a')[0].text.strip,
+                   href: atrack.css('.name a')[0]['href'],
+                   artist: atrack.css('.singer a')[0].text.strip,
+                 }
+               end
+             else
+               page.css('.item-in-list .h4-song-item')[0..limit - 1]
+                   .map do |atrack|
+                 tlinks = atrack.css('a')
+                 info = {
+                   name:   tlinks[0].text.strip,
+                           href:   tlinks[0]['href'],
+                           artist: tlinks[1].text.strip,
+                 }
+                 info
+               end
+             end
+    result.uniq { |e| e[:href] }
   end
 
   def browser_song_list(spage, url, options={})
     spage.goto(url)
     limit = (options[:limit] || 9999).to_i
     page  = spage.page
-    case url
-    when %r{^https://nhac.vn/?$}
-      page.css('.info_song_home')[0..limit - 1].map do |atrack|
-        {
-          name: atrack.css('.name a')[0].text.strip,
-          href: atrack.css('.name a')[0]['href'],
-          artist: atrack.css('.singer a')[0].text.strip,
-        }
-      end
-    when %r{/album/}
-      page.css('.items .present')[0..limit - 1]
-          .map do |atrack|
-        info = {
-          name:   atrack.css('a')[0].text.strip,
-          href:   atrack.css('a')[0]['href'],
-          artist: atrack.css('.artist').text.strip,
-        }
-        info
-      end
-    else
-      page.css('.item-in-list .h4-song-item')[0..limit - 1]
-          .map do |atrack|
-        tlinks = atrack.css('a')
-        info = {
-          name:   tlinks[0].text.strip,
-                  href:   tlinks[0]['href'],
-                  artist: tlinks[1].text.strip,
-        }
-        info
-      end.uniq { |e| e[:href] }
-    end
+    result = case url
+             when %r{^https://nhac.vn/?$}
+               page.css('.info_song_home')[0..limit - 1].map do |atrack|
+                 {
+                   name: atrack.css('.name a')[0].text.strip,
+                   href: atrack.css('.name a')[0]['href'],
+                   artist: atrack.css('.singer a')[0].text.strip,
+                 }
+               end
+             when %r{/album/}
+               page.css('.items .present')[0..limit - 1]
+                   .map do |atrack|
+                 info = {
+                   name:   atrack.css('a')[0].text.strip,
+                   href:   atrack.css('a')[0]['href'],
+                   artist: atrack.css('.artist').text.strip,
+                 }
+                 info
+               end
+             else
+               page.css('.item-in-list .h4-song-item')[0..limit - 1]
+                   .map do |atrack|
+                 tlinks = atrack.css('a')
+                 info = {
+                   name:   tlinks[0].text.strip,
+                           href:   tlinks[0]['href'],
+                           artist: tlinks[1].text.strip,
+                 }
+                 info
+               end
+             end
+    result.uniq { |e| e[:href] }
   end
 end
 
+# Docs for class KeengSource < MusicSource
 class KeengSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
@@ -380,6 +389,7 @@ class KeengSource < MusicSource
 end
 
 # hopamviet
+# Docs for class HavSource < MusicSource
 class HavSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
@@ -508,6 +518,7 @@ class HavSource < MusicSource
 end
 
 # hopamhay
+# Docs for class HahSource < MusicSource
 class HahSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
@@ -575,7 +586,7 @@ class HahSource < MusicSource
   end
 end
 
-# nhaccuatui
+# Docs for class NctSource < MusicSource
 class NctSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
@@ -658,6 +669,7 @@ class NctSource < MusicSource
   end
 end
 
+# Docs for class ZingSource < MusicSource
 class ZingSource < MusicSource
   def lyric_info(url)
     Plog.info("Extract lyrics from #{url}")
@@ -788,6 +800,7 @@ class ZingSource < MusicSource
   end
 end
 
+# Docs for class SpotifySource < MusicSource
 class SpotifySource < MusicSource
   def song_list(url, _options={})
     page   = get_page(url)
@@ -806,6 +819,7 @@ class SpotifySource < MusicSource
   end
 end
 
+# Docs for class HacSource < MusicSource
 class HacSource < MusicSource
   attr_reader :base_url
 

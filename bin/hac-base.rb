@@ -8,6 +8,7 @@
 #---------------------------------------------------------------------------
 #++
 
+# Docs for module HtmlRes
 module HtmlRes
   KEY_POS = %w[A A#|Bb B C C#|Db D D#|Eb E F F#|Gb G G#|Ab].freeze
   # Attach play note to the like star
@@ -27,6 +28,7 @@ module HtmlRes
   end
 end
 
+# Docs for class ClickLog
 class ClickLog
   def initialize(auser)
     @kmap    = {}

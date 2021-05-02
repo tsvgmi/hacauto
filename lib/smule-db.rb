@@ -46,7 +46,7 @@ module SmuleAuto
   class SmuleDB
     DBNAME = 'smule.db'
 
-    attr_reader :content, :singers
+    attr_reader :content, :singers, :db
 
     def self.instance(user, cdir: '.')
       @instance ||= SmuleDB.new(user, cdir: cdir)
@@ -135,7 +135,7 @@ module SmuleAuto
       filters = options[:filter].split('/').map { |r| "(#{r})" }.join(' OR ')
       recs = @content.order(:record_by, :created)
       recs = recs.where(Sequel.lit(filters)) unless filters.empty?
-      Plog.dump_info(recs: recs, options: options, rcount: recs.count)
+      Plog.dump(recs: recs, options: options, rcount: recs.count)
       progress_set(recs) do |r, _bar|
         yield r[:sid], r
         true
@@ -388,7 +388,7 @@ module SmuleAuto
     option :format, type: :string, default: 'json'
     def edit_tag(user)
       cli_wrap do
-        tdir = _tdir_check(options[:data_dir])
+        tdir = _tdir_check
         # Must call once to init db connection/model
         SmuleDB.instance(user, cdir: tdir)
         records        = SongTag.all
@@ -405,10 +405,10 @@ module SmuleAuto
     end
 
     desc 'edit_singer', 'edit_singer'
-    option :format, type: :string, default: 'json'
+    option :format, type: :string, default: 'yaml'
     def edit_singer(user)
       cli_wrap do
-        tdir = _tdir_check(options[:data_dir])
+        tdir = _tdir_check
         # Must call once to init db connection/model
         SmuleDB.instance(user, cdir: tdir)
         records = Singer.all.sort_by { |r| r[:name] }.map(&:values)

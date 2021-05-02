@@ -26,6 +26,9 @@ Metrics/AbcSize:
 Metrics/BlockLength:
   Max: 100
 
+Metrics/BlockNesting:
+  Max: 5
+
 Metrics/ClassLength:
   Max: 400
 
@@ -34,6 +37,9 @@ Metrics/CyclomaticComplexity:
 
 Metrics/ModuleLength:
   Max: 200
+
+Metrics/ParameterLists:
+  Max: 10
 
 Metrics/PerceivedComplexity:
   Max: 40
