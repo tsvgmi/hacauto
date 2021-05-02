@@ -135,7 +135,6 @@ module SmuleAuto
                                        total: 100)
       catch(:done) do
         loop do
-          p offset
           ourl = "#{url}?offset=#{offset}"
           bar.log(ourl) if @options[:verbose]
           output = curl(ourl)
@@ -145,12 +144,12 @@ module SmuleAuto
           end
           begin
             result = JSON.parse(output)
-          rescue JSON::ParserError => errmsg
-            p errmsg
+          rescue JSON::ParserError => e
+            Plog.error(e)
             sleep 2
             next
           end
-          slist  = result['list']
+          slist = result['list']
           slist.each do |info|
             record_by = [info.dig('owner', 'handle')]
             info['other_performers'].each do |rinfo|
@@ -196,6 +195,17 @@ module SmuleAuto
       @logger.info("Getting favorites for #{user}")
       options = {limit: 10_000, days: 365 * 10}
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
+    end
+
+    def get_user_group(user, agroup)
+      JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))['list']
+          .map do |r|
+        {
+          name:       r['handle'],
+          avatar:     r['pic_url'],
+          account_id: r['account_id'],
+        }
+      end
     end
   end
 
@@ -249,7 +259,7 @@ module SmuleAuto
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.toggle_song_favorite(fav: false)
-        @spage.add_song_tag('#thvfavs') if marking
+        @spage.add_song_tag('#thvfavs', asong) if marking
         @logger.dump_info(msg: 'Unfav', stitle: asong[:stitle],
                           record_by: asong[:record_by])
       end
@@ -357,19 +367,12 @@ module SmuleAuto
     def scan_follows(user)
       cli_wrap do
         _tdir_check
-        fset = []
-        %w[following followers].each do |agroup|
-          users = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))
-          users = users['list'].map do |r|
-            {
-              name:       r['handle'],
-              avatar:     r['pic_url'],
-              account_id: r['account_id'],
-            }
-          end
-          fset << users
+        api  = API.new
+        fset = %w[following followers].map do |agroup|
+          api.get_user_group(user, agroup)
         end
-        SmuleDB.instance(user, cdir: options[:data_dir]).set_follows(fset[0], fset[1])
+        SmuleDB.instance(user, cdir: options[:data_dir])
+               .set_follows(fset[0], fset[1])
         true
       end
     end
@@ -616,7 +619,7 @@ module SmuleAuto
 
             topen[r[:stitle]] = [r[:created], r[:tags]]
           end
-        rescue => e
+        rescue StandardError => e
           Plog.error(e)
           return false
         end
@@ -643,6 +646,7 @@ module SmuleAuto
                          .select { |_c, m| m && !m.empty? }
           next if comments.empty?
 
+          p sinfo
           puts format("\n%<title>-60.60s %<record>20.20s %<created>s",
                       title: sinfo[:stitle], record: sinfo[:record_by],
                       created: sinfo[:created])
@@ -727,6 +731,24 @@ module SmuleAuto
         end
         FirefoxWatch.new(user, dir, csong_file, woptions).start
         sleep
+      end
+    end
+
+    desc 'tag_favs(user)', 'tag_favs'
+    def tag_favs(user)
+      cli_wrap do
+        _tdir_check
+        content = SmuleDB.instance(user, cdir: options[:data_dir])
+        filter  = "record_by like '#{user},%' and (isfav=1 or oldfav=1)"
+        scanner = Scanner.new(user, options)
+        content.each(filter: filter) do |_sid, sinfo|
+          next unless sinfo[:record_by].start_with?(user)
+
+          href = sinfo[:href].sub(%r{/ensembles$}, '')
+          scanner.spage.goto(href, 3)
+          scanner.spage.add_song_tag('#thvfavs', sinfo)
+        end
+        true
       end
     end
   end

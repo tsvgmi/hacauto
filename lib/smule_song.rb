@@ -34,7 +34,7 @@ module SmuleAuto
         # Ignore this error.  Just glitch b/c I could not see fast
         # enough.  Likely non-mp4 file anyway
       rescue StandardError => e
-        p e
+        Plog.error(e)
       end
     end
 
@@ -57,9 +57,7 @@ module SmuleAuto
   class SmulePage < SelPage
     LOCATORS = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
-      # sc_comment_close:       ['div.sc-hjWSAi.jEjURK',    0],
       sc_comment_close:       ['div.sc-gsBrbv.dgedbA',    0],
-      # sc_comment_open:        ['div.sc-iitrs',            2],
       sc_comment_open:        ['div.sc-hYAvag.jfgTmU',    2],
       sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
       sc_expose_play_control: ['div.sc-pZCuu',            0],
@@ -67,7 +65,6 @@ module SmuleAuto
       sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
       sc_play_continue:       ['a.sc-hYZPRl.gumLkx',      0],
       sc_play_toggle:         ['div.sc-fiKUUL',           0],
-      # sc_play_toggle:        ['div.sc-iumJyn',           0],
       sc_song_menu:           ['button.sc-eUWgFQ.hcHFJT', 1],
       sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
     }.freeze
@@ -104,13 +101,14 @@ module SmuleAuto
       click_smule_page(:sc_like, delay: 0)
     end
 
-    def add_song_tag(tag)
-      if song_note =~ /#{tag}/
+    def add_song_tag(tag, sinfo=nil, _options={})
+      otag = tag
+      tag += sinfo[:created].strftime('_%y') if sinfo
+      snote = song_note
+      if snote =~ /#{tag}/
         Plog.debug "Message already containing #{tag}"
         return false
       end
-      text = " #{tag}"
-
       click_smule_page(:sc_song_menu)
       locator = 'span.sc-gTgzIj.brYKCX'
       if page.css(locator).text !~ /Edit performance/
@@ -120,10 +118,10 @@ module SmuleAuto
       cpos = (find_elements(:css, locator).size + 1) / 2
       click_and_wait(locator, 1, cpos)
 
-      type('textarea#message', text, append: true) # Enter tag
+      text = snote.strip.gsub(/ #{otag}/, '').gsub(/ #{tag}/, '') + " #{tag}"
+      type('textarea#message', text, append: false) # Enter tag
+      Plog.info("Setting note to #{text}")
       click_and_wait('input#recording-save')
-
-      toggle_play(doplay: true)
     end
 
     def star_song(href)
@@ -388,7 +386,7 @@ module SmuleAuto
       begin
         res = JSON.parse(asset_str, symbolize_names: true) || {}
         main_out = _extract_info(res[:recording])
-        outputs  << main_out
+        outputs << main_out
         res[:performances][:list].each do |jinfo|
           collab_out = _extract_info(jinfo).update(
             psecs:         main_out[:psecs],
@@ -398,8 +396,8 @@ module SmuleAuto
           )
           outputs << collab_out
         end
-      rescue JSON::ParserError => errmsg
-        Plog.dump_error(url:@surl, errmsg:errmsg)
+      rescue JSON::ParserError => e
+        Plog.dump_error(url: @surl, errmsg: e)
       end
       outputs
     end

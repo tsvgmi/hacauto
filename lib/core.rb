@@ -69,7 +69,7 @@ def progress_set(wset, title=nil)
   title ||= caller[0].split.last.gsub(/['"`]/, '')
   tstring = format('%<title>-16.16s [:bar] :percent', title: title)
   bar     = TTY::ProgressBar.new(tstring, total: wset.size)
-  Plog.dump(set:wset)
+  Plog.dump(set: wset)
   wset.each do |entry|
     break unless yield entry, bar
 

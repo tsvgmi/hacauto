@@ -46,7 +46,7 @@ module SmuleAuto
   class SmuleDB
     DBNAME = 'smule.db'
 
-    attr_reader :content, :singers
+    attr_reader :content, :singers, :db
 
     def self.instance(user, cdir: '.')
       @instance ||= SmuleDB.new(user, cdir: cdir)
@@ -135,7 +135,7 @@ module SmuleAuto
       filters = options[:filter].split('/').map { |r| "(#{r})" }.join(' OR ')
       recs = @content.order(:record_by, :created)
       recs = recs.where(Sequel.lit(filters)) unless filters.empty?
-      Plog.dump_info(recs: recs, options: options, rcount: recs.count)
+      Plog.dump(recs: recs, options: options, rcount: recs.count)
       progress_set(recs) do |r, _bar|
         yield r[:sid], r
         true

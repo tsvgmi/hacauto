@@ -67,6 +67,8 @@ module SmuleAuto
     end
 
     def playable?(sitem)
+      return false unless sitem
+      
       if (sitem[:stars].to_i == 1) || sitem[:deleted] ||
          (sitem[:href] =~ %r{/ensembles$})
         return false
@@ -276,10 +278,11 @@ module SmuleAuto
       @wqueue << sitem
       psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage)
 
-      if psecs == :deleted
+      case psecs
+      when :deleted
         @content.delete_song(sitem)
         return res
-      elsif psecs == :error
+      when :error
         return res
       end
       psecs = psecs.to_i
@@ -320,11 +323,6 @@ module SmuleAuto
       puts table.render(multiline: true)
     end
 
-    def _set_favorite(sitem)
-      @scanner.spage.toggle_song_favorite(fav: true)
-      sitem[:isfav] = true
-    end
-
     # These are for test hooks mostly where could could not test code due to it
     # being in run loop.  Code could be copied here for testing as the function
     # is redefineable at runtime with 'R' option
@@ -333,8 +331,6 @@ module SmuleAuto
         case data
         when 'M'
           _show_msgs(sitem, psitem)
-        when 'F' # Set favorite song
-          _set_favorite(sitem)
         end
       end
     end
@@ -418,9 +414,10 @@ module SmuleAuto
                 _list_show(curset: @playlist.toplay_list,
                            clear: false, curitem: sitem, psitem: psitem)
                 _show_msgs(sitem, psitem)
-                if (sitem[:isfav] || sitem[:oldfav]) && (sitem[:record_by] =~ /^THV_13,/)
+                if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
                   _menu_eval do
-                    @scanner.spage.add_song_tag('#thvfavs')
+                    @scanner.spage.add_song_tag('#thvfavs', sitem)
+                    @scanner.spage.toggle_play(doplay: true)
                   end
                 end
               end
@@ -453,7 +450,7 @@ module SmuleAuto
             end
             break if Time.now >= endt
           rescue StandardError => e
-            p e
+            Plog.error(e)
             sleep(3)
           end
         end
@@ -517,8 +514,13 @@ module SmuleAuto
         _setprompt
       when 'F' # Set as favorite and tag
         _menu_eval do
-          _set_favorite(sitem)
-          @scanner.spage.add_song_tag('#thvfavs')
+          sitem[:isfav] = true
+          if sitem[:record_by].start_with?(@user)
+            @scanner.spage.add_song_tag('#thvfavs', sitem)
+          else
+            @scanner.spage.toggle_song_favorite(fav: true)
+          end
+          @scanner.spage.toggle_play(doplay: true)
         end
 
       when 'h'
@@ -575,7 +577,7 @@ module SmuleAuto
               end
             end
           rescue StandardError => e
-            Plog.dump_error(e:e)
+            Plog.dump_error(e: e)
           end
           prompt.keypress('Press any key [:countdown]', timeout: 3)
         end
