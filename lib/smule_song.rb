@@ -102,12 +102,17 @@ module SmuleAuto
     end
 
     def add_song_tag(tag, sinfo=nil, _options={})
-      otag = tag
-      tag += sinfo[:created].strftime('_%y') if sinfo
-      snote = song_note
-      if snote =~ /#{tag}/
-        Plog.debug "Message already containing #{tag}"
-        return false
+      otag  = tag
+      snote = ''
+      if sinfo
+        tag += sinfo[:created].strftime('_%y')
+        if (snote = sinfo[:message]).nil?
+          snote = sinfo[:message] = song_note
+        end
+        if snote =~ /#{tag}/
+          Plog.debug "Message already containing #{tag}"
+          return false
+        end
       end
       click_smule_page(:sc_song_menu)
       locator = 'span.sc-gTgzIj.brYKCX'
@@ -120,7 +125,8 @@ module SmuleAuto
 
       text = snote.strip.gsub(/ #{otag}/, '').gsub(/ #{tag}/, '') + " #{tag}"
       type('textarea#message', text, append: false) # Enter tag
-      Plog.info("Setting note to #{text}")
+      sinfo[:message] = text if sinfo
+      Plog.info("Setting note to: #{text}")
       click_and_wait('input#recording-save')
     end
 
@@ -153,6 +159,8 @@ module SmuleAuto
       elsif !doplay && paths == 1
         Plog.debug('Already stopped.  Do nothing')
         toggling = false
+      else
+        Plog.debug('Dont know.  Just click')
       end
 
       play_locator = 'span.sc-lgqmxq.FGHoO'
@@ -168,11 +176,13 @@ module SmuleAuto
               if endtime && (endtime.text != '00:00')
                 if href
                   sleep(1)
+                  # This means it pulled from archive.  It needs another
+                  # click to continue
                   if sleep_round > 2
                     click_smule_page(:sc_play_continue, delay: 0)
                     click_smule_page(:sc_play_continue, delay: 0)
-                  else
-                    click_smule_page(:sc_play_toggle, delay: 0)
+                    # else
+                    # click_smule_page(:sc_play_toggle, delay: 0)
                   end
                 end
                 break
@@ -217,7 +227,6 @@ module SmuleAuto
         res << [user, msg]
       end
       click_smule_page(:sc_comment_close, delay: 0)
-      click_smule_page(:sc_play_toggle, delay: 0)
       res
     end
 
@@ -354,6 +363,7 @@ module SmuleAuto
         title:         perf[:title],
         stitle:        to_search_str(perf[:title]),
         href:          perf[:web_url],
+        message:       perf[:message],
         psecs:         perf[:song_length],
         created:       Time.parse(perf[:created_at]),
         avatar:        perf[:cover_url],
@@ -430,11 +440,13 @@ module SmuleAuto
                      .map { |line| line.map { |w| w[:text] }.join }.join("\n")
       end
 
+      Plog.dump(perf: perf.reject { |k, _v| k == :lyrics }, _ofmt: 'Y')
       output = {
         sid:           perf[:key],
         title:         perf[:title],
         stitle:        to_search_str(perf[:title]),
         href:          perf[:web_url],
+        message:       perf[:message],
         psecs:         perf[:song_length],
         created:       Time.parse(perf[:created_at]),
         avatar:        perf[:cover_url],
@@ -457,13 +469,14 @@ module SmuleAuto
       output
     end
 
-    def play(spage)
+    def play(spage, to_play: true)
       href = @info[:href].sub(%r{/ensembles$}, '')
       spinner = TTY::Spinner.new('[:spinner] Loading ...',
                                  format: :pulse_2)
       spinner.auto_spin
 
-      10.times do |count|
+      count = 0
+      loop do
         spage.goto(href)
         unless spage.css('.error-gone').empty?
           Plog.info('Song is gone')
@@ -472,6 +485,12 @@ module SmuleAuto
         end
         # Keep retry if there are server error
         unless spage.css('.page-error').empty?
+          count += 1
+          if count >= 10
+            spinner.stop('Done!')
+            return :deleted
+          end
+
           Plog.info("Page error [#{count}]: #{spage.css('.page-error').text}")
           sleep(2)
           redo
@@ -480,7 +499,9 @@ module SmuleAuto
       end
 
       msgs = spage.comment_from_page
-      spage.toggle_play(doplay: true, href: href)
+
+      # click_smule_page(:sc_play_toggle, delay: 0)
+      spage.toggle_play(doplay: true, href: href) if to_play
       spinner.stop('Done!')
 
       # Should pickup for joined file where info was not picked up
@@ -493,7 +514,7 @@ module SmuleAuto
 
       # Click on play
       @info.update(listens: asset[:listens], loves: asset[:loves],
-                   psecs: asset[:psecs])
+                   psecs: asset[:psecs], message: asset[:message])
       [@info[:psecs], msgs]
     end
 

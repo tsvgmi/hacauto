@@ -68,11 +68,12 @@ module SmuleAuto
 
     def playable?(sitem)
       return false unless sitem
-      
-      if (sitem[:stars].to_i == 1) || sitem[:deleted] ||
-         (sitem[:href] =~ %r{/ensembles$})
-        return false
-      end
+
+      return false if (sitem[:stars].to_i == 1) || sitem[:deleted]
+
+      #     if (sitem[:href] =~ %r{/ensembles$})
+      #       return false
+      #     end
 
       state = :play
       @filter.each do |k, v|
@@ -213,7 +214,7 @@ module SmuleAuto
                   end
     end
 
-    def _list_show(curset:, curitem: nil, psitem: nil, start: 0, limit: 10, clear: true)
+    def _list_show(curset:, curitem: nil, start: 0, limit: 10, clear: true)
       bar    = '*' * 10
       tags   = @content.tags
       table  = TTY::Table.new
@@ -235,7 +236,7 @@ module SmuleAuto
           <<~EOM
             [#{isfav}] #{curitem[:title]} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
                 #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags[0..9]}
-            #{(psitem || {})[:snote]}
+            #{curitem[:message]}
           EOM
         end
         puts box
@@ -271,12 +272,12 @@ module SmuleAuto
       @prompt = "lnswx*+= (#{@playlist.filter.inspect})>"
     end
 
-    def play_asong(sitem)
+    def play_asong(sitem, to_play: true)
       res = {duration: 0}
 
       Plog.dump(sitem: sitem)
       @wqueue << sitem
-      psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage)
+      psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage, to_play: to_play)
 
       case psecs
       when :deleted
@@ -294,9 +295,7 @@ module SmuleAuto
                    [plength.to_i, psecs].min
                  end
 
-      spage = @scanner.spage
       res[:duration] = duration
-      res[:snote]    = spage.song_note
       res[:msgs]     = msgs
       res
     end
@@ -307,32 +306,21 @@ module SmuleAuto
 
     def _show_msgs(sitem, psitem)
       table = TTY::Table.new
-      psitem[:msgs].each do |usr, msg|
+      pmsg  = psitem[:msgs] || []
+      pmsg.each do |usr, msg|
         table << [usr, text_wrap(msg, 80)]
       end
       data = {
         sid:       sitem[:sid],
         stitle:    sitem[:stitle],
         record_by: sitem[:record_by],
-        comments:  psitem[:msgs].to_json,
+        comments:  pmsg.to_json,
       }
       unless (rec = Comment.first(sid: sitem[:sid])).nil?
         rec.update(data)
         rec.save_changes
       end
       puts table.render(multiline: true)
-    end
-
-    # These are for test hooks mostly where could could not test code due to it
-    # being in run loop.  Code could be copied here for testing as the function
-    # is redefineable at runtime with 'R' option
-    def browser_op(sitem, psitem, *operations)
-      operations.each do |data|
-        case data
-        when 'M'
-          _show_msgs(sitem, psitem)
-        end
-      end
     end
 
     # Run the code and protect all exception from killing the menu
@@ -347,8 +335,6 @@ module SmuleAuto
     HELP_SCREEN = <<~EOH
             Command:
             ? Help
-            b Browser   command (see below)
-              t#tagname Adding tag name (only for songs started by you)
             C           Cut current playlist to the set
             F           Mark the song as favorite
             f           Filter existing song list
@@ -389,7 +375,17 @@ module SmuleAuto
       loop do
         # Update into db last one played
         @content.update_song(sitem) if sitem
+
+        # Get next song and play
         if (sitem = @playlist.next_song).nil?
+          endt = Time.now + 1
+        elsif (sitem[:record_by] == @user) && (sitem[:href] =~ /ensembles$/)
+          _list_show(curset: @playlist.toplay_list, curitem: sitem)
+          if !(psitem = play_asong(sitem, to_play: false)).nil? &&
+             !(value = psitem[:expire_at]).nil? &&
+             (Time.now > Time.parse(value))
+            @scanner.spage.add_song_tag('#thvopen', sitem)
+          end
           endt = Time.now + 1
         else
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
@@ -408,11 +404,12 @@ module SmuleAuto
         @paused = false
         refresh = true
         loop do
+          # Show the menu + list
           begin
             if sitem && !@paused
               if refresh
                 _list_show(curset: @playlist.toplay_list,
-                           clear: false, curitem: sitem, psitem: psitem)
+                           clear: false, curitem: sitem)
                 _show_msgs(sitem, psitem)
                 if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
                   _menu_eval do
@@ -431,8 +428,10 @@ module SmuleAuto
             @logger.dump_error(e: e, trace: e.backtrace)
             next
           end
+
+          # Collect user input and process
           begin
-            hc, refresh = handle_user_input(key, sitem, psitem)
+            hc, refresh = handle_user_input(key, sitem)
             case hc
             when :pausing
               @paused = !@paused
@@ -463,7 +462,7 @@ module SmuleAuto
     # Return 2 parameters
     # 1. How to handle: :pausing, :quit, :next
     # 2. Whether to refresh display (display content change)
-    def handle_user_input(key, sitem, psitem)
+    def handle_user_input(key, sitem)
       prompt = TTY::Prompt.new
       case key
       when ' '
@@ -475,9 +474,9 @@ module SmuleAuto
         @playlist.next_song(increment: -1)
         return [:next, true]
       when /^[+=]/i # Add/replace list
-        choices = %w[favs isfav recent record_by star title query]
+        choices = %w[favs isfav recent record_by my_open star title query]
         ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
-        param   = ftype =~ /fav/ ? '' : prompt.ask("#{ftype} value ?")
+        param   = ftype =~ /fav|my_open/ ? '' : prompt.ask("#{ftype} value ?")
         if param
           newset = @content.select_set(ftype.to_sym, param)
           @playlist.add_to_list(newset, replace: key == '=')
@@ -486,13 +485,6 @@ module SmuleAuto
         sitem[:stars] = prompt.keypress('Value?').to_i if sitem
       when /\d/ # Set stars also
         sitem[:stars] = key.to_i if sitem
-      when 'b'
-        unless (param = prompt.ask('Browser Op alue?')).nil?
-          _menu_eval do
-            browser_op(sitem, psitem, param)
-            prompt.keypress('Press any key [:countdown]', timeout: 3)
-          end
-        end
       when 'C'
         list_length = prompt.ask('List Length to cut: ').to_i
         if list_length > 0

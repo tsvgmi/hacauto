@@ -4,8 +4,6 @@ source 'http://rubygems.org'
 
 # gem 'progress_bar'
 gem 'activesupport'
-gem 'byebug'
-gem 'code-scanning-rubocop'
 gem 'http'
 gem 'listen'
 gem 'mysql2'
@@ -23,6 +21,12 @@ gem 'tty-prompt'
 gem 'tty-spinner'
 gem 'tty-table'
 gem 'webdrivers'
+
+group 'devel' do
+  gem 'byebug'
+  gem 'code-scanning-rubocop'
+  gem 'rubocop-sequel'
+end
 
 group 'music' do
   gem 'midi'

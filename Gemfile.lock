@@ -90,6 +90,8 @@ GEM
       unicode-display_width (>= 1.4.0, < 3.0)
     rubocop-ast (1.4.1)
       parser (>= 2.7.1.5)
+    rubocop-sequel (0.2.0)
+      rubocop (~> 1.0)
     ruby-mp3info (0.8.10)
     ruby-progressbar (1.11.0)
     rubyzip (2.3.0)
@@ -166,6 +168,7 @@ DEPENDENCIES
   mysql2
   nokogiri
   rb-readline
+  rubocop-sequel
   ruby-mp3info
   selenium-webdriver
   sequel

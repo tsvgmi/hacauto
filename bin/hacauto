@@ -52,6 +52,7 @@ case $oper in
       mv $wfile $ofile
     fi
     echo "Final file is $ofile - Open in Sonic Visualizer"
+    touch $ofile
     open -a "Sonic Visualiser" "$ofile"
     ;;
 
@@ -68,9 +69,12 @@ case $oper in
     ;;
 
   trim)
+    ifile=$1
+    shift
     ofile=${ifile%.mp3}
     ofile=${ofile}-new.mp3
-    sox $ifile $ofile trim 
+    set -x
+    sox $ifile $ofile trim $@
     ;;
 
   smule-*)
