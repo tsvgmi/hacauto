@@ -134,12 +134,12 @@ module SmuleAuto
       bar       = nil
       unless options[:quiet]
         bar       = TTY::ProgressBar.new('Checking songs [:bar] :percent',
-                                         total: 100)
+                                         total: limit)
       end
       catch(:done) do
         loop do
           ourl = "#{url}?offset=#{offset}"
-          bar.log(ourl) if bar && Plog.debug?
+          bar.log("url: #{ourl}") if bar && Plog.debug?
           output = curl(ourl)
           if output == 'Forbidden'
             sleep 2
@@ -197,7 +197,7 @@ module SmuleAuto
 
     def get_favs(user)
       Plog.info("Getting favorites for #{user}")
-      options = {limit: 10_000, days: 365 * 10}
+      options = {limit: 500, days: 365 * 10}
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
 

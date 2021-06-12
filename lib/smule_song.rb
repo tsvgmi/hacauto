@@ -151,7 +151,8 @@ module SmuleAuto
       remain = 0
       refresh
 
-      paths    = css('div.sc-iumJyn svg path').size
+      #paths    = css('div.sc-iumJyn svg path').size
+      paths    = css('div.sc-fiKUUL svg path').size
       toggling = true
       if doplay && paths == 2
         Plog.debug('Already playing.  Do nothing')
@@ -159,14 +160,12 @@ module SmuleAuto
       elsif !doplay && paths == 1
         Plog.debug('Already stopped.  Do nothing')
         toggling = false
-      else
-        Plog.debug('Dont know.  Just click')
       end
 
       play_locator = 'span.sc-lgqmxq.FGHoO'
 
       if toggling
-        Plog.debug("Think play = #{doplay}, remain: #{remain}")
+        Plog.debug("Think play = #{doplay}")
         click_smule_page(:sc_play_toggle, delay: 0)
         if doplay
           if css(play_locator).size == 2
@@ -307,8 +306,8 @@ module SmuleAuto
       @logger        = options[:logger] || PLogger.new($stderr)
 
       @info[:created] ||= Date.today
-      @info[:created] = Date.parse(@info[:created]) if @info[:created].is_a?(String)
-      @ssl_context = OpenSSL::SSL::SSLContext.new
+      @info[:created]          = Date.parse(@info[:created]) if @info[:created].is_a?(String)
+      @ssl_context             = OpenSSL::SSL::SSLContext.new
       @ssl_context.verify_mode = OpenSSL::SSL::VERIFY_NONE
     end
 
@@ -379,7 +378,7 @@ module SmuleAuto
         operf = perf[:other_performers][0]
         if operf
           output.update(
-            other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
+            #other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
             record_by:   [perf[:performed_by], operf[:handle]].join(',')
           )
         end
@@ -413,8 +412,14 @@ module SmuleAuto
     end
 
     def asset_from_page
-      olink    = @surl.sub(%r{/ensembles$}, '')
-      source   = HTTP.follow.get(olink, ssl_context: @ssl_context).to_s
+      olink = @surl.sub(%r{/ensembles$}, '')
+      begin
+        source   = HTTP.follow.get(olink, ssl_context: @ssl_context).to_s
+      rescue HTTP::Redirector::EndlessRedirectError => errmsg
+        Plog.error(errmsg:errmsg)
+        return {}
+      end
+
       document = Nokogiri::HTML(source)
       asset_str = nil
 
@@ -449,6 +454,7 @@ module SmuleAuto
         message:       perf[:message],
         psecs:         perf[:song_length],
         created:       Time.parse(perf[:created_at]),
+        expire_at:     perf[:expire_at] ? Time.parse(perf[:expire_at]) : nil,
         avatar:        perf[:cover_url],
         orig_city:     (perf[:orig_track_city] || {}).values.join(', '),
         listens:       perf[:stats][:total_listens],
@@ -510,11 +516,19 @@ module SmuleAuto
         return 0
       end
 
-      @info[:other_city] = asset[:other_city] if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s == ''
+      if !asset.empty?
+        @info[:other_city] = asset[:other_city] if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s != ''
 
-      # Click on play
-      @info.update(listens: asset[:listens], loves: asset[:loves],
-                   psecs: asset[:psecs], message: asset[:message])
+        # Click on play
+        @info.update(listens: asset[:listens], loves: asset[:loves],
+                     psecs: asset[:psecs], message: asset[:message],
+                     other_city: asset[:other_city],
+                     expire_at: asset[:expire_at])
+      else
+        #p @info
+        #sleep 10
+        #@info[:psecs] ||= 200
+      end
       [@info[:psecs], msgs]
     end
 

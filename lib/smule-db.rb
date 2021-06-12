@@ -110,7 +110,9 @@ module SmuleAuto
       when :url
         newset = @content.where(sid: File.basename(value))
       when :my_open
-        newset = @content.where(record_by: @user).where(message: nil)
+        #newset = @content.where(record_by: @user).where(message: nil)
+        newset = @content.where(record_by: @user)
+                         .where(Sequel.lit('message not like "%thvopen%"'))
       when :isfav
         newset = @content.where(isfav: true)
       when :favs

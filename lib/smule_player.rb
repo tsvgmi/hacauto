@@ -15,8 +15,6 @@ require 'tty-table'
 require 'tty-pager'
 
 module SmuleAuto
-  STATE_FILE = 'splayer.state'
-
   # Docs for PlayList
   class PlayList
     attr :clist, :filter, :listpos
@@ -26,7 +24,7 @@ module SmuleAuto
       @content    = content
       @options    = options
       @logger     = options[:logger] || PLogger.new($stderr)
-      if test('f', @state_file)
+      if test('s', @state_file)
         config   = YAML.safe_load_file(@state_file)
         @clist   = @content.select_sids(config[:clist]) if config[:clist]
         @filter  = config[:filter]
@@ -183,6 +181,8 @@ module SmuleAuto
 
   # Docs for SmulePlayer
   class SmulePlayer
+    STATE_FILE = 'splayer.state'
+
     def initialize(user, tdir, options={})
       @user       = user
       @options    = options
@@ -379,14 +379,13 @@ module SmuleAuto
         # Get next song and play
         if (sitem = @playlist.next_song).nil?
           endt = Time.now + 1
-        elsif (sitem[:record_by] == @user) && (sitem[:href] =~ /ensembles$/)
+        elsif (sitem[:record_by] == @user)
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           if !(psitem = play_asong(sitem, to_play: false)).nil? &&
-             !(value = psitem[:expire_at]).nil? &&
-             (Time.now > Time.parse(value))
+              sitem[:expire_at] && (Time.now > sitem[:expire_at])
             @scanner.spage.add_song_tag('#thvopen', sitem)
           end
-          endt = Time.now + 1
+          endt = Time.now + 3
         else
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
