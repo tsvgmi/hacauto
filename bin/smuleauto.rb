@@ -93,7 +93,8 @@ end
 # Account to move songs to.  i.e. user close old account and open
 # new one and we want to associate with new account
 ALTERNATE = {
-  'Annygermany'   => 'Nai_Anh_Anh',
+  'Annygermany'   => 'Dang_Anh_Anh',
+  '_NOEXIST_'     => 'Dang_Anh_Anh',
   'Eddy2020_'     => 'Mina_________',
   '_Huong'        => '__HUONG',
   '__MinaTrinh__' => 'Mina_________',
@@ -123,7 +124,6 @@ module SmuleAuto
   class API
     def initialize(options={})
       @options = options
-      @logger  = options[:logger] || PLogger.new($stderr)
     end
 
     def get_songs(url, options)
@@ -131,12 +131,15 @@ module SmuleAuto
       offset    = 0
       limit     = (options[:limit] || 10_000).to_i
       first_day = Time.now - (options[:days] || 7).to_i * 24 * 3600
-      bar       = TTY::ProgressBar.new('Checking songs [:bar] :percent',
-                                       total: 100)
+      bar       = nil
+      unless options[:quiet]
+        bar       = TTY::ProgressBar.new('Checking songs [:bar] :percent',
+                                         total: limit)
+      end
       catch(:done) do
         loop do
           ourl = "#{url}?offset=#{offset}"
-          bar.log(ourl) if @options[:verbose]
+          bar.log("url: #{ourl}") if bar && Plog.debug?
           output = curl(ourl)
           if output == 'Forbidden'
             sleep 2
@@ -161,6 +164,7 @@ module SmuleAuto
               title:       info['title'],
               stitle:      to_search_str(info['title']),
               href:        info['web_url'],
+              message:     info['message'],
               record_by:   _record_by_map(record_by).join(','),
               listens:     stats['total_listens'],
               loves:       stats['total_loves'],
@@ -172,28 +176,28 @@ module SmuleAuto
             }
             allset << rec
             if created <= first_day
-              bar.log("Created less than #{first_day}")
+              bar.log("Created less than #{first_day}") if bar
               throw :done
             end
             throw :done if allset.size >= limit
           end
           offset = result['next_offset']
           throw :done if offset < 0
-          bar.advance(slist.size)
+          bar.advance(slist.size) if bar
         end
       end
-      bar.finish
+      bar.finish if bar
       allset
     end
 
     def get_performances(user, options)
-      @logger.info("Getting performances for #{user}")
+      Plog.info("Getting performances for #{user}")
       get_songs("https://www.smule.com/#{user}/performances/json", options)
     end
 
     def get_favs(user)
-      @logger.info("Getting favorites for #{user}")
-      options = {limit: 10_000, days: 365 * 10}
+      Plog.info("Getting favorites for #{user}")
+      options = {limit: 500, days: 365 * 10}
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
 
@@ -218,7 +222,6 @@ module SmuleAuto
       @options   = options
       @connector = SiteConnect.new(:smule, @options)
       @spage     = SmulePage.new(@connector.driver)
-      @logger    = options[:logger] || PLogger.new($stderr)
       sleep(1)
       at_exit do
         @connector.close
@@ -237,7 +240,7 @@ module SmuleAuto
 
         begin
           if @spage.star_song(sinfo[:href])
-            @logger.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
+            Plog.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
             stars << sinfo
             if @options[:pause]
               sleep(1)
@@ -260,13 +263,14 @@ module SmuleAuto
         @spage.goto(asong[:href])
         @spage.toggle_song_favorite(fav: false)
         @spage.add_song_tag('#thvfavs', asong) if marking
-        @logger.dump_info(msg: 'Unfav', stitle: asong[:stitle],
+        Plog.dump_info(msg: 'Unfav', stitle: asong[:stitle],
                           record_by: asong[:record_by])
       end
     end
 
     def unfavs_old(count, result)
-      new_size = result.size - count
+      result = result.select { |sinfo| sinfo[:record_by].start_with?(@user) } if @options[:mine_only]
+      new_size = [result.size - count, 0].max
       set_unfavs(result[new_size..])
       result[0..new_size - 1]
     end
@@ -318,17 +322,16 @@ module SmuleAuto
     class_option :verbose,  type: :boolean
 
     desc 'collect_songs user', 'Collect all songs and collabs of user'
-    option :with_collabs, type: :boolean
     def collect_songs(user)
       cli_wrap do
         _tdir_check
         content  = SmuleDB.instance(user, cdir: options[:data_dir])
         newsongs = _collect_songs(user, content)
         content.add_new_songs(newsongs, isfav: false)
-        if options[:with_collabs]
-          newsongs = SmuleSong.collect_collabs(user, options[:days])
-          content.add_new_songs(newsongs, isfav: false)
-        end
+        # if options[:with_collabs]
+        newsongs = SmuleSong.collect_collabs(user, options[:days])
+        content.add_new_songs(newsongs, isfav: false)
+        # end
         true
       end
     end
@@ -350,13 +353,14 @@ module SmuleAuto
       it to enable adding more.  The removed one will be tagged with #thvfavs
       if possible
     LONGDESC
+    option :mine_only, type: :boolean
+    option :verbose,   type: :boolean
     def unfavs_old(user, count=10)
       cli_wrap do
         _tdir_check
         content  = SmuleDB.instance(user, cdir: options[:data_dir])
         favset   = API.new.get_favs(user)
         woptions = writable_options
-        woptions[:logger] = @logger
         result = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
         content.add_new_songs(result, isfav: true)
         true
@@ -378,20 +382,29 @@ module SmuleAuto
     end
 
     desc 'check_follows(user)', 'check_follows'
+    option :limit, type: :numeric, default: 10
     def check_follows(user)
       cli_wrap do
         fset    = {}
         api     = API.new
-        options = {limit: 25, days: 365 * 10}
+        options = {limit: 25, days: 365 * 10, quiet: true}
         users   = JSON.parse(curl("https://www.smule.com/#{user}/followers/json"))
-        users['list'].each do |r|
+        table   = []
+        bar = TTY::ProgressBar.new('Follower [:bar] :percent',
+                                   total: users['list'].size)
+        users['list'].sort.each do |r|
           fuser = r['handle']
-          slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json", options)
+          slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json",
+                                options)
           fset[fuser] = slist.size
-          @logger.info(user: fuser, size: slist.size)
-          sleep(0.5)
+          if slist.size < options[:limit]
+            bar.log({user: fuser, size: slist.size}.inspect)
+            table << [fuser, slist.size]
+          end
+          bar.advance
+          sleep(0.1)
         end
-        fset.to_yaml
+        print_table(table)
       end
     end
 
@@ -409,11 +422,11 @@ module SmuleAuto
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
           if sfile && test('f', sfile)
-            @logger.dump_info(sinfo: sinfo, _ofmt: 'Y')
+            Plog.dump_info(sinfo: sinfo, _ofmt: 'Y')
             system("set -x; open -g #{sfile}")
             sleep(1)
           elsif sfile
-            @logger.dump_error(msg: "#{sfile} not found", sinfo: sinfo)
+            Plog.dump_error(msg: "#{sfile} not found", sinfo: sinfo)
           end
         end
         true
@@ -436,12 +449,13 @@ module SmuleAuto
       end
     end
 
-    desc 'show_following user', 'Show the activities for following list'
-    def show_following(user)
+    desc 'show_follows user [following|follower]', 'Show the activities for following list'
+    def show_follows(user, mode='following')
       cli_wrap do
         _tdir_check
         content   = SmuleDB.instance(user, cdir: options[:data_dir])
-        following = content.singers.where(following: true).as_hash(:name)
+        following = content.singers.where(following: mode == 'following')
+                           .as_hash(:name)
         bar = TTY::ProgressBar.new('Following [:bar] :percent',
                                    total: Performance.count)
         Performance.where(Sequel.lit('record_by like ?', "%#{user}%"))
@@ -494,7 +508,7 @@ module SmuleAuto
           end
         when :tags
           if data.size <= 1
-            @logger.error('No data specified for tag')
+            Plog.error('No data specified for tag')
             return false
           end
           recs   = []
@@ -525,7 +539,7 @@ module SmuleAuto
             SmuleSong.new(r).sofile
           end
         end
-        @logger.info("#{ccount} records fixed")
+        Plog.info("#{ccount} records fixed")
         ccount
       end
     end
@@ -599,7 +613,7 @@ module SmuleAuto
                    .join_table(:left, :song_tags, name: :stitle)
 
         wset = wset.where(Sequel.lit(filter.join(' '))) unless filter.empty?
-        wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1')) if options[:fav]
+        wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1')) if options[:favs]
         unless (value = options[:tags]).nil?
           wset = wset.where(Sequel.lit('tags like ?', "%#{value}%"))
         end
@@ -683,13 +697,12 @@ module SmuleAuto
           singers = content.top_partners(topc, woptions)
                            .map    { |k, _v| k }[options[:offset]..]
                            .reject { |r| exclude.include?(r) }
-          @logger.dump_info(singers: singers)
+          Plog.dump_info(singers: singers)
         end
         limit    = woptions[:limit]
         days     = woptions[:days]
         sapi     = API.new(woptions)
 
-        woptions[:logger] = @logger
         scanner = Scanner.new(user, woptions)
 
         count   = count.to_i

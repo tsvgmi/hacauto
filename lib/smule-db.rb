@@ -63,7 +63,7 @@ module SmuleAuto
         Object.const_set model, klass
       end
 
-      @all_content = @db[:performances]
+      @all_content = @db[:performances].where(deleted: nil).or(deleted: 0)
       @content     = @all_content.where(Sequel.lit('record_by like ?',
                                                    "%#{user}%"))
       @singers     = @db[:singers]
@@ -83,7 +83,8 @@ module SmuleAuto
 
     def delete_song(sinfo)
       sinfo[:deleted] = true
-      @content.where(sid: sinfo[:sid]).delete
+      # @content.where(sid: sinfo[:sid]).delete
+      @content.where(sid: sinfo[:sid]).update(deleted: true)
     end
 
     def select_set(ftype, value)
@@ -108,6 +109,10 @@ module SmuleAuto
         end
       when :url
         newset = @content.where(sid: File.basename(value))
+      when :my_open
+        #newset = @content.where(record_by: @user).where(message: nil)
+        newset = @content.where(record_by: @user)
+                         .where(Sequel.lit('message not like "%thvopen%"'))
       when :isfav
         newset = @content.where(isfav: true)
       when :favs
@@ -234,6 +239,7 @@ module SmuleAuto
             isfav:     r[:isfav],
             orig_city: r[:orig_city],
             avatar:    r[:avatar],
+            message:   r[:message],
           }
           updset[:oldfav] = true if updset[:isfav]
           @all_content.where(sid: r[:sid]).update(updset)
@@ -249,15 +255,18 @@ module SmuleAuto
     def set_follows(followings, followers)
       @singers.update(following: nil, follower: nil)
       allset = {}
+      now = Time.now
       followings.each do |e|
         k = e[:name]
         allset[k] = e
-        allset[k][:following] = true
+        allset[k][:following]  = true
+        allset[k][:updated_at] = now
       end
       followers.each do |e|
         k = e[:name]
         allset[k] ||= e
-        allset[k][:follower] = true
+        allset[k][:follower]   = true
+        allset[k][:updated_at] = now
       end
       allset.each do |_k, v|
         @singers.insert_conflict(:replace).insert(v)
