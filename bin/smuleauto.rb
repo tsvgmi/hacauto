@@ -133,8 +133,8 @@ module SmuleAuto
       first_day = Time.now - (options[:days] || 7).to_i * 24 * 3600
       bar       = nil
       unless options[:quiet]
-        bar       = TTY::ProgressBar.new('Checking songs [:bar] :percent',
-                                         total: limit)
+        bar = TTY::ProgressBar.new('Checking songs [:bar] :percent',
+                                   total: limit)
       end
       catch(:done) do
         loop do
@@ -176,17 +176,17 @@ module SmuleAuto
             }
             allset << rec
             if created <= first_day
-              bar.log("Created less than #{first_day}") if bar
+              bar&.log("Created less than #{first_day}")
               throw :done
             end
             throw :done if allset.size >= limit
           end
           offset = result['next_offset']
           throw :done if offset < 0
-          bar.advance(slist.size) if bar
+          bar&.advance(slist.size)
         end
       end
-      bar.finish if bar
+      bar&.finish
       allset
     end
 

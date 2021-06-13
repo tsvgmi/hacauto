@@ -379,10 +379,10 @@ module SmuleAuto
         # Get next song and play
         if (sitem = @playlist.next_song).nil?
           endt = Time.now + 1
-        elsif (sitem[:record_by] == @user)
+        elsif sitem[:record_by] == @user
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           if !(psitem = play_asong(sitem, to_play: false)).nil? &&
-              sitem[:expire_at] && (Time.now > sitem[:expire_at])
+             sitem[:expire_at] && (Time.now > sitem[:expire_at])
             @scanner.spage.add_song_tag('#thvopen', sitem)
           end
           endt = Time.now + 3

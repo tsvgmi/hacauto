@@ -151,7 +151,7 @@ module SmuleAuto
       remain = 0
       refresh
 
-      #paths    = css('div.sc-iumJyn svg path').size
+      # paths    = css('div.sc-iumJyn svg path').size
       paths    = css('div.sc-fiKUUL svg path').size
       toggling = true
       if doplay && paths == 2
@@ -378,8 +378,8 @@ module SmuleAuto
         operf = perf[:other_performers][0]
         if operf
           output.update(
-            #other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
-            record_by:   [perf[:performed_by], operf[:handle]].join(',')
+            # other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
+            record_by: [perf[:performed_by], operf[:handle]].join(',')
           )
         end
       end
@@ -414,9 +414,9 @@ module SmuleAuto
     def asset_from_page
       olink = @surl.sub(%r{/ensembles$}, '')
       begin
-        source   = HTTP.follow.get(olink, ssl_context: @ssl_context).to_s
-      rescue HTTP::Redirector::EndlessRedirectError => errmsg
-        Plog.error(errmsg:errmsg)
+        source = HTTP.follow.get(olink, ssl_context: @ssl_context).to_s
+      rescue HTTP::Redirector::EndlessRedirectError => e
+        Plog.error(errmsg: e)
         return {}
       end
 
@@ -524,10 +524,6 @@ module SmuleAuto
                      psecs: asset[:psecs], message: asset[:message],
                      other_city: asset[:other_city],
                      expire_at: asset[:expire_at])
-      else
-        #p @info
-        #sleep 10
-        #@info[:psecs] ||= 200
       end
       [@info[:psecs], msgs]
     end
