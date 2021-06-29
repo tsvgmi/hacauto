@@ -12,6 +12,7 @@ require 'yaml'
 require 'cgi'
 require 'byebug'
 require 'tty-progressbar'
+require 'thor'
 require 'core'
 require 'site_connect'
 require_relative 'hac-base'
@@ -455,343 +456,133 @@ class SongStore
   end
 end
 
-# Docs for class HACAuto
-class HACAuto
-  extend_cli __FILE__
-
-  class << self
-    def hav_find_matching_song(url)
-      options = _get_options
-      linfo   = AutoFill.new(options).get_page_lyric(url)
-      HavSource.new.find_matching_song(linfo[:title]).first
+module HACCommon
+  def _connect_site(site: :hac)
+    if @sdriver
+      do_close = false
+    else
+      @sdriver = case site
+                 when :gmusic
+                   SiteConnect.connect_gmusic(_get_options)
+                 when :zing
+                   SiteConnect.connect_zing(_get_options)
+                 when :nhacvn
+                   SiteConnect.connect_nhacvn(_get_options)
+                 when :singsalon
+                   SiteConnect.connect_singsalon(_get_options)
+                 else
+                   SiteConnect.connect_hac(_get_options)
+                 end
+      do_close = true
     end
+    yield SPage.new(@sdriver)
+    return unless do_close
 
-    def _connect_site(site: :hac)
-      if @sdriver
-        do_close = false
-      else
-        @sdriver = case site
-                   when :gmusic
-                     SiteConnect.connect_gmusic(_get_options)
-                   when :zing
-                     SiteConnect.connect_zing(_get_options)
-                   when :nhacvn
-                     SiteConnect.connect_nhacvn(_get_options)
-                   when :singsalon
-                     SiteConnect.connect_singsalon(_get_options)
-                   else
-                     SiteConnect.connect_hac(_get_options)
-                   end
-        do_close = true
-      end
-      yield SPage.new(@sdriver)
-      return unless do_close
+    @sdriver.close
+    @sdriver = nil
+  end
 
-      @sdriver.close
-      @sdriver = nil
+  def _each_page(link)
+    options = _get_options
+    if (value = options[:page]).nil?
+      page = 0
+      incr = 1
+    else
+      page, incr = value.split(',')
+      page = value.to_i
+      incr = (incr || 1).to_i
     end
+    limit = (options[:limit] || 1000).to_i
+    _connect_site do |spage|
+      loop do
+        offset = page * 10
+        spage.goto("#{link}?offset=#{offset}")
+        links = yield spage
+        break if !links || links.size <= 0
+        break if spage.clicks >= limit
 
-    def gmusic_plist(plist)
-      _connect_site(site: :gmusic) do |spage|
-        path = "listen#/app/#{plist}"
-        spage.goto(path)
-        spage.page.css('tr.song-row td[data-col="title"]')
-      end
-    end
-
-    def _each_page(link)
-      options = _get_options
-      if (value = options[:page]).nil?
-        page = 0
-        incr = 1
-      else
-        page, incr = value.split(',')
-        page = value.to_i
-        incr = (incr || 1).to_i
-      end
-      limit = (options[:limit] || 1000).to_i
-      _connect_site do |spage|
-        loop do
-          offset = page * 10
-          spage.goto("#{link}?offset=#{offset}")
-          links = yield spage
-          break if !links || links.size <= 0
-          break if spage.clicks >= limit
-
-          page += incr
-          break if page < 0
-        end
+        page += incr
+        break if page < 0
       end
     end
+  end
 
-    def rate_today
-      options = _get_options
-      _connect_site do |spage|
-        spage
-          .find_and_click_links('a.hot-today-item-song',
-                                '#contribute-rating-control', options)
-      end
+  def _collect_and_filter
+    options = _get_options
+    slist   = yield
+    slist = slist.uniq { |r| r[:href] } if slist && (slist[0] || {})[:href]
+
+    Plog.info 'Filter against HAC current content'
+    slist.each do |sentry|
+      sname = sentry[:name]
+      _surl = sentry[:href]
+      sname = sname.strip.split(/\s*-\s*/)[0].sub(/^\d+\.\s*/, '')
+      sentry[:name] = sname
     end
 
-    def rate_week
-      options = _get_options
-      _connect_site do |spage|
-        spage
-          .find_and_click_song_links('div#weekly-monthly-list',
-                                     '#contribute-rating-control', options)
-      end
+    save_missing = false
+    case options[:site_filter]
+    when 'hav'
+      slist, nlist = HavSource.new.find_matching_songs(slist)
+      save_missing = true
+    when 'hac'
+      slist, nlist = HacSource.new(options).find_matching_songs(slist)
+      save_missing = true
+    when '-hac'
+      _tmp, slist = HacSource.new(options).find_matching_songs(slist)
     end
+    Plog.info "Collect #{slist.size} matching songs"
 
-    def rate_new(level=3)
-      options = _get_options
-      _connect_site do |spage|
-        1.upto(5).each do |page|
-          spage.goto('/')
-          spage.click_and_wait("#recent-list-pagination li:nth-child(#{page})")
-          spage.refresh
-          spage
-            .find_and_click_song_links('div#recent-list',
-                                       "#contribute-rating-control li:nth-child(#{level})",
-                                       options)
-        end
+    return _output_data(slist, options) if options[:ofile]
+
+    if save_missing && nlist && !nlist.empty?
+      Plog.info 'Writing missing list to missing.yml'
+      File.open('missing.yml', 'a') do |fod|
+        fod.puts nlist.to_yaml
       end
     end
 
-    def rate_path(path, level)
-      options    = _get_options
-      hac_source = HacSource.new(options)
-      path       = path.sub(/#{hac_source.base_url}/i, '')
-      _each_page(path) do |spage|
-        spage
-          .find_and_click_song_links('div.song-list',
-                                     "#contribute-rating-control li:nth-child(#{level})",
-                                     options)
-      end
+    [slist, nlist]
+  end
+
+  def _output_data(data, options={})
+    return if data.empty?
+
+    ofile = options[:ofile] || 'work.yml'
+    Plog.info "Writing #{data.size} entries to #{ofile}"
+    File.open(ofile, 'w') do |fod|
+      fod.puts(data.to_yaml)
     end
+  end
 
-    def rate_user(user, level)
-      rate_path("profile/posted/#{user}", level)
+  RATING_USERS = %w[mbtc9522 metacritic kelichi ceenee].freeze
+  ADMIN_USERS  = %w[gau307 kabigon91 trungdq88].freeze
+  def _get_options
+    moptions = writable_options
+    if moptions[:top_exclude]
+      top_users = HacSource.new(moptions).thanh_vien(moptions[:top_exclude].to_i)
+      moptions[:exclude_user] = (top_users + RATING_USERS + ADMIN_USERS).join(',')
     end
+    moptions
+  end
+end
 
-    def rate_posted(level=3)
-      rate_path('manage/song/approved', level)
-    end
+class HACHAC < Thor
+  include ThorAddition
+  include HACCommon
 
-    def rate_rhymth(rhymth, level=3)
-      rate_path("rhymth/v/#{rhymth}", level)
-    end
+  class_option :hac_url, aliases: '-H', type: :string
 
-    def rate_genre(genre, level=3)
-      rate_path("genre/v/#{genre}", level)
-    end
-
-    def rate_artist(artist, level=3)
-      rate_path("artist/#{artist}", level)
-    end
-
-    def like_user(user)
-      options = _get_options
-      _each_page("/profile/posted/#{user}") do |spage|
-        nlinks = []
-        sitems = spage.page.css('.song-item')
-        sitems.each do |sitem|
-          iclasses = sitem.css('.song-like')[0].attr('class').split
-          next if iclasses.include?('starred')
-
-          nlinks << sitem.css('.song-title')[0]['href']
-        end
-        spage.click_links(nlinks, '#song-favorite-star-btn', options)
-        sitems
-      end
-    end
-
-    def approve_versions(user)
-      _each_page("/profile/posted/#{user}") do |spage|
-        sitems = spage.page.css('.song-item')
-        sitems.each do |sitem|
-          purl   = sitem.css('a.song-poster')[0]['href']
-          poster = purl.split('/')[-1]
-          next if poster == user
-
-          url = sitem.css('.song-title')[0]['href']
-          _review_version(url, spage)
-        end
-      end
-    end
-
-    def _review_version(url, spage=nil)
-      spage.goto(url)
-
-      # Is in the approved list?
-      *_tmp, song, user = url.split('/')
-      tgroup = 0
-      skipit = false
-
-      spage.page.css('#version-list tr').each do |tr|
-        if (p_a = tr.css('a')[0]).nil?
-          break if tgroup >= 1
-
-          tgroup += 1
-        else
-          puser = p_a['href'].split('/').last
-          if puser == user
-            Plog.info "#{song} approved for #{user} already.  Skip"
-            skipit = true
-            break
-          end
-        end
-      end
-      return if skipit
-
-      Plog.info "Approving #{song} for #{user}."
-      cdefault = spage.page.css('#other-versions a')[0]['href']
-      spage.click_and_wait('#set-as-default')
-      begin
-        spage.alert.accept
-      rescue Selenium::WebDriver::Error::NoSuchAlertError => e
-        Plog.error e
-      end
-
-      1.upto(5) do
-        spage.goto(cdefault)
-        spage.click_and_wait('#set-as-default')
-        begin
-          spage.alert.accept
-        rescue Selenium::WebDriver::Error::NoSuchAlertError => e
-          Plog.error e
-          next
-        end
-        break
-      end
-    end
-
-    def create_from_site(*sfiles)
-      options          = _get_options
-      options[:random] = true
-      coptions         = options[:with_attribution] ? {addn_note: 'Source: hopamviet.vn'} : {}
-      store            = SongStore.new(sfiles, options)
-      _connect_site do |spage|
-        AutoFill.new(options).create_from_site(spage, store, coptions)
-        store&.save
-      end
-    end
-
-    # Get the song from hav but missing from hac.  Optionally create the songs on hac
-    def hav_find_missing(curl)
-      options = _get_options
-      slist   = HavSource.new.scan_song_list(curl, options)
-      slist   = AutoFill.new(options).find_missing_song(slist)
-      options[:ofile] ||= "#{File.basename(curl).sub(/\..*$/, '')}.yml"
-      slist.each do |sinfo|
-        sinfo.update(HavSource.new.lyric_info(sinfo[:href]))
-      end
-      _output_data(slist, options)
-    end
-
-    def hav_load_songs(sfile)
-      options = _get_options
-      slist   = YAML.safe_load_file(sfile)
-      bar     = TTY::ProgressBar.new('Loading song [:bar] :percent', slist.size)
-      slist.each do |sinfo|
-        unless sinfo[:lyric]
-          begin
-            sinfo.update(HavSource.new.lyric_info(sinfo[:href]))
-          rescue StandardError => e
-            bar.log(e.to_s)
-          end
-        end
-        bar.advance
-      end
-      options[:ofile] ||= sfile
-      _output_data(slist, options)
-    end
-
-    def hav_new_songs
-      xem_nhieu('https://hopamviet.vn/chord/latest')
-    end
-
-    def hah_xem_nhieu(list_no=0)
-      options = _get_options
-      options[:list_no] = list_no
-      xem_nhieu('https://hopamhay.com')
-    end
-
-    def hav_xem_nhieu
-      xem_nhieu('https://hopamviet.vn')
-    end
-
-    def keeng_xem_nhieu
-      xem_nhieu('http://keeng.vn/')
-    end
-
-    def nhac_xem_nhieu
-      xem_nhieu('https://nhac.vn/')
-    end
-
-    def xem_nhieu(url)
-      options = _get_options
-      slist, _nlist = _collect_and_filter do
-        MusicSource.mk_source(url).song_list_with_filter(url, options)
-      end
-      _post_song_list(slist, options)
-    end
-
-    def _collect_and_filter
-      options = _get_options
-      slist   = yield
-      slist = slist.uniq { |r| r[:href] } if slist && (slist[0] || {})[:href]
-
-      Plog.info 'Filter against HAC current content'
-      slist.each do |sentry|
-        sname = sentry[:name]
-        _surl = sentry[:href]
-        sname = sname.strip.split(/\s*-\s*/)[0].sub(/^\d+\.\s*/, '')
-        sentry[:name] = sname
-      end
-
-      save_missing = false
-      case options[:site_filter]
-      when 'hav'
-        slist, nlist = HavSource.new.find_matching_songs(slist)
-        save_missing = true
-      when 'hac'
-        slist, nlist = HacSource.new(options).find_matching_songs(slist)
-        save_missing = true
-      when '-hac'
-        _tmp, slist = HacSource.new(options).find_matching_songs(slist)
-      end
-      Plog.info "Collect #{slist.size} matching songs"
-
-      return _output_data(slist, options) if options[:ofile]
-
-      if save_missing && nlist && !nlist.empty?
-        Plog.info 'Writing missing list to missing.yml'
-        File.open('missing.yml', 'a') do |fod|
-          fod.puts nlist.to_yaml
-        end
-      end
-
-      [slist, nlist]
-    end
-
-    def update_pl_desc(spage, plno, title, description)
-      path = "/playlist/v/#{plno}"
-      spage.goto(path)
-      spage.click_and_wait('#edit-playlist')
-      spage.refresh
-      spage.type('.playlist-detail-title input', title, clear: true) if title != '.'
-      spage.type('.playlist-detail-description input', description, clear: true) if description != '.'
-      spage.click_and_wait('#save-playlist')
-    end
-
+  no_commands do
+    #
     # Create a playlist on hac
-    def _post_playlist(plname, slist, options)
+    def _post_playlist(plname, slist, moptions)
       if slist.size <= 0
         Plog.info 'Nothing to post'
         return
       end
-      source = HacSource.new(options)
-      if options[:newlist]
+      source = HacSource.new(moptions)
+      if moptions[:newlist]
         curlist = []
       else
         raise 'You must give a numeric list to update' unless plname =~ /^\d+$/
@@ -805,28 +596,241 @@ class HACAuto
         curlist.include?(surl.split('/')[4]) ? false : true
       end
 
-      hacfill = AutoFill.new(options)
+      hacfill = AutoFill.new(moptions)
       _connect_site do |spage|
         bar = TTY::ProgressBar.new('Posting [:bar] :percent', slist.size)
         slist.each_with_index do |sentry, index|
           sname = sentry[:name]
           _surl = sentry[:href].sub(/\?.*$/, '')
           bar.log "Next to add is #{sname} - [#{index + 1}/#{slist.size}]"
-          hacfill.add_to_plist(spage, plname, sentry, options)
+          hacfill.add_to_plist(spage, plname, sentry, moptions)
           bar.advance
         end
-        if options[:src_url]
-          plno = options[:new_id] || plname
-          update_pl_desc(spage, plno, '.', options[:src_url])
+        if moptions[:src_url]
+          plno = moptions[:new_id] || plname
+          update_pl_desc(spage, plno, '.', moptions[:src_url])
         end
       end
     end
+  end
 
-    def _post_song_list(slist, options)
+  desc 'chords(sfile, minc, maxc=nil)', 'chords'
+  def chords(sfile, minc, maxc=nil)
+    minc    = minc.to_i
+    maxc    = maxc ? maxc.to_i : minc
+    content = YAML.safe_load_file(sfile).values
+    result = content.select do |r|
+      csize = r[:chords].split.size
+      (csize >= minc) && (csize <= maxc)
+    end
+    result.to_yaml
+  end
+
+  # Saving my stuff locally
+  desc "download_songs(user='thienv')", 'download_songs'
+  def download_songs(user='thienv')
+    moptions = _get_options
+    HacSource.new(moptions).download_songs(user, moptions)
+  end
+
+  desc 'download_song(url)', 'download_song'
+  def download_song(url)
+    moptions = _get_options
+    source = HacSource.new(moptions).download_song(url, moptions)
+    source[:lyric].gsub(/\[[^\]]+\]/, '')
+  end
+
+  desc 'download_lyrics_for_slist(slfile)', 'download_lyrics_for_slist'
+  def download_lyrics_for_slist(slfile)
+    moptions = _get_options
+    hac_source = HacSource.new(moptions)
+    YAML.safe_load_file(slfile).each do |e|
+      hrefs = e[:href].split('/')
+      sno = hrefs[4]
+      sname = hrefs[5]
+      suser = hrefs[6]
+      lfile = if suser
+                "#{suser}/#{sno}::#{sname}.yml"
+              else
+                Dir.glob("*/#{sno}::#{sname}.yml")[0]
+              end
+
+      hac_source.download_song(e[:href]) if !lfile || !test('s', lfile)
+    end
+    true
+  end
+
+  desc "classify_waiting(user='thienv')", 'classify_waiting'
+  def classify_waiting(user='thienv')
+    moptions = _get_options
+    hac_source = HacSource.new(moptions)
+    url        = "#{hac_source.base_url}/manage/song/approving"
+    _each_page(url) do |spage|
+      sitems = spage.page.css('.song-item').select do |sitem|
+        poster = sitem.css('a.song-poster')[0]['href'].split('/').last
+        poster == user
+      end
+      sitems.each do |sitem|
+        song_url = sitem.css('a.song-title')[0]['href']
+        spage.goto(song_url)
+        spage.click_and_wait('#edit-approve-song')
+        spage.type('#song-note', 'Hop an co ban', clear: true)
+        spage.click_and_wait('#submit-edit-song')
+      end
+    end
+  end
+
+  desc 'rate_today', 'rate_today'
+  def rate_today
+    moptions = _get_options
+    _connect_site do |spage|
+      spage
+        .find_and_click_links('a.hot-today-item-song',
+                              '#contribute-rating-control', moptions)
+    end
+  end
+
+  desc 'rate_week', 'rate_week'
+  def rate_week
+    moptions = _get_options
+    _connect_site do |spage|
+      spage
+        .find_and_click_song_links('div#weekly-monthly-list',
+                                   '#contribute-rating-control', moptions)
+    end
+  end
+
+  desc 'rate_new(level=3)', 'rate_new'
+  def rate_new(level=3)
+    moptions = _get_options
+    _connect_site do |spage|
+      1.upto(5).each do |page|
+        spage.goto('/')
+        spage.click_and_wait("#recent-list-pagination li:nth-child(#{page})")
+        spage.refresh
+        spage
+          .find_and_click_song_links('div#recent-list',
+                                     "#contribute-rating-control li:nth-child(#{level})",
+                                     moptions)
+      end
+    end
+  end
+
+  desc 'rate_path(path, level)', 'rate_path'
+  def rate_path(path, level)
+    moptions = _get_options
+    hac_source = HacSource.new(moptions)
+    path       = path.sub(/#{hac_source.base_url}/i, '')
+    _each_page(path) do |spage|
+      spage
+        .find_and_click_song_links('div.song-list',
+                                   "#contribute-rating-control li:nth-child(#{level})",
+                                   moptions)
+    end
+  end
+
+  desc 'rate_user(user, level)', 'rate_user'
+  def rate_user(user, level)
+    rate_path("profile/posted/#{user}", level)
+  end
+
+  desc 'rate_posted(level=3)', 'rate_posted'
+  def rate_posted(level=3)
+    rate_path('manage/song/approved', level)
+  end
+
+  desc 'rate_rhymth(rhymth, level=3)', 'rate_rhymth'
+  def rate_rhymth(rhymth, level=3)
+    rate_path("rhymth/v/#{rhymth}", level)
+  end
+
+  desc 'rate_genre(genre, level=3)', 'rate_genre'
+  def rate_genre(genre, level=3)
+    rate_path("genre/v/#{genre}", level)
+  end
+
+  desc 'rate_artist(artist, level=3)', 'rate_artist'
+  def rate_artist(artist, level=3)
+    rate_path("artist/#{artist}", level)
+  end
+
+  desc 'playfile_to_hac(plname, file)', 'playfile_to_hac'
+  def playfile_to_hac(plname, file)
+    moptions = _get_options
+    moptions[:site_filter] = 'hac'
+    slist = File.read(file).split("\n").map do |r|
+      {name: r.sub(/,.*$/, '')}
+    end
+    slist, _nlist = HacSource.new(moptions).find_matching_songs(slist)
+    _post_playlist(plname, slist, moptions)
+  end
+
+  # Convert a playlist to HAC (find matching song and build list)
+  desc 'playlist_to_hac(plname, url)', 'playlist_to_hac'
+  def playlist_to_hac(plname, url)
+    moptions = _get_options
+    plname = CGI.unescape(plname) if plname.include?('%')
+    moptions[:site_filter] = 'hac'
+    moptions[:src_url]     = url
+    if test('f', url)
+      slist  = YAML.safe_load_file(url)
+    else
+      source = MusicSource.mk_source(url)
+      slist, _nlist = _collect_and_filter do
+        case source
+        when ZingSource
+          slist = nil
+          _connect_site(site: :zing) do |spage|
+            slist = source.browser_song_list(spage, url, moptions)
+          end
+          slist
+        when NhacSource
+          slist = nil
+          _connect_site(site: :nhacvn) do |spage|
+            slist = source.browser_song_list(spage, url, moptions)
+          end
+          slist
+        else
+          source.song_list(url, moptions)
+        end
+      end
+    end
+    _post_playlist(plname, slist, moptions)
+  end
+end
+
+# Docs for class HACAuto
+class HACAuto < Thor
+  include ThorAddition
+  include HACCommon
+
+  desc 'hac SUBCOMMAND', 'hac commands'
+  subcommand 'hac', HACHAC
+
+  class_option :auth,             aliases: '-a', type: :string
+  class_option :with_attribution, aliases: '-A', type: :boolean
+  class_option :browser,          aliases: '-b', type: :string
+  class_option :odir,             aliases: '-d', type: :string
+  class_option :force,            aliases: '-f', type: :boolean
+  class_option :site_filter,      aliases: '-F', type: :string
+  class_option :check_lyrics,     aliases: '-k', type: :boolean
+  class_option :limit,            aliases: '-l', type: :string
+  class_option :lyrics,           aliases: '-L', type: :boolean
+  class_option :newlist,          aliases: '-n', type: :boolean
+  class_option :ofile,            aliases: '-o', type: :string
+  class_option :pcount,           aliases: '-p', type: :string
+  class_option :page,             aliases: '-P', type: :string
+  class_option :verbose,          aliases: '-v', type: :boolean
+  class_option :click_wait,       aliases: '-w', type: :string
+  class_option :exclude_user,     aliases: '-x', type: :string
+  class_option :top_exclude,      aliases: '-X', type: :string
+
+  no_commands do
+    def _post_song_list(slist, moptions)
       return if slist.size <= 0
 
-      hacfill = AutoFill.new(options)
-      coptions = options[:with_attribution] ? {addn_note: 'Source: hopamviet.vn'} : {}
+      hacfill = AutoFill.new(moptions)
+      coptions = moptions[:with_attribution] ? {addn_note: 'Source: hopamviet.vn'} : {}
       _connect_site do |spage|
         slist.each_with_index do |sentry, index|
           sname = sentry[:name]
@@ -840,366 +844,394 @@ class HACAuto
       end
     end
 
-    def _output_data(data, options={})
-      return if data.empty?
+    def _transpose(file, offset)
+      if offset.is_a?(String)
+        offset  = offset.sub(/^m/, '-')
+      end
+      Plog.info "Transpose #{file} by #{offset} semitone"
+      ofile   = "t#{offset}-" + file
+      command = "sox \"#{file}\" \"#{ofile}\" pitch #{offset}00"
+      system("set -x; #{command} && mv \"#{ofile}\" \"#{file}\"")
+    end
+  end
 
-      ofile = options[:ofile] || 'work.yml'
-      Plog.info "Writing #{data.size} entries to #{ofile}"
-      File.open(ofile, 'w') do |fod|
-        fod.puts(data.to_yaml)
+  desc 'hav_find_matching_song(url)', 'hav_find_matching_song'
+  def hav_find_matching_song(url)
+    moptions = _get_options
+    linfo = AutoFill.new(moptions).get_page_lyric(url)
+    HavSource.new.find_matching_song(linfo[:title]).first
+  end
+
+  desc 'gmusic_plist(plist)', 'gmusic_plist'
+  def gmusic_plist(plist)
+    _connect_site(site: :gmusic) do |spage|
+      path = "listen#/app/#{plist}"
+      spage.goto(path)
+      spage.page.css('tr.song-row td[data-col="title"]')
+    end
+  end
+
+  desc 'like_user(user)', 'like_user'
+  def like_user(user)
+    moptions = _get_options
+    _each_page("/profile/posted/#{user}") do |spage|
+      nlinks = []
+      sitems = spage.page.css('.song-item')
+      sitems.each do |sitem|
+        iclasses = sitem.css('.song-like')[0].attr('class').split
+        next if iclasses.include?('starred')
+
+        nlinks << sitem.css('.song-title')[0]['href']
+      end
+      spage.click_links(nlinks, '#song-favorite-star-btn', moptions)
+      sitems
+    end
+  end
+
+  desc 'approve_versions(user)', 'approve_versions'
+  def approve_versions(user)
+    _each_page("/profile/posted/#{user}") do |spage|
+      sitems = spage.page.css('.song-item')
+      sitems.each do |sitem|
+        purl   = sitem.css('a.song-poster')[0]['href']
+        poster = purl.split('/')[-1]
+        next if poster == user
+
+        url = sitem.css('.song-title')[0]['href']
+        _review_version(url, spage)
       end
     end
+  end
 
-    def zing_song_list(url=nil)
-      options = _get_options
-      slist   = []
-      _connect_site(site: :zing) do |spage|
-        slist = ZingSource.new.browser_song_list(spage, url, options)
-      end
-      slist = AutoFill.new(options).find_missing_song(slist)
-      if options[:check_lyrics]
-        slist.each do |alink|
-          puts ZingSource.new.lyric_info(alink[:href]).to_yaml
+  desc 'create_from_site(*sfiles)', 'create_from_site'
+  def create_from_site(*sfiles)
+    moptions          = _get_options
+    moptions[:random] = true
+    coptions         = moptions[:with_attribution] ? {addn_note: 'Source: hopamviet.vn'} : {}
+    store            = SongStore.new(sfiles, moptions)
+    _connect_site do |spage|
+      AutoFill.new(moptions).create_from_site(spage, store, coptions)
+      store&.save
+    end
+  end
+
+  # Get the song from hav but missing from hac.  Optionally create the songs on hac
+  desc 'hav_find_missing(curl)', 'hav_find_missing'
+  def hav_find_missing(curl)
+    moptions = _get_options
+    slist   = HavSource.new.scan_song_list(curl, moptions)
+    slist   = AutoFill.new(moptions).find_missing_song(slist)
+    moptions[:ofile] ||= "#{File.basename(curl).sub(/\..*$/, '')}.yml"
+    slist.each do |sinfo|
+      sinfo.update(HavSource.new.lyric_info(sinfo[:href]))
+    end
+    _output_data(slist, moptions)
+  end
+
+  desc 'hav_load_songs(sfile)', 'hav_load_songs'
+  def hav_load_songs(sfile)
+    moptions = _get_options
+    slist   = YAML.safe_load_file(sfile)
+    bar     = TTY::ProgressBar.new('Loading song [:bar] :percent', slist.size)
+    slist.each do |sinfo|
+      unless sinfo[:lyric]
+        begin
+          sinfo.update(HavSource.new.lyric_info(sinfo[:href]))
+        rescue StandardError => e
+          bar.log(e.to_s)
         end
       end
-      _output_data(slist, options)
+      bar.advance
     end
+    moptions[:ofile] ||= sfile
+    _output_data(slist, moptions)
+  end
 
-    def zing_xem_nhieu(url=nil)
-      options = _get_options
-      slist   = []
-      _connect_site(site: :zing) do |spage|
-        slist, _nlist = _collect_and_filter do
-          ZingSource.new.browser_song_list(spage, url, options)
-        end
-      end
-      _post_song_list(slist, options)
+  desc 'hav_new_songs', 'hav_new_songs'
+  def hav_new_songs
+    xem_nhieu('https://hopamviet.vn/chord/latest')
+  end
+
+  desc 'hah_xem_nhieu(list_no=0)', 'hah_xem_nhieu'
+  def hah_xem_nhieu(list_no=0)
+    moptions = _get_options
+    moptions[:list_no] = list_no
+    xem_nhieu('https://hopamhay.com')
+  end
+
+  desc 'hav_xem_nhieu', 'hav_xem_nhieu'
+  def hav_xem_nhieu
+    xem_nhieu('https://hopamviet.vn')
+  end
+
+  desc 'keeng_xem_nhieu', 'keeng_xem_nhieu'
+  def keeng_xem_nhieu
+    xem_nhieu('http://keeng.vn/')
+  end
+
+  desc 'nhac_xem_nhieu', 'nhac_xem_nhieu'
+  def nhac_xem_nhieu
+    xem_nhieu('https://nhac.vn/')
+  end
+
+  desc 'xem_nhieu(url)', 'xem_nhieu'
+  def xem_nhieu(url)
+    moptions = _get_options
+    slist, _nlist = _collect_and_filter do
+      MusicSource.mk_source(url).song_list_with_filter(url, moptions)
     end
+    _post_song_list(slist, moptions)
+  end
 
-    def hac_chords(sfile, minc, maxc=nil)
-      minc    = minc.to_i
-      maxc    = maxc ? maxc.to_i : minc
-      content = YAML.safe_load_file(sfile).values
-      result = content.select do |r|
-        csize = r[:chords].split.size
-        (csize >= minc) && (csize <= maxc)
-      end
-      result.to_yaml
+  desc 'update_pl_desc(spage, plno, title, description)', 'update_pl_desc'
+  def update_pl_desc(spage, plno, title, description)
+    path = "/playlist/v/#{plno}"
+    spage.goto(path)
+    spage.click_and_wait('#edit-playlist')
+    spage.refresh
+    spage.type('.playlist-detail-title input', title, clear: true) if title != '.'
+    spage.type('.playlist-detail-description input', description, clear: true) if description != '.'
+    spage.click_and_wait('#save-playlist')
+  end
+
+  desc 'zing_song_list(url=nil)', 'zing_song_list'
+  def zing_song_list(url=nil)
+    moptions = _get_options
+    slist = []
+    _connect_site(site: :zing) do |spage|
+      slist = ZingSource.new.browser_song_list(spage, url, moptions)
     end
-
-    # Saving my stuff locally
-    def hac_download_songs(user='thienv')
-      options = _get_options
-      HacSource.new(options).download_songs(user, options)
-    end
-
-    def hac_download_song(url)
-      options = _get_options
-      source  = HacSource.new(options).download_song(url, options)
-      source[:lyric].gsub(/\[[^\]]+\]/, '')
-    end
-
-    def hac_download_lyrics_for_slist(slfile)
-      options    = _get_options
-      hac_source = HacSource.new(options)
-      YAML.safe_load_file(slfile).each do |e|
-        hrefs = e[:href].split('/')
-        sno = hrefs[4]
-        sname = hrefs[5]
-        suser = hrefs[6]
-        lfile = if suser
-                  "#{suser}/#{sno}::#{sname}.yml"
-                else
-                  Dir.glob("*/#{sno}::#{sname}.yml")[0]
-                end
-
-        hac_source.download_song(e[:href]) if !lfile || !test('s', lfile)
-      end
-      true
-    end
-
-    def hac_classify_waiting(user='thienv')
-      options    = _get_options
-      hac_source = HacSource.new(options)
-      url        = "#{hac_source.base_url}/manage/song/approving"
-      _each_page(url) do |spage|
-        sitems = spage.page.css('.song-item').select do |sitem|
-          poster = sitem.css('a.song-poster')[0]['href'].split('/').last
-          poster == user
-        end
-        sitems.each do |sitem|
-          song_url = sitem.css('a.song-title')[0]['href']
-          spage.goto(song_url)
-          spage.click_and_wait('#edit-approve-song')
-          spage.type('#song-note', 'Hop an co ban', clear: true)
-          spage.click_and_wait('#submit-edit-song')
-        end
+    slist = AutoFill.new(moptions).find_missing_song(slist)
+    if moptions[:check_lyrics]
+      slist.each do |alink|
+        puts ZingSource.new.lyric_info(alink[:href]).to_yaml
       end
     end
+    _output_data(slist, moptions)
+  end
 
-    def lyric_info(url)
-      MusicSource.mk_source(url, _get_options).lyric_info(url)
-    rescue StandardError => e
-      Plog.error "Error retrieving #{url} - #{e}"
-      nil
+  desc 'zing_xem_nhieu(url=nil)', 'zing_xem_nhieu'
+  def zing_xem_nhieu(url=nil)
+    moptions = _get_options
+    slist = []
+    _connect_site(site: :zing) do |spage|
+      slist, _nlist = _collect_and_filter do
+        ZingSource.new.browser_song_list(spage, url, moptions)
+      end
     end
+    _post_song_list(slist, moptions)
+  end
 
-    def song_list(url)
-      options = _get_options
-      MusicSource.mk_source(url, options).song_list(url, options)
-    rescue StandardError => e
-      Plog.error "Error retrieving #{url} - #{e}"
-      nil
-    end
+  desc 'lyric_info(url)', 'lyric_info'
+  def lyric_info(url)
+    MusicSource.mk_source(url, _get_options).lyric_info(url)
+  rescue StandardError => e
+    Plog.error "Error retrieving #{url} - #{e}"
+    nil
+  end
 
-    def monitor_lyric(url, ofile='monitor-out.yml')
-      options       = _get_options
-      source        = MusicSource.mk_source(url, options)
-      mcontent      = []
-      checked_lists = []
-      last_time = Time.at(0)
-      notified = if test('s', ofile)
-                   YAML.load_stream(File.open(ofile)).map { |r| r[:name] }
-                 else
-                   []
-                 end
-      loop do
-        if Time.now > (last_time + 3600)
-          Plog.info("Reloading #{url}")
-          mcontent = []
-          source.song_list(url).each do |r|
-            case r[:href]
-            when /playlist/
-              unless checked_lists.include?(r[:href])
-                mcontent += source.song_list(r[:href]).select { |r2| r2[:href] =~ /bai-hat/ }
-                checked_lists << r
-              end
-            when /bai-hat/
-              mcontent << r
+  desc 'song_list(url)', 'song_list'
+  def song_list(url)
+    moptions = _get_options
+    MusicSource.mk_source(url, moptions).song_list(url, moptions)
+  rescue StandardError => e
+    Plog.error "Error retrieving #{url} - #{e}"
+    nil
+  end
+
+  desc "monitor_lyric(url, ofile='monitor-out.yml')", 'monitor_lyric'
+  def monitor_lyric(url, ofile='monitor-out.yml')
+    moptions = _get_options
+    source        = MusicSource.mk_source(url, moptions)
+    mcontent      = []
+    checked_lists = []
+    last_time = Time.at(0)
+    notified = if test('s', ofile)
+                 YAML.load_stream(File.open(ofile)).map { |r| r[:name] }
+               else
+                 []
+               end
+    loop do
+      if Time.now > (last_time + 3600)
+        Plog.info("Reloading #{url}")
+        mcontent = []
+        source.song_list(url).each do |r|
+          case r[:href]
+          when /playlist/
+            unless checked_lists.include?(r[:href])
+              mcontent += source.song_list(r[:href]).select { |r2| r2[:href] =~ /bai-hat/ }
+              checked_lists << r
             end
+          when /bai-hat/
+            mcontent << r
           end
-          last_time = Time.now
-          mcontent.delete_if { |r| notified.include?(r[:name]) }
         end
-        if mcontent.empty?
-          Plog.info('Waiting for 1 hour')
-          sleep(3600)
-        else
-          Plog.info("Checking #{mcontent.size} entries")
-          mcontent.each do |r|
-            sinfo = source.lyric_info(r[:href])
-            next unless sinfo[:lyric] && (sinfo[:lyric].size > 100)
-
-            Plog.info("Lyric found for #{sinfo[:title]}")
-            r[:updated_at] = Time.now
-            File.open(ofile, 'a') do |fod|
-              fod.puts(r.to_yaml)
-            end
-            mcontent.delete(r)
-            notified << r[:name]
-          end
-
-          _slist, nlist = HacSource.new.find_matching_songs(mcontent)
-          puts nlist.to_yaml
-          Plog.info('Waiting for 60s')
-          sleep(60)
-        end
+        last_time = Time.now
+        mcontent.delete_if { |r| notified.include?(r[:name]) }
       end
-    end
-
-    def playlist(url)
-      options = _get_options
-      source  = MusicSource.mk_source(url)
-      result, _tmp = _collect_and_filter do
-        source.song_list(url, options)
-      end
-      result.to_yaml
-    end
-
-    def playfile_to_hac(plname, file)
-      options = _get_options
-      options[:site_filter] = 'hac'
-      slist = File.read(file).split("\n").map do |r|
-        {name: r.sub(/,.*$/, '')}
-      end
-      slist, _nlist = HacSource.new(options).find_matching_songs(slist)
-      _post_playlist(plname, slist, options)
-    end
-
-    # Convert a playlist to HAC (find matching song and build list)
-    def playlist_to_hac(plname, url)
-      options = _get_options
-      plname  = CGI.unescape(plname) if plname.include?('%')
-      options[:site_filter] = 'hac'
-      options[:src_url]     = url
-      if test('f', url)
-        slist  = YAML.safe_load_file(url)
+      if mcontent.empty?
+        Plog.info('Waiting for 1 hour')
+        sleep(3600)
       else
-        source = MusicSource.mk_source(url)
-        slist, _nlist = _collect_and_filter do
-          case source
-          when ZingSource
-            slist = nil
-            _connect_site(site: :zing) do |spage|
-              slist = source.browser_song_list(spage, url, options)
-            end
-            slist
-          when NhacSource
-            slist = nil
-            _connect_site(site: :nhacvn) do |spage|
-              slist = source.browser_song_list(spage, url, options)
-            end
-            slist
-          else
-            source.song_list(url, options)
+        Plog.info("Checking #{mcontent.size} entries")
+        mcontent.each do |r|
+          sinfo = source.lyric_info(r[:href])
+          next unless sinfo[:lyric] && (sinfo[:lyric].size > 100)
+
+          Plog.info("Lyric found for #{sinfo[:title]}")
+          r[:updated_at] = Time.now
+          File.open(ofile, 'a') do |fod|
+            fod.puts(r.to_yaml)
           end
+          mcontent.delete(r)
+          notified << r[:name]
         end
+
+        _slist, nlist = HacSource.new.find_matching_songs(mcontent)
+        puts nlist.to_yaml
+        Plog.info('Waiting for 60s')
+        sleep(60)
       end
-      _post_playlist(plname, slist, options)
     end
+  end
 
-    # Find list of matching songs from HAV.  List is normally from NCT
-    def hav_matching_songs(cfile)
-      slist, _nlist = HavSource.new.find_matching_songs(YAML.safe_load_file(cfile))
-      _output_data(slist, _get_options)
+  desc 'playlist(url)', 'playlist'
+  def playlist(url)
+    moptions = _get_options
+    source = MusicSource.mk_source(url)
+    result, _tmp = _collect_and_filter do
+      source.song_list(url, moptions)
     end
+    result.to_yaml
+  end
 
-    def youtube_dl(url)
-      require 'tempfile'
+  # Find list of matching songs from HAV.  List is normally from NCT
+  desc 'hav_matching_songs(cfile)', 'hav_matching_songs'
+  def hav_matching_songs(cfile)
+    slist, _nlist = HavSource.new.find_matching_songs(YAML.safe_load_file(cfile))
+    _output_data(slist, _get_options)
+  end
 
-      options = _get_options
-      odir    = options[:odir] || '.'
-      ofile   = options[:ofile] || '%(title)s-%(creator)s-%(release_date)s'
-      tmpf    = Tempfile.new('youtube')
-      ofmt    = "#{odir}/#{ofile}.%(ext)s"
-      command = 'youtube-dl --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail'
-      command += " -o '#{ofmt}' '#{url}'"
-      system "set -x; #{command} | tee #{tmpf.path}"
+  desc 'transpose(file, offset)', 'transpose'
+  def transpose(file, offset)
+    _transpose(file, offset)
+  end
 
-      return unless options[:split]
+  desc 'youtube_dl(url)', 'youtube_dl'
+  option :split,     type: :boolean
+  option :transpose, type: :numeric
+  option :open,      type: :boolean
+  def youtube_dl(url)
+    require 'tempfile'
 
+    moptions = _get_options
+    tmpf     = Tempfile.new('youtube')
+
+    command  = "youtube-dl --get-filename '#{url}'"
+    basename = `set -x; #{command}`.chomp.sub(/\..*$/, '')
+
+    command = "youtube-dl --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail '#{url}'"
+    system "set -x; #{command} | tee #{tmpf.path}"
+
+    mp3file = basename + '.mp3'
+    unless test('s', mp3file)
+      raise "Failed to download mp3 from #{url}"
+    end
+    system("touch \"#{mp3file}\"")
+
+    if moptions[:split]
       fline = File.read(tmpf.path).split("\n")
                   .find { |l| l.start_with?('[ffmpeg] Adding thumbnail') }
       return unless fline
-
-      mp3file = fline.scan(/".*"/)[0][1..-2]
       system "set -x; mp3splt -s \"#{mp3file}\""
     end
-
-    def mylist(dir='./SLIST')
-      total = 0
-      fentries = Dir.glob("#{dir}/*.yml").map do |f|
-        content = YAML.safe_load_file(f)
-        fsize   = File.size(f)
-        total  += content.size
-        {name: f, fsize: fsize, count: content.size}
-      end
-      fentries.sort_by { |e| e[:count] }.each do |e|
-        puts format('%<name>-30s %<fsize>6d %<count>3d', name: e[:name],
-                    fsize: e[:fsize], count: e[:count])
-      end
-      puts format('%<name>-30s %<fsize>6d %<count>3d', name: 'Total',
-                  fsize: 0, total: total)
-      true
+    
+    if offset = moptions[:transpose]
+      _transpose(mp3file, offset)
     end
 
-    RATING_USERS = %w[mbtc9522 metacritic kelichi ceenee].freeze
-    ADMIN_USERS  = %w[gau307 kabigon91 trungdq88].freeze
-    def _get_options
-      options = get_option
-      if options[:top_exclude]
-        top_users = HacSource.new(options).thanh_vien(options[:top_exclude].to_i)
-        options[:exclude_user] = (top_users + RATING_USERS + ADMIN_USERS).join(',')
-      end
-      options
+    if moptions[:open]
+      system("set -x; open -a 'Sonic Visualiser' \"#{mp3file}\"")
     end
+  end
 
-    def lineup_chords(ifile)
-      lines = if ifile == '-'
-                $stdin.read.split(/\n/)
-              else
-                File.read(ifile).split(/\n/)
-              end
-      chords = []
-      result = []
-      lines.each do |l|
-        words = l.split
-        cline = true
-        words.each do |w|
-          if w !~ %r{^\[?[-A-G][Mmb#ajdimsu0-9]*(/[A-Gb#]*)?\]?$}o
-            cline = false
-            break
-          end
-        end
-        cline = false if words.size <= 0
-        if cline
-          s_space = true
-          cword   = ''
-          cindex  = 0
-          # Pad the end so I don't have to handle end of text condition
-          ("#{l.gsub(/[\]\[]/, ' ')} ").split('').each_with_index do |c, index|
-            if s_space
-              if c !~ /\s/
-                cword   = c
-                cindex  = index
-                s_space = false
-              end
-            elsif c =~ /\s/
-              chords << [cword, cindex]
-              cword   = ''
-              s_space = true
+  desc "mylist(dir='./SLIST')", 'mylist'
+  def mylist(dir='./SLIST')
+    total = 0
+    fentries = Dir.glob("#{dir}/*.yml").map do |f|
+      content = YAML.safe_load_file(f)
+      fsize   = File.size(f)
+      total  += content.size
+      {name: f, fsize: fsize, count: content.size}
+    end
+    fentries.sort_by { |e| e[:count] }.each do |e|
+      puts format('%<name>-30s %<fsize>6d %<count>3d', name: e[:name],
+                  fsize: e[:fsize], count: e[:count])
+    end
+    puts format('%<name>-30s %<fsize>6d %<count>3d', name: 'Total',
+                fsize: 0, total: total)
+    true
+  end
+
+  desc 'lineup_chords(ifile)', 'lineup_chords'
+  def lineup_chords(ifile)
+    lines = if ifile == '-'
+              $stdin.read.split(/\n/)
             else
-              cword += c
+              File.read(ifile).split(/\n/)
             end
-          end
-        else
-          l = "#{Regexp.last_match(1)}:" if l =~ /^\[(.*)\]$/
-          l = l.tr('[]', '<>')
-          unless chords.empty?
-            # Reverse to avoid changing the disturbing existing text until touched
-            chords.reverse.each do |text, pos|
-              l += ' ' * 80 if l.size <= pos
-              l.insert(pos, "[#{text}]")
-            rescue StandardError => e
-              Plog.error e
-            end
-            chords = []
-          end
-          l = l.strip.gsub(/\s+/, ' ')
-          # Plog.dump_info(cline: cline, l: l)
-          result << " #{l}"
+    chords = []
+    result = []
+    lines.each do |l|
+      words = l.split
+      cline = true
+      words.each do |w|
+        if w !~ %r{^\[?[-A-G][Mmb#ajdimsu0-9]*(/[A-Gb#]*)?\]?$}o
+          cline = false
+          break
         end
       end
-      result
+      cline = false if words.size <= 0
+      if cline
+        s_space = true
+        cword   = ''
+        cindex  = 0
+        # Pad the end so I don't have to handle end of text condition
+        ("#{l.gsub(/[\]\[]/, ' ')} ").split('').each_with_index do |c, index|
+          if s_space
+            if c !~ /\s/
+              cword   = c
+              cindex  = index
+              s_space = false
+            end
+          elsif c =~ /\s/
+            chords << [cword, cindex]
+            cword   = ''
+            s_space = true
+          else
+            cword += c
+          end
+        end
+      else
+        l = "#{Regexp.last_match(1)}:" if l =~ /^\[(.*)\]$/
+        l = l.tr('[]', '<>')
+        unless chords.empty?
+          # Reverse to avoid changing the disturbing existing text until touched
+          chords.reverse.each do |text, pos|
+            l += ' ' * 80 if l.size <= pos
+            l.insert(pos, "[#{text}]")
+          rescue StandardError => e
+            Plog.error e
+          end
+          chords = []
+        end
+        l = l.strip.gsub(/\s+/, ' ')
+        # Plog.dump_info(cline: cline, l: l)
+        result << " #{l}"
+      end
     end
-
-    def sendto(url, method, *args)
-      options = _get_options
-      MusicSource.mk_source(url, options).send(method, url, options, *args)
-    end
+    result
   end
 end
 
-if __FILE__ == $PROGRAM_NAME
-  HACAuto.handle_cli(
-    ['--auth',             '-a', 1],
-    ['--with_attribution', '-A', 0],
-    ['--browser',          '-b', 1],
-    ['--odir',             '-d', 1],
-    ['--force',            '-f', 0],
-    ['--site_filter',      '-F', 1],
-    ['--hac_url',          '-H', 1],
-    ['--check_lyrics',     '-k', 0],
-    ['--limit',            '-l', 1],
-    ['--lyrics',           '-L', 0],
-    ['--newlist',          '-n', 0],
-    ['--ofile',            '-o', 1],
-    ['--pcount',           '-p', 1],        # Play count
-    ['--page',             '-P', 1],        # Start page
-    ['--split',            '-s', 0],        # Start page
-    ['--verbose',          '-v', 0],        # Start page
-    ['--click_wait',       '-w', 1],        # Start page
-    ['--exclude_user',     '-x', 1],
-    ['--top_exclude',      '-X', 1]
-  )
-end
+HACAuto.start(ARGV) if __FILE__ == $PROGRAM_NAME

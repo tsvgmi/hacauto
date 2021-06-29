@@ -78,6 +78,14 @@ module SmuleAuto
       true
     end
 
+    def is_song_fav?
+      click_smule_page(:sc_song_menu, delay: 1)
+      locator = 'div.sc-cRcunm.kXGAjw'
+      cval = css("#{locator} svg path")[0][:fill]
+      find_element(:xpath, '//html').click
+      cval == '#FFCE42'
+    end
+
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 

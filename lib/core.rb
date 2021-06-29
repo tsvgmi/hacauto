@@ -121,22 +121,21 @@ module Cli
     opt = Cli.parse_options(*optset)
     set_options(opt)
     obj = nil
+    if ARGV.empty?
+      cli_usage
+      return false
+    end
     if opt[:class] || (imethods.size <= 0)
-      !ARGV.empty? || cli_usage
       method = ARGV.shift.gsub(/-/, '_')
       result = send(method, *ARGV)
     elsif block_given?
       result = yield opt
     # Class handle CLI instantiation?
     elsif respond_to?(:cliNew)
-      # ARGV could change during cliNew, so we check both places
-      !ARGV.empty? || cli_usage
       obj = cliNew
-      !ARGV.empty? || cli_usage
       method = ARGV.shift.gsub(/-/, '_')
       result = obj.send(method, *ARGV)
     else
-      !ARGV.empty? || cli_usage
       obj    = new(ARGV.shift)
       method = ARGV.shift.gsub(/-/, '_')
       result = obj.send(method, *ARGV)
@@ -152,7 +151,7 @@ module Cli
 
   # Print the message on cli usage (flag/method) and exit script
   def cli_usage
-    warn "#{File.basename($PROGRAM_NAME)} #{Cli.show_options(@cli_options).join(' ')} [object] method ...'
+    warn "#{File.basename($PROGRAM_NAME)} #{Cli.show_options(@cli_options).join(' ')} [object] method ...'"
     Cli.class_usage(self)
   end
 
