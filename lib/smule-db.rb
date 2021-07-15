@@ -70,7 +70,7 @@ module SmuleAuto
       @songtags    = @db[:song_tags]
     end
 
-    def tags
+    def songtags
       HashableSet.new(@songtags, :name, vcol: :tags)
     end
 
@@ -110,9 +110,19 @@ module SmuleAuto
       when :url
         newset = @content.where(sid: File.basename(value))
       when :my_open
-        # newset = @content.where(record_by: @user).where(message: nil)
         newset = @content.where(record_by: @user)
-                         .where(Sequel.lit('message not like "%thvopen%"'))
+        if value && !value.empty?
+          newset = newset.where(Sequel.lit('message is null or message not like "%#thvopen%"'))
+        end
+      when :my_duets
+        newset = @content.where(record_by: "#{@user},#{@user}")
+        if value && !value.empty?
+          newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
+        end
+      when :my_open_duets
+        newset = @content.where(record_by: [@user, "#{@user},#{@user}"])
+      when :my_tags
+        newset = @content.where(Sequel.lit(%(message like "%#{value}%")))
       when :isfav
         newset = @content.where(isfav: true)
       when :favs
@@ -338,25 +348,29 @@ module SmuleAuto
         bakfile = Tempfile.new('bak')
 
         bakfile.puts(records.map(&:to_json).join("\n"))
+        bakfile.close
 
         case format
         when /^y/i
           newfile.puts(records.to_yaml)
+          newfile.close
           system("vim #{newfile.path}")
           newrecs = YAML.safe_load_file(newfile.path)
           editout = Tempfile.new('edit')
           editout.puts(newrecs.map(&:to_json).join("\n"))
+          editout.close
         else
           newfile.puts(records.map(&:to_json).join("\n"))
           system("vim #{newfile.path}")
           editout = newfile
         end
 
-        diff = `set -x; diff #{bakfile.path} #{editout.path}`
-        puts diff
+        diff   = `set -x; diff #{bakfile.path} #{editout.path} | tee /dev/tty`
         delset = []
         addset = []
         diff.split("\n").each do |l|
+          next unless l =~ /{/
+
           case l
           when />/
             data = JSON.parse(l[2..], symbolize_names: true)
@@ -389,13 +403,13 @@ module SmuleAuto
       end
     end
 
-    desc 'edit_tag', 'Edit tag of existing song'
+    desc 'edit_songtag', 'Edit tag of existing song'
     long_desc <<~LONGDESC
       Dump the tag data into a text file.  Allow user to edit and update with any
       changes back into the database
     LONGDESC
     option :format, type: :string, default: 'json'
-    def edit_tag(user)
+    def edit_songtag(user)
       cli_wrap do
         tdir = _tdir_check
         # Must call once to init db connection/model
@@ -426,6 +440,24 @@ module SmuleAuto
         insset.each do |r|
           r.delete(:id)
           Singer.new(r).save
+        end
+        true
+      end
+    end
+
+    desc 'edit_tags(user)', 'edit_tags'
+    option :format, type: :string, default: 'yaml'
+    def edit_tags(user)
+      cli_wrap do
+        tdir = _tdir_check
+        # Must call once to init db connection/model
+        SmuleDB.instance(user, cdir: tdir)
+        records = Tag.all.sort_by { |r| r[:sname] }.map(&:values)
+        insset, delset = _edit_file(records, format: options[:format])
+        Tag.where(id: delset.map { |r| r[:id] }).destroy unless delset.empty?
+        insset.each do |r|
+          r.delete(:id)
+          Tag.new(r).save
         end
         true
       end

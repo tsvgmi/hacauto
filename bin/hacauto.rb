@@ -845,9 +845,7 @@ class HACAuto < Thor
     end
 
     def _transpose(file, offset)
-      if offset.is_a?(String)
-        offset  = offset.sub(/^m/, '-')
-      end
+      offset = offset.sub(/^m/, '-') if offset.is_a?(String)
       Plog.info "Transpose #{file} by #{offset} semitone"
       ofile   = "t#{offset}-" + file
       command = "sox \"#{file}\" \"#{ofile}\" pitch #{offset}00"
@@ -1133,26 +1131,24 @@ class HACAuto < Thor
     command = "youtube-dl --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail '#{url}'"
     system "set -x; #{command} | tee #{tmpf.path}"
 
-    mp3file = basename + '.mp3'
-    unless test('s', mp3file)
-      raise "Failed to download mp3 from #{url}"
-    end
+    mp3file = "#{basename}.mp3"
+    raise "Failed to download mp3 from #{url}" unless test('s', mp3file)
+
     system("touch \"#{mp3file}\"")
 
     if moptions[:split]
       fline = File.read(tmpf.path).split("\n")
                   .find { |l| l.start_with?('[ffmpeg] Adding thumbnail') }
       return unless fline
+
       system "set -x; mp3splt -s \"#{mp3file}\""
     end
-    
-    if offset = moptions[:transpose]
+
+    unless (offset = moptions[:transpose]).nil?
       _transpose(mp3file, offset)
     end
 
-    if moptions[:open]
-      system("set -x; open -a 'Sonic Visualiser' \"#{mp3file}\"")
-    end
+    system("set -x; open -a 'Sonic Visualiser' \"#{mp3file}\"") if moptions[:open]
   end
 
   desc "mylist(dir='./SLIST')", 'mylist'

@@ -78,30 +78,27 @@ module SmuleAuto
       true
     end
 
-    def is_song_fav?
-      click_smule_page(:sc_song_menu, delay: 1)
-      locator = 'div.sc-cRcunm.kXGAjw'
-      cval = css("#{locator} svg path")[0][:fill]
-      find_element(:xpath, '//html').click
-      cval == '#FFCE42'
-    end
-
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 
       locator = 'div.sc-cRcunm.kXGAjw'
-      cval = css("#{locator} svg path")[0][:fill]
+      cval = (css("#{locator} svg path")[0] || {})[:fill]
+      unless cval
+        return false
+      end
 
       if fav && cval == '#FFCE42'
         Plog.info('Already fav, skip it')
+        find_element(:css, 'body').click
         return false
       elsif !fav && cval != '#FFCE42'
         Plog.info('Already not-fav, skip it')
+        find_element(:css, 'body').click
         return false
       end
       cpos = find_elements(:css, locator).size / 2
       click_and_wait(locator, 1, cpos)
-      find_element(:xpath, '//html').click
+      find_element(:css, 'body').click
       true
     end
 
@@ -109,11 +106,32 @@ module SmuleAuto
       click_smule_page(:sc_like, delay: 0)
     end
 
-    def add_song_tag(tag, sinfo=nil, _options={})
+    def add_any_song_tag(user, sinfo=nil, _options={})
+      return unless sinfo
+
+      if sinfo[:isfav] || sinfo[:oldfav]
+        if sinfo[:record_by].start_with?("#{user},")
+          add_song_tag('#thvfavs', sinfo)
+        else
+          toggle_song_favorite(fav: true)
+        end
+      end
+      if sinfo[:record_by] == user &&
+         sinfo[:expire_at] && (Time.now > sinfo[:expire_at])
+        add_song_tag('#thvopen', sinfo)
+      end
+      if sinfo[:record_by] == "#{user},#{user}" &&
+         (!sinfo[:message] || !sinfo[:message].include?('#thvduets'))
+        add_song_tag('#thvduets', sinfo, notime: true)
+      end
+      toggle_play(doplay: true)
+    end
+
+    def add_song_tag(tag, sinfo=nil, options={})
       otag  = tag
       snote = ''
       if sinfo
-        tag += sinfo[:created].strftime('_%y')
+        tag += sinfo[:created].strftime('_%y') unless options[:notime]
         if (snote = sinfo[:message]).nil?
           snote = sinfo[:message] = song_note
         end
@@ -524,7 +542,7 @@ module SmuleAuto
         return 0
       end
 
-      if !asset.empty?
+      unless asset.empty?
         @info[:other_city] = asset[:other_city] if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s != ''
 
         # Click on play

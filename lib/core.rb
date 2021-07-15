@@ -156,8 +156,8 @@ module Cli
   end
 
   # Print a prompt and wait for y/n answer
-  def self.confirm(prompt, default='n')
-    $stderr.print " # {prompt} (y/n) [n]? "
+  def self.confirm(_prompt, default='n')
+    $stderr.print ' # {prompt} (y/n) [n]? '
     ans = $stdin.gets
     ans = default if !ans || (ans == '')
     ans =~ /[Yy]/ ? true : false
