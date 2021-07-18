@@ -202,14 +202,27 @@ module SmuleAuto
     end
 
     def get_user_group(user, agroup)
-      JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))['list']
-          .map do |r|
-        {
-          name:       r['handle'],
-          avatar:     r['pic_url'],
-          account_id: r['account_id'],
-        }
+      result = []
+      offset = 0
+      while true
+        begin
+          data = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json?offset=#{offset}&limit=25"))['list']
+        rescue JSON::ParserError => errmsg
+          break
+        end
+        break if data.size <= 0
+        offset += 25
+        Plog.dump(agroup:agroup, offset:offset)
+        result += data.map do |r|
+          {
+            name:       r['handle'],
+            avatar:     r['pic_url'],
+            account_id: r['account_id'],
+          }
+        end
       end
+      Plog.dump_info(agroup:agroup, size:result.size)
+      result
     end
   end
 
@@ -415,7 +428,8 @@ module SmuleAuto
         table   = []
         bar = TTY::ProgressBar.new('Follower [:bar] :percent',
                                    total: users['list'].size)
-        users['list'].sort.each do |r|
+        Plog.dump(users:users['list'], _ofmt:'Y')
+        users['list'].sort_by{|r| r['handle']}.each do |r|
           fuser = r['handle']
           slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json",
                                 options)

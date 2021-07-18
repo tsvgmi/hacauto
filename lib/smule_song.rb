@@ -109,7 +109,7 @@ module SmuleAuto
     def add_any_song_tag(user, sinfo=nil, _options={})
       return unless sinfo
 
-      if sinfo[:isfav] || sinfo[:oldfav]
+      if sinfo[:isfav]
         if sinfo[:record_by].start_with?("#{user},")
           add_song_tag('#thvfavs', sinfo)
         else
