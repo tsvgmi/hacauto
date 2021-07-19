@@ -18,42 +18,21 @@ fi
 
 oper=$1; shift
 case $oper in
-  download-transpose)
-    ofile=download-$$.mp3
-    while getopts :o:s: i; do
+  youtube-dl)
+    ytopt=
+    while getopts :t:o i; do
       case $i in
-      s) offset=$OPTARG ;;
-      o) ofile=${OPTARG%.*}.mp3 ;;
+      t) ytopt="$ytopt --transpose=$OPTARG" ;;
+      o) ytopt="$ytopt --open" ;;
+      *) F_usageOper $oper ;;
       esac
     done
     let i=$OPTIND-1; shift $i
     OPTIND=0
 
-    tdir=$1
-    if [ -d "$tdir" ]; then
-      wfile=$(ls -t $tdir/*.mp3 | head -1)
-      echo "Latest file is $wfile"
-    elif [ -f "$tdir" ]; then
-      wfile=$tdir
-      tdir=$PWD
-    elif [ ${tdir#http} != $tdir ]; then
-      echo "Downloading from youtube"
-      hacauto.rb youtube_dl $tdir -o youtube-$$
-      tdir=$PWD
-      wfile=youtube-$$.mp3
-    else
-      echo "Don't know how to handle $tdir"
-      exit 1
-    fi
-    if [ "$offset" ]; then
-      echo "Transpose $wfile by $offset semitone to $ofile"
-      sox "$wfile" $ofile pitch ${offset}00
-    else
-      mv $wfile $ofile
-    fi
-    echo "Final file is $ofile - Open in Sonic Visualizer"
-    touch $ofile
-    open -a "Sonic Visualiser" "$ofile"
+    [ $# -gt 0 ] || F_usageOper $oper
+    url=$1
+    exec hacauto.rb youtube_dl $ytopt $url
     ;;
 
   transpose)

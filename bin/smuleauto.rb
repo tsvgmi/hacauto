@@ -98,7 +98,7 @@ ALTERNATE = {
   'Eddy2020_'     => 'Mina_________',
   '_Huong'        => '__HUONG',
   '__MinaTrinh__' => 'Mina_________',
-  'tim_chet'      => 'ngotngao_mantra',
+  'ChiHoang55'    => 'ChiMHoang',
 }.freeze
 
 def _record_by_map(record_by)
@@ -133,8 +133,8 @@ module SmuleAuto
       first_day = Time.now - (options[:days] || 7).to_i * 24 * 3600
       bar       = nil
       unless options[:quiet]
-        bar       = TTY::ProgressBar.new('Checking songs [:bar] :percent',
-                                         total: limit)
+        bar = TTY::ProgressBar.new('Checking songs [:bar] :percent',
+                                   total: limit)
       end
       catch(:done) do
         loop do
@@ -176,17 +176,17 @@ module SmuleAuto
             }
             allset << rec
             if created <= first_day
-              bar.log("Created less than #{first_day}") if bar
+              bar&.log("Created less than #{first_day}")
               throw :done
             end
             throw :done if allset.size >= limit
           end
           offset = result['next_offset']
           throw :done if offset < 0
-          bar.advance(slist.size) if bar
+          bar&.advance(slist.size)
         end
       end
-      bar.finish if bar
+      bar&.finish
       allset
     end
 
@@ -202,14 +202,27 @@ module SmuleAuto
     end
 
     def get_user_group(user, agroup)
-      JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json"))['list']
-          .map do |r|
-        {
-          name:       r['handle'],
-          avatar:     r['pic_url'],
-          account_id: r['account_id'],
-        }
+      result = []
+      offset = 0
+      while true
+        begin
+          data = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json?offset=#{offset}&limit=25"))['list']
+        rescue JSON::ParserError => errmsg
+          break
+        end
+        break if data.size <= 0
+        offset += 25
+        Plog.dump(agroup:agroup, offset:offset)
+        result += data.map do |r|
+          {
+            name:       r['handle'],
+            avatar:     r['pic_url'],
+            account_id: r['account_id'],
+          }
+        end
       end
+      Plog.dump_info(agroup:agroup, size:result.size)
+      result
     end
   end
 
@@ -303,6 +316,29 @@ module SmuleAuto
         content.add_new_songs(perfset, isfav: false)
         perfset
       end
+
+      def _set_search_filter(user, woptions, filter=nil)
+        wset = Performance.where(Sequel.lit('performances.record_by like ?',
+                                            "%#{user}%"))
+                          .order(:created)
+                          .join_table(:left, :song_tags, name: :stitle)
+        wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1')) if woptions[:favs]
+        unless (value = woptions[:record]).nil?
+          wset = wset.where(Sequel.lit('performances.record_by like ?', "%#{value}%"))
+        end
+        unless (value = woptions[:tags]).nil?
+          wset = wset.where(Sequel.lit('tags like ?', "%#{value}%"))
+        end
+        unless (value = woptions[:title]).nil?
+          wset = wset.where(Sequel.lit('performances.stitle like ?', "%#{value}%"))
+        end
+        wset = wset.where(Sequel.lit(filter)) if filter && !filter.empty?
+        if woptions[:with_comment]
+          wset = wset.join_table(:inner, :comments, Sequel.lit('performances.sid = comments.sid'))
+        end
+        Plog.dump(wset: wset)
+        wset
+      end
     end
 
     class_option :browser,  type: :string, default: 'firefox',
@@ -392,7 +428,8 @@ module SmuleAuto
         table   = []
         bar = TTY::ProgressBar.new('Follower [:bar] :percent',
                                    total: users['list'].size)
-        users['list'].sort.each do |r|
+        Plog.dump(users:users['list'], _ofmt:'Y')
+        users['list'].sort_by{|r| r['handle']}.each do |r|
           fuser = r['handle']
           slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json",
                                 options)
@@ -590,7 +627,7 @@ module SmuleAuto
     option :tags,  type: :string
     option :favs,  type: :boolean, default: true
     option :title, type: :string
-    option :record_by, type: :string
+    option :record, type: :string
     long_desc <<~LONGDESC
       List the candidates for open from the matching filter.
       Filters is the list of SQL's into into DB.
@@ -602,34 +639,16 @@ module SmuleAuto
       cli_wrap do
         _tdir_check
         SmuleDB.instance(user, cdir: options[:data_dir])
-        wset    = Performance.where(record_by: user)
-        opened  = {}
-        wset.all.each do |r|
-          opened[r[:stitle]] = true
-        end
-
-        wset = Performance.where(Sequel.lit('record_by like ?', "%#{user}%"))
-        wset = wset.order(:created)
-                   .join_table(:left, :song_tags, name: :stitle)
-
-        wset = wset.where(Sequel.lit(filter.join(' '))) unless filter.empty?
-        wset = wset.where(Sequel.lit('isfav = 1 or oldfav = 1')) if options[:favs]
-        unless (value = options[:tags]).nil?
-          wset = wset.where(Sequel.lit('tags like ?', "%#{value}%"))
-        end
-        unless (value = options[:record_by]).nil?
-          wset = wset.where(Sequel.lit('record_by like ?', "%#{value}%"))
-        end
-
-        unless (title = options[:title]).nil?
-          wset = wset.where(Sequel.lit('stitle like ?', "%#{title}%"))
-        end
-
-        Plog.dump(wset: wset)
         topen = {}
+        myrecs = Performance
+                 .where(Sequel.lit('performances.record_by = ?', user))
+                 .map { |r| r[:stitle] }.uniq
+        woptions = writable_options
+        wset     = _set_search_filter(user, woptions, filter.join(' '))
+                   .where(Sequel.lit('performances.record_by != ?', user))
         begin
           wset.all.each do |r|
-            next if opened[r[:stitle]]
+            next if myrecs.include?(r[:stitle])
 
             topen[r[:stitle]] = [r[:created], r[:tags]]
           end
@@ -646,22 +665,22 @@ module SmuleAuto
       end
     end
 
-    desc 'dump_comment(user)', 'dump_comment'
+    desc 'dump_comment(user, *filter)', 'dump_comment2'
+    option :favs,   type: :boolean
+    option :record, type: :string
+    option :tags,   type: :string
+    option :title,  type: :string
     def dump_comment(user, *filter)
       cli_wrap do
         _tdir_check
         SmuleDB.instance(user, cdir: options[:data_dir])
-        wset = Comment.where(Sequel.lit("record_by like '%#{user}%'"))
-        wset = wset.where(Sequel.lit(filter.join(' '))) unless filter.empty?
-        Plog.dump(wset: wset)
-        wset.all.map(&:values).to_yaml
-        wset.each do |sinfo|
+        woptions = writable_options.update(with_comment: true)
+        _set_search_filter(user, woptions, filter.join(' ')).all.each do |sinfo|
           comments = JSON.parse(sinfo[:comments])
                          .select { |_c, m| m && !m.empty? }
           next if comments.empty?
 
-          p sinfo
-          puts format("\n%<title>-60.60s %<record>20.20s %<created>s",
+          puts format("\n%<title>-50.50s %<record>-20.20s %<created>s",
                       title: sinfo[:stitle], record: sinfo[:record_by],
                       created: sinfo[:created])
           comments.each do |cuser, msg|
@@ -762,6 +781,18 @@ module SmuleAuto
           scanner.spage.add_song_tag('#thvfavs', sinfo)
         end
         true
+      end
+    end
+
+    desc 'clean_lyrics', 'clean_lyrics'
+    def clean_lyrics
+      cli_wrap do
+        output = []
+        until (l = $stdin.gets).nil?
+          l = l.chomp.gsub(/\[[^\]]+\]/, '')
+          output << l
+        end
+        puts output
       end
     end
   end

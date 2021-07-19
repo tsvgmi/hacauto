@@ -82,18 +82,23 @@ module SmuleAuto
       click_smule_page(:sc_song_menu, delay: 1)
 
       locator = 'div.sc-cRcunm.kXGAjw'
-      cval = css("#{locator} svg path")[0][:fill]
+      cval = (css("#{locator} svg path")[0] || {})[:fill]
+      unless cval
+        return false
+      end
 
       if fav && cval == '#FFCE42'
         Plog.info('Already fav, skip it')
+        find_element(:css, 'body').click
         return false
       elsif !fav && cval != '#FFCE42'
         Plog.info('Already not-fav, skip it')
+        find_element(:css, 'body').click
         return false
       end
       cpos = find_elements(:css, locator).size / 2
       click_and_wait(locator, 1, cpos)
-      find_element(:xpath, '//html').click
+      find_element(:css, 'body').click
       true
     end
 
@@ -101,11 +106,32 @@ module SmuleAuto
       click_smule_page(:sc_like, delay: 0)
     end
 
-    def add_song_tag(tag, sinfo=nil, _options={})
+    def add_any_song_tag(user, sinfo=nil, _options={})
+      return unless sinfo
+
+      if sinfo[:isfav]
+        if sinfo[:record_by].start_with?("#{user},")
+          add_song_tag('#thvfavs', sinfo)
+        else
+          toggle_song_favorite(fav: true)
+        end
+      end
+      if sinfo[:record_by] == user &&
+         sinfo[:expire_at] && (Time.now > sinfo[:expire_at])
+        add_song_tag('#thvopen', sinfo)
+      end
+      if sinfo[:record_by] == "#{user},#{user}" &&
+         (!sinfo[:message] || !sinfo[:message].include?('#thvduets'))
+        add_song_tag('#thvduets', sinfo, notime: true)
+      end
+      toggle_play(doplay: true)
+    end
+
+    def add_song_tag(tag, sinfo=nil, options={})
       otag  = tag
       snote = ''
       if sinfo
-        tag += sinfo[:created].strftime('_%y')
+        tag += sinfo[:created].strftime('_%y') unless options[:notime]
         if (snote = sinfo[:message]).nil?
           snote = sinfo[:message] = song_note
         end
@@ -151,7 +177,7 @@ module SmuleAuto
       remain = 0
       refresh
 
-      #paths    = css('div.sc-iumJyn svg path').size
+      # paths    = css('div.sc-iumJyn svg path').size
       paths    = css('div.sc-fiKUUL svg path').size
       toggling = true
       if doplay && paths == 2
@@ -378,8 +404,8 @@ module SmuleAuto
         operf = perf[:other_performers][0]
         if operf
           output.update(
-            #other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
-            record_by:   [perf[:performed_by], operf[:handle]].join(',')
+            # other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
+            record_by: [perf[:performed_by], operf[:handle]].join(',')
           )
         end
       end
@@ -414,9 +440,9 @@ module SmuleAuto
     def asset_from_page
       olink = @surl.sub(%r{/ensembles$}, '')
       begin
-        source   = HTTP.follow.get(olink, ssl_context: @ssl_context).to_s
-      rescue HTTP::Redirector::EndlessRedirectError => errmsg
-        Plog.error(errmsg:errmsg)
+        source = HTTP.follow.get(olink, ssl_context: @ssl_context).to_s
+      rescue HTTP::Redirector::EndlessRedirectError => e
+        Plog.error(errmsg: e)
         return {}
       end
 
@@ -516,7 +542,7 @@ module SmuleAuto
         return 0
       end
 
-      if !asset.empty?
+      unless asset.empty?
         @info[:other_city] = asset[:other_city] if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s != ''
 
         # Click on play
@@ -524,10 +550,6 @@ module SmuleAuto
                      psecs: asset[:psecs], message: asset[:message],
                      other_city: asset[:other_city],
                      expire_at: asset[:expire_at])
-      else
-        #p @info
-        #sleep 10
-        #@info[:psecs] ||= 200
       end
       [@info[:psecs], msgs]
     end

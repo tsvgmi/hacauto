@@ -215,10 +215,10 @@ module SmuleAuto
     end
 
     def _list_show(curset:, curitem: nil, start: 0, limit: 10, clear: true)
-      bar    = '*' * 10
-      tags   = @content.tags
-      table  = TTY::Table.new
-      cursor = TTY::Cursor
+      bar      = '*' * 10
+      songtags = @content.songtags
+      table    = TTY::Table.new
+      cursor   = TTY::Cursor
       print cursor.clear_screen if clear
       print cursor.move_to
       if curitem
@@ -228,15 +228,16 @@ module SmuleAuto
           print cursor.move_to(0, 0)
           system "imgcat -r 5 <#{lfile}"
         end
-        ptags = tags[curitem[:stitle]] || ''
+        ptags = songtags[curitem[:stitle]] || ''
         isfav = curitem[:isfav] || curitem[:oldfav] ? 'F' : ' '
+        xtags = @content.db[:tags].where(sname: ptags.split(',')).map { |r| r[:description] }.join(', ')
         box   = TTY::Box.frame(top: 0, left: 15,
                 width: TTY::Screen.width - 20,
                 height: 5) do
           <<~EOM
             [#{isfav}] #{curitem[:title]} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
                 #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags[0..9]}
-            #{curitem[:message]}
+            #{curitem[:message]} - #{xtags}
           EOM
         end
         puts box
@@ -245,7 +246,7 @@ module SmuleAuto
         witem = curset[i]
         next unless witem
 
-        ptags = tags[witem[:stitle]] || ''
+        ptags = songtags[witem[:stitle]] || ''
         isfav = witem[:isfav] || witem[:oldfav] ? 'F' : ''
         row   = [i, isfav, witem[:title], witem[:record_by],
                  witem[:listens], witem[:loves],
@@ -306,19 +307,27 @@ module SmuleAuto
 
     def _show_msgs(sitem, psitem)
       table = TTY::Table.new
-      pmsg  = psitem[:msgs] || []
-      pmsg.each do |usr, msg|
-        table << [usr, text_wrap(msg, 80)]
+      if psitem
+        pmsg  = psitem[:msgs] || []
+        pmsg.each do |usr, msg|
+          table << [usr, text_wrap(msg, 80)]
+        end
       end
+      comments = pmsg.to_json
       data = {
         sid:       sitem[:sid],
-        stitle:    sitem[:stitle],
-        record_by: sitem[:record_by],
-        comments:  pmsg.to_json,
+        # stitle:    sitem[:stitle],
+        # record_by: sitem[:record_by],
+        comments:  comments,
       }
-      unless (rec = Comment.first(sid: sitem[:sid])).nil?
-        rec.update(data)
-        rec.save_changes
+      rec = Comment.first(sid: sitem[:sid])
+      if rec
+        if comments != rec.comments
+          rec.update(data)
+          rec.save_changes
+        end
+      else
+        Comment.insert(data)
       end
       puts table.render(multiline: true)
     end
@@ -379,19 +388,18 @@ module SmuleAuto
         # Get next song and play
         if (sitem = @playlist.next_song).nil?
           endt = Time.now + 1
-        elsif (sitem[:record_by] == @user)
-          _list_show(curset: @playlist.toplay_list, curitem: sitem)
-          if !(psitem = play_asong(sitem, to_play: false)).nil? &&
-              sitem[:expire_at] && (Time.now > sitem[:expire_at])
-            @scanner.spage.add_song_tag('#thvopen', sitem)
-          end
-          endt = Time.now + 3
+#       elsif sitem[:record_by] == @user
+#         _list_show(curset: @playlist.toplay_list, curitem: sitem)
+#         psitem = play_asong(sitem)
+#         @scanner.spage.add_any_song_tag(@user, sitem)
         else
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
           if (duration = psitem[:duration]) <= 0
             next
           end
+
+          @scanner.spage.add_any_song_tag(@user, sitem)
 
           # Turn off autoplay
           @scanner.spage.toggle_autoplay if pcount == 0
@@ -410,12 +418,12 @@ module SmuleAuto
                 _list_show(curset: @playlist.toplay_list,
                            clear: false, curitem: sitem)
                 _show_msgs(sitem, psitem)
-                if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
-                  _menu_eval do
-                    @scanner.spage.add_song_tag('#thvfavs', sitem)
-                    @scanner.spage.toggle_play(doplay: true)
-                  end
-                end
+                #               if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
+                #                 _menu_eval do
+                #                   @scanner.spage.add_song_tag('#thvfavs', sitem)
+                #                   @scanner.spage.toggle_play(doplay: true)
+                #                 end
+                #               end
               end
               wait_t = endt - Time.now
               key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
@@ -473,9 +481,14 @@ module SmuleAuto
         @playlist.next_song(increment: -1)
         return [:next, true]
       when /^[+=]/i # Add/replace list
-        choices = %w[favs isfav recent record_by my_open star title query]
+        choices = %w[favs isfav recent record_by my_open my_duets my_open_duets
+                     star title my_tags query]
         ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
-        param   = ftype =~ /fav|my_open/ ? '' : prompt.ask("#{ftype} value ?")
+        param   = if ftype =~ /fav|my_open_duets/
+                    ''
+                  else
+                    prompt.ask("#{ftype} value ?")
+                  end
         if param
           newset = @content.select_set(ftype.to_sym, param)
           @playlist.add_to_list(newset, replace: key == '=')
@@ -506,11 +519,7 @@ module SmuleAuto
       when 'F' # Set as favorite and tag
         _menu_eval do
           sitem[:isfav] = true
-          if sitem[:record_by].start_with?(@user)
-            @scanner.spage.add_song_tag('#thvfavs', sitem)
-          else
-            @scanner.spage.toggle_song_favorite(fav: true)
-          end
+          @scanner.spage.add_any_song_tag(@user, sitem)
           @scanner.spage.toggle_play(doplay: true)
         end
 
@@ -540,7 +549,7 @@ module SmuleAuto
         print TTY::Cursor.clear_screen
       when 'L'
         play_length = prompt.ask('Max Play Length: ').to_i
-        @roptions[:play_length] = play_length if play_length >= 15
+        @roptions[:play_length] = play_length if play_length >= 3
       when /[>n]/ # Play next song
         @playlist.next_song(increment: 0)
         return [:next, true]

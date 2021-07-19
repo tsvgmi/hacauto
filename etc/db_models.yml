@@ -13,3 +13,6 @@ Comment:
 
 Love:
   table: loves
+
+Tag:
+  table: tags
