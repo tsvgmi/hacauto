@@ -149,8 +149,9 @@ module SmuleAuto
             result = JSON.parse(output)
           rescue JSON::ParserError => e
             Plog.error(e)
-            sleep 2
-            next
+            break
+            #sleep 2
+            #next
           end
           slist = result['list']
           slist.each do |info|
@@ -785,14 +786,69 @@ module SmuleAuto
     end
 
     desc 'clean_lyrics', 'clean_lyrics'
+    option :table, type: :boolean
     def clean_lyrics
       cli_wrap do
-        output = []
-        until (l = $stdin.gets).nil?
-          l = l.chomp.gsub(/\[[^\]]+\]/, '')
-          output << l
+        output = ["=========="] * 3
+        if options[:table]
+          output << "| | Lyrics |"
+          output << "|-| ------ |"
+          until (l = $stdin.gets).nil?
+            l = l.chomp.gsub(/\[[^\]]+\]/, '')
+            output << "| | " + l.strip + " |"
+          end
+          output.join("\n")
+        else
+          until (l = $stdin.gets).nil?
+            l = l.chomp.gsub(/\[[^\]]+\]/, '').strip
+            output << l
+          end
         end
-        puts output
+        output.join("\n")
+      end
+    end
+
+    desc "add_title_to_file(folder)", "add_title_to_file"
+    def add_title_to_file(folder, odir='./new')
+      cli_wrap do
+        FileUtils.mkdir_p(odir) unless test(?d, odir)
+        Dir.glob("#{folder}/*.md").each do |file|
+          title = File.basename(file).sub(/\.md$/, '')
+          ofile = File.join(odir, File.basename(file))
+          File.open(ofile, 'w') do |fod|
+            fod.puts title
+            fod.puts
+            fod.puts File.read(file)
+          end
+          Plog.info("Writing #{ofile}")
+        end
+        true
+      end
+    end
+
+    desc "add_table_to_file(folder, odir='./new')", "add_table_to_file"
+    def add_table_to_file(folder, odir='./new')
+      cli_wrap do
+        FileUtils.mkdir_p(odir) unless test(?d, odir)
+        Dir.glob("#{folder}/*.md").each do |file|
+          ofile = File.join(odir, File.basename(file))
+          File.open(ofile, 'w') do |fod|
+            fod.puts "| | Lyrics |"
+            fod.puts "|-| ------ |"
+            File.read(file).split("\n").each do |l|
+              if l =~ /^([-\+\d\s]+)/
+                note, remain = $1, $'
+                fod.puts "| #{note} | #{remain} |"
+              elsif l =~ /^\|/
+                fod.puts l
+              else
+                fod.puts "| | #{l} |"
+              end
+            end
+          end
+          Plog.info("Writing #{ofile}")
+        end
+        true
       end
     end
   end

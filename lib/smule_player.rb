@@ -306,18 +306,15 @@ module SmuleAuto
     end
 
     def _show_msgs(sitem, psitem)
+      return unless psitem
       table = TTY::Table.new
-      if psitem
-        pmsg  = psitem[:msgs] || []
-        pmsg.each do |usr, msg|
-          table << [usr, text_wrap(msg, 80)]
-        end
+      pmsg  = psitem[:msgs] || []
+      pmsg.each do |usr, msg|
+        table << [usr, text_wrap(msg, 80)]
       end
       comments = pmsg.to_json
       data = {
         sid:       sitem[:sid],
-        # stitle:    sitem[:stitle],
-        # record_by: sitem[:record_by],
         comments:  comments,
       }
       rec = Comment.first(sid: sitem[:sid])
@@ -388,10 +385,14 @@ module SmuleAuto
         # Get next song and play
         if (sitem = @playlist.next_song).nil?
           endt = Time.now + 1
-#       elsif sitem[:record_by] == @user
-#         _list_show(curset: @playlist.toplay_list, curitem: sitem)
-#         psitem = play_asong(sitem)
-#         @scanner.spage.add_any_song_tag(@user, sitem)
+        elsif sitem[:record_by] == @user
+          _list_show(curset: @playlist.toplay_list, curitem: sitem)
+          psitem = play_asong(sitem)
+          @scanner.spage.add_any_song_tag(@user, sitem)
+          if (duration = psitem[:duration]) <= 0
+            next
+          end
+          endt = Time.now + duration
         else
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
@@ -463,6 +464,35 @@ module SmuleAuto
       end
     end
 
+    def show_comment(ftype, sitem)
+      wset = nil
+      case ftype
+      when :by_singer
+        singer = sitem[:record_by].split(',').reject{|f| f == @user}[0]
+        wset = Performance.where(Sequel.lit('performances.record_by like ?',
+                                            "%#{singer}%"))
+                          .order(:created)
+                          .join_table(:left, :song_tags, name: :stitle)
+      when :by_song
+        wset = Performance.where(Sequel.lit('performances.stitle = ?', "#{sitem[:stitle]}"))
+      end
+      wset = wset.join_table(:inner, :comments,
+                             Sequel.lit('performances.sid = comments.sid'))
+      wset.each do |sinfo|
+        next unless sinfo[:comments]
+        comments = JSON.parse(sinfo[:comments])
+                       .select { |_c, m| m && !m.empty? }
+        next if comments.empty?
+
+        puts format("\n%<title>-50.50s %<record>-20.20s %<created>s",
+                    title: sinfo[:stitle], record: sinfo[:record_by],
+                    created: sinfo[:created])
+        comments.each do |cuser, msg|
+          puts format('  %<cuser>-14.14s | %<msg>s', cuser: cuser, msg: msg)
+        end
+      end
+    end
+
     # rubocop:disable Metrics/AbcSize
     # rubocop:disable Metrics/CyclomaticComplexity
     # rubocop:disable Metrics/MethodLength
@@ -503,6 +533,14 @@ module SmuleAuto
           @playlist.chop(list_length)
           print TTY::Cursor.clear_screen
         end
+
+      # See comment
+      when 'c'
+        choices = %i[by_singer by_song]
+        ftype   = prompt.enum_select('Comment type?', choices)
+        show_comment(ftype, sitem)
+        prompt.keypress('Press any key to continue ...')
+
       when 'D'
         if prompt.keypress('Are you sure? ') =~ /^y/i
           @content.delete_song(sitem)
