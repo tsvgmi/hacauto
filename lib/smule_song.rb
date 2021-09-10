@@ -113,9 +113,8 @@ module SmuleAuto
       if sinfo[:isfav]
         if sinfo[:record_by].start_with?("#{user},")
           add_song_tag('#thvfavs', sinfo)
-        else
-          toggle_song_favorite(fav: true)
         end
+        toggle_song_favorite(fav: true)
       end
       if sinfo[:record_by] == user &&
          sinfo[:expire_at] && (Time.now > sinfo[:expire_at])
