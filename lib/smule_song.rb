@@ -58,15 +58,15 @@ module SmuleAuto
     LOCATORS = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
       sc_comment_close:       ['div.sc-gsBrbv.dgedbA',    0],
-      sc_comment_open:        ['div.sc-hYAvag.jfgTmU',    2],
+      sc_comment_open:        ['div.sc-hJJQhR.jkZEL',     2],
       sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
       sc_expose_play_control: ['div.sc-pZCuu',            0],
       sc_favorite_toggle:     ['span.sc-ptfmh.gtVEMN',    -1],
       sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
       sc_play_continue:       ['a.sc-hYZPRl.gumLkx',      0],
-      sc_play_toggle:         ['div.sc-fiKUUL',           0],
-      sc_song_menu:           ['button.sc-eUWgFQ.hcHFJT', 1],
-      sc_star:                ['div.sc-hYAvag.jfgTmU',    0],
+      sc_play_toggle:         ['div.sc-lgqmxq',           0],
+      sc_song_menu:           ['button.sc-gATInX.jHlPUB', 1],
+      sc_star:                ['div.sc-hJJQhR.jkZEL',     0],
     }.freeze
 
     def click_smule_page(elem, delay: 2)
@@ -82,6 +82,7 @@ module SmuleAuto
       click_smule_page(:sc_song_menu, delay: 1)
 
       locator = 'div.sc-cRcunm.kXGAjw'
+      locator = 'div.sc-kTaSZA.eRNvLK'
       cval = (css("#{locator} svg path")[0] || {})[:fill]
       unless cval
         return false
@@ -112,9 +113,8 @@ module SmuleAuto
       if sinfo[:isfav]
         if sinfo[:record_by].start_with?("#{user},")
           add_song_tag('#thvfavs', sinfo)
-        else
-          toggle_song_favorite(fav: true)
         end
+        toggle_song_favorite(fav: true)
       end
       if sinfo[:record_by] == user &&
          sinfo[:expire_at] && (Time.now > sinfo[:expire_at])
@@ -141,13 +141,14 @@ module SmuleAuto
         end
       end
       click_smule_page(:sc_song_menu)
+
       locator = 'span.sc-gTgzIj.brYKCX'
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, '//html').click
         return false
       end
       cpos = (find_elements(:css, locator).size + 1) / 2
-      click_and_wait(locator, 1, cpos)
+      click_and_wait(locator, 1, cpos+1)
 
       text = snote.strip.gsub(/ #{otag}/, '').gsub(/ #{tag}/, '') + " #{tag}"
       type('textarea#message', text, append: false) # Enter tag
@@ -177,8 +178,7 @@ module SmuleAuto
       remain = 0
       refresh
 
-      # paths    = css('div.sc-iumJyn svg path').size
-      paths    = css('div.sc-fiKUUL svg path').size
+      paths    = css('div.sc-lgqmxq svg path').size
       toggling = true
       if doplay && paths == 2
         Plog.debug('Already playing.  Do nothing')
@@ -188,7 +188,7 @@ module SmuleAuto
         toggling = false
       end
 
-      play_locator = 'span.sc-lgqmxq.FGHoO'
+      play_locator = 'span.sc-hvagB.dfJZUS'
 
       if toggling
         Plog.debug("Think play = #{doplay}")
@@ -206,8 +206,6 @@ module SmuleAuto
                   if sleep_round > 2
                     click_smule_page(:sc_play_continue, delay: 0)
                     click_smule_page(:sc_play_continue, delay: 0)
-                    # else
-                    # click_smule_page(:sc_play_toggle, delay: 0)
                   end
                 end
                 break
@@ -244,8 +242,7 @@ module SmuleAuto
     def comment_from_page
       click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
-      css('div.sc-hBmvGb.gugxcI').reverse.each do |acmt|
-        # css('div.sc-iLcRNb.idNCQo').reverse.each do |acmt|
+      css('div.sc-gGiJkG.jzdkxv').reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..] || []).join(' ')
@@ -303,6 +300,7 @@ module SmuleAuto
                  else
                    [song.asset_from_page]
                  end
+        api_key = YAML.load_file('access.yml').dig('google_api', :key)
         if options[:update]
           result.each do |sdata|
             sdata.delete(:lyrics)
@@ -311,6 +309,23 @@ module SmuleAuto
                     Performance.new(sid: sdata[:sid])
             Plog.dump_info(data: sdata[:href], info: sinfo[:href],
                            sid: sinfo[:sid])
+            if sdata[:latlong]
+              if !sinfo[:orig_city] || sinfo[:orig_city].empty?
+                latlng    = sdata[:latlong].join(',')
+                url       = "https://maps.googleapis.com/maps/api/geocode/json?latlng=#{latlng}&key=#{api_key}"
+                output    = curl(url)
+                orig_city = JSON.parse(output).dig('plus_code', 'compound_code').
+                  sub(/^[^ ]+ /o, '')
+                Plog.dump(orig_city:orig_city)
+                sdata[:orig_city] = orig_city
+              end
+              sdata.delete(:latlong)
+            end
+            if sdata[:other_latlong]
+              if !sinfo[:other_city]
+              end
+              sdata.delete(:other_latlong)
+            end
             sinfo.update(sdata)
             sinfo.save
           end
@@ -489,13 +504,16 @@ module SmuleAuto
         record_by:     perf[:performed_by],
         song_info_url: perf[:song_info_url],
         lyrics:        lyrics,
+        latlong:       [perf.dig(:owner, :price), perf.dig(:owner, :discount)]
       }
       if perf[:child_count] <= 0
-        operf = (perf[:other_performers][0] || {})
-        output.update(
-          other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
-          record_by:   [perf[:performed_by], operf[:handle]].join(',')
-        )
+        if operf = (perf[:other_performers][0] || {})
+          output.update(
+            other_city:    (operf[:city] || {}).values.join(', '),
+            record_by:     [perf[:performed_by], operf[:handle]].join(','),
+            other_latlong: [operf[:price], operf[:discount]],
+          )
+        end
       end
       output.update(res: res) if @options[:verbose]
       output
@@ -656,7 +674,6 @@ module SmuleAuto
       if test('f', sfile)
         unless @options[:verify]
           sofile
-          # _run_command("open -g #{sfile}") if @options[:open]
           return
         end
         csize  = media_size(sfile)
@@ -664,7 +681,6 @@ module SmuleAuto
         if (csize == fmsize) && mp4_tagged?(excuser: user)
           @logger.info("Verify same media size and tags: #{csize}")
           sofile
-          # _run_command("open -g #{sfile}") if @options[:open]
           return
         end
         @logger.info("Size: #{csize} <>? #{fmsize}")

@@ -263,20 +263,25 @@ module SmuleAuto
     end
 
     def set_follows(followings, followers)
-      @singers.update(following: nil, follower: nil)
-      allset = {}
-      now = Time.now
+      allset = @singers.as_hash(:account_id)
+      now    = Time.now
       followings.each do |e|
-        k = e[:name]
-        allset[k] = e
+        Plog.dump(name: e[:name])
+        k = e[:account_id]
+        allset[k] ||= e
         allset[k][:following]  = true
         allset[k][:updated_at] = now
+        allset[k][:name]       = e[:name]
+        allset[k][:avatar]     = e[:avatar]
       end
       followers.each do |e|
-        k = e[:name]
+        Plog.dump(name: e[:name])
+        k = e[:account_id]
         allset[k] ||= e
         allset[k][:follower]   = true
         allset[k][:updated_at] = now
+        allset[k][:name]       = e[:name]
+        allset[k][:avatar]     = e[:avatar]
       end
       allset.each do |_k, v|
         @singers.insert_conflict(:replace).insert(v)

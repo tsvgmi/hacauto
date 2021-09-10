@@ -53,7 +53,7 @@ case $oper in
     ofile=${ifile%.mp3}
     ofile=${ofile}-new.mp3
     set -x
-    sox $ifile $ofile trim $@
+    sox "$ifile" "$ofile" trim $@
     ;;
 
   smule-*)
