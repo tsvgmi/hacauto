@@ -57,23 +57,30 @@ module SmuleAuto
   class SmulePage < SelPage
     LOCATORS = {
       sc_auto_play:           ['div.sc-qWfkp',            0],
-      sc_comment_close:       ['div.sc-gsBrbv.dgedbA',    0],
-      sc_comment_open:        ['div.sc-hJJQhR.jkZEL',     2],
+      sc_comment_close:       ['div.sc-eishCr.jzzsgq',    0],
+      sc_comment_open:        ['div.sc-bTRMAZ.kGehDO',    2],
       sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
       sc_expose_play_control: ['div.sc-pZCuu',            0],
-      sc_favorite_toggle:     ['span.sc-ptfmh.gtVEMN',    -1],
       sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
-      sc_play_continue:       ['a.sc-hYZPRl.gumLkx',      0],
-      sc_play_toggle:         ['div.sc-lgqmxq',           0],
-      sc_song_menu:           ['button.sc-gATInX.jHlPUB', 1],
-      sc_star:                ['div.sc-hJJQhR.jkZEL',     0],
+      sc_play_toggle:         ['div.sc-dYzljZ svg path',  0],
+      sc_song_menu:           ['button.sc-hmfusV.kjvAVr', 1],
+      sc_star:                ['div.sc-bTRMAZ.kGehDO',    0],
+
+      sc_favorite_toggle:     ['div.sc-hHKmLs.nJfnd'],
+      sc_comment_text:        ['div.sc-bQVmPH.cROQXQ'],
+      sc_play_time:           ['span.sc-eUWgFQ.hcHFJT'],
+      sc_play_continue:       ['a.sc-gGTGfU.hjUsKT'],
     }.freeze
 
     def click_smule_page(elem, delay: 2)
-      elem = LOCATORS[elem]
-      raise "#{elem} not defined in Locators" unless elem
-
-      clickit(elem[0], wait: delay, index: elem[1], move: true)
+      unless elem = LOCATORS[elem]
+        Plog.error "#{elem} not defined in Locators"
+        return false
+      end
+      unless clickit(elem[0], wait: delay, index: elem[1], move: true)
+        Plog.error "Error clicking #{elem}"
+        return false
+      end
       refresh if delay > 0
       true
     end
@@ -81,12 +88,9 @@ module SmuleAuto
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 
-      locator = 'div.sc-cRcunm.kXGAjw'
-      locator = 'div.sc-kTaSZA.eRNvLK'
+      locator = LOCATORS[:sc_favorite_toggle].first
       cval = (css("#{locator} svg path")[0] || {})[:fill]
-      unless cval
-        return false
-      end
+      return false unless cval
 
       if fav && cval == '#FFCE42'
         Plog.info('Already fav, skip it')
@@ -111,9 +115,7 @@ module SmuleAuto
       return unless sinfo
 
       if sinfo[:isfav]
-        if sinfo[:record_by].start_with?("#{user},")
-          add_song_tag('#thvfavs', sinfo)
-        end
+        add_song_tag('#thvfavs', sinfo) if sinfo[:record_by].start_with?("#{user},")
         toggle_song_favorite(fav: true)
       end
       if sinfo[:record_by] == user &&
@@ -148,7 +150,7 @@ module SmuleAuto
         return false
       end
       cpos = (find_elements(:css, locator).size + 1) / 2
-      click_and_wait(locator, 1, cpos+1)
+      click_and_wait(locator, 1, cpos + 1)
 
       text = snote.strip.gsub(/ #{otag}/, '').gsub(/ #{tag}/, '') + " #{tag}"
       type('textarea#message', text, append: false) # Enter tag
@@ -178,7 +180,7 @@ module SmuleAuto
       remain = 0
       refresh
 
-      paths    = css('div.sc-lgqmxq svg path').size
+      paths    = css(LOCATORS[:sc_play_toggle].first).size
       toggling = true
       if doplay && paths == 2
         Plog.debug('Already playing.  Do nothing')
@@ -188,7 +190,7 @@ module SmuleAuto
         toggling = false
       end
 
-      play_locator = 'span.sc-hvagB.dfJZUS'
+      play_locator = LOCATORS[:sc_play_time][0]
 
       if toggling
         Plog.debug("Think play = #{doplay}")
@@ -242,7 +244,7 @@ module SmuleAuto
     def comment_from_page
       click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
-      css('div.sc-gGiJkG.jzdkxv').reverse.each do |acmt|
+      css(LOCATORS[:sc_comment_text].first).reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..] || []).join(' ')
@@ -309,23 +311,6 @@ module SmuleAuto
                     Performance.new(sid: sdata[:sid])
             Plog.dump_info(data: sdata[:href], info: sinfo[:href],
                            sid: sinfo[:sid])
-            if sdata[:latlong]
-              if !sinfo[:orig_city] || sinfo[:orig_city].empty?
-                latlng    = sdata[:latlong].join(',')
-                url       = "https://maps.googleapis.com/maps/api/geocode/json?latlng=#{latlng}&key=#{api_key}"
-                output    = curl(url)
-                orig_city = JSON.parse(output).dig('plus_code', 'compound_code').
-                  sub(/^[^ ]+ /o, '')
-                Plog.dump(orig_city:orig_city)
-                sdata[:orig_city] = orig_city
-              end
-              sdata.delete(:latlong)
-            end
-            if sdata[:other_latlong]
-              if !sinfo[:other_city]
-              end
-              sdata.delete(:other_latlong)
-            end
             sinfo.update(sdata)
             sinfo.save
           end
@@ -459,6 +444,9 @@ module SmuleAuto
       rescue HTTP::Redirector::EndlessRedirectError => e
         Plog.error(errmsg: e)
         return {}
+      rescue Errno::ECONNRESET, HTTP::ConnectionError => e
+        Plog.error(errmsg: e)
+        return {}
       end
 
       document = Nokogiri::HTML(source)
@@ -504,16 +492,14 @@ module SmuleAuto
         record_by:     perf[:performed_by],
         song_info_url: perf[:song_info_url],
         lyrics:        lyrics,
-        latlong:       [perf.dig(:owner, :price), perf.dig(:owner, :discount)]
+        latlong:       [perf.dig(:owner, :price), perf.dig(:owner, :discount)].join(','),
       }
-      if perf[:child_count] <= 0
-        if operf = (perf[:other_performers][0] || {})
-          output.update(
-            other_city:    (operf[:city] || {}).values.join(', '),
-            record_by:     [perf[:performed_by], operf[:handle]].join(','),
-            other_latlong: [operf[:price], operf[:discount]],
-          )
-        end
+      if perf[:child_count] <= 0 && operf = (perf[:other_performers][0] || {})
+        output.update(
+          other_city: (operf[:city] || {}).values.join(', '),
+          record_by:  [perf[:performed_by], operf[:handle]].join(','),
+          latlong_2:  [operf[:price], operf[:discount]].join(',')
+        )
       end
       output.update(res: res) if @options[:verbose]
       output
@@ -550,7 +536,6 @@ module SmuleAuto
 
       msgs = spage.comment_from_page
 
-      # click_smule_page(:sc_play_toggle, delay: 0)
       spage.toggle_play(doplay: true, href: href) if to_play
       spinner.stop('Done!')
 

@@ -232,8 +232,8 @@ module SmuleAuto
         isfav = curitem[:isfav] || curitem[:oldfav] ? 'F' : ' '
         xtags = @content.db[:tags].where(sname: ptags.split(',')).map { |r| r[:description] }.join(', ')
         box   = TTY::Box.frame(top: 0, left: 15,
-                width: TTY::Screen.width - 20,
-                height: 5) do
+                               width: TTY::Screen.width - 20,
+                               height: 5) do
           <<~EOM
             [#{isfav}] #{curitem[:title]} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
                 #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags[0..9]}
@@ -262,8 +262,8 @@ module SmuleAuto
 
     def box_msg(msg, options={})
       box = TTY::Box.frame(top: 0, left: 0,
-              width: options[:width] || TTY::Screen.width,
-              height: options[:height] || TTY::Screen.height - 1) do
+                           width: options[:width] || TTY::Screen.width,
+                           height: options[:height] || TTY::Screen.height - 1) do
         msg
       end
       puts box
@@ -307,6 +307,7 @@ module SmuleAuto
 
     def _show_msgs(sitem, psitem)
       return unless psitem
+
       table = TTY::Table.new
       pmsg  = psitem[:msgs] || []
       pmsg.each do |usr, msg|
@@ -392,6 +393,7 @@ module SmuleAuto
           if (duration = psitem[:duration]) <= 0
             next
           end
+
           endt = Time.now + duration
         else
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
@@ -468,18 +470,19 @@ module SmuleAuto
       wset = nil
       case ftype
       when :by_singer
-        singer = sitem[:record_by].split(',').reject{|f| f == @user}[0]
+        singer = sitem[:record_by].split(',').reject { |f| f == @user }[0]
         wset = Performance.where(Sequel.lit('performances.record_by like ?',
                                             "%#{singer}%"))
                           .order(:created)
                           .join_table(:left, :song_tags, name: :stitle)
       when :by_song
-        wset = Performance.where(Sequel.lit('performances.stitle = ?', "#{sitem[:stitle]}"))
+        wset = Performance.where(Sequel.lit('performances.stitle = ?', (sitem[:stitle]).to_s))
       end
       wset = wset.join_table(:inner, :comments,
                              Sequel.lit('performances.sid = comments.sid'))
       wset.each do |sinfo|
         next unless sinfo[:comments]
+
         comments = JSON.parse(sinfo[:comments])
                        .select { |_c, m| m && !m.empty? }
         next if comments.empty?
@@ -511,11 +514,12 @@ module SmuleAuto
         @playlist.next_song(increment: -1)
         return [:next, true]
       when /^[+=]/i # Add/replace list
-        choices = %w[favs isfav recent record_by my_open my_duets my_open_duets
+        choices = %w[favs isfav recent record_by my_open my_duets
                      star title my_tags query]
         ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
-        param   = if ftype =~ /fav|my_open_duets/
-                    ''
+        param   = case ftype
+                  when /fav|my_open|my_duets/
+                    prompt.yes?("Not tagged yet ?")
                   else
                     prompt.ask("#{ftype} value ?")
                   end
@@ -627,11 +631,13 @@ module SmuleAuto
         @playlist.order = prompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
-          perfset   = @sapi.get_performances(@user, limit: 500, days: 2)
-          new_count = @content.add_new_songs(perfset, isfav: false)
-          perfset   = SmuleSong.collect_collabs(@user, 10)
-          new_count += @content.add_new_songs(perfset, isfav: false)
-          prompt.keypress("#{new_count} songs added [:countdown]",
+          perfset = @sapi.get_performances(@user, limit: 500, days: 2)
+          nc, uc = @content.add_new_songs(perfset, isfav: false)
+          perfset = SmuleSong.collect_collabs(@user, 10)
+          nc2, uc2 = @content.add_new_songs(perfset, isfav: false)
+          nc += nc2
+          uc += uc2
+          prompt.keypress("#{nc} added / #{uc} songs updated [:countdown]",
                           timeout: 3)
         end
       when 't' # Set tag
@@ -647,10 +653,14 @@ module SmuleAuto
         listen_for_download(enable: false)
         prompt.keypress('Stop watching [:countdown]', timeout: 3)
       when 'Z'                            # Debug
-        require 'byebug'
-
         Plog.level = 0
-        byebug
+        if true
+          require 'byebug'
+          byebug
+        else
+          require 'pry-byebug'
+          binding.pry
+        end
       end
       [true, true]
     end

@@ -150,17 +150,19 @@ module SmuleAuto
           rescue JSON::ParserError => e
             Plog.error(e)
             break
-            #sleep 2
-            #next
+            # sleep 2
+            # next
           end
           slist = result['list']
           slist.each do |info|
-            record_by = [info.dig('owner', 'handle')]
+            owner     = info['owner']
+            record_by = [owner['handle']]
             info['other_performers'].each do |rinfo|
               record_by << rinfo['handle']
             end
             stats   = info['stats']
             created = Time.parse(info['created_at'])
+            latlong = "#{owner['price']},#{owner['discount']}"
             rec     = {
               title:       info['title'],
               stitle:      to_search_str(info['title']),
@@ -174,6 +176,7 @@ module SmuleAuto
               sid:         info['key'],
               created:     created,
               orig_city:   (info['orig_track_city'] || {}).values.join(', '),
+              latlong:     latlong,
             }
             allset << rec
             if created <= first_day
@@ -205,15 +208,16 @@ module SmuleAuto
     def get_user_group(user, agroup)
       result = []
       offset = 0
-      while true
+      loop do
         begin
           data = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json?offset=#{offset}&limit=25"))['list']
-        rescue JSON::ParserError => errmsg
+        rescue JSON::ParserError => e
           break
         end
         break if data.size <= 0
+
         offset += 25
-        Plog.dump(agroup:agroup, offset:offset)
+        Plog.dump(agroup: agroup, offset: offset)
         result += data.map do |r|
           {
             name:       r['handle'],
@@ -222,7 +226,7 @@ module SmuleAuto
           }
         end
       end
-      Plog.dump_info(agroup:agroup, size:result.size)
+      Plog.dump_info(agroup: agroup, size: result.size)
       result
     end
   end
@@ -278,7 +282,7 @@ module SmuleAuto
         @spage.toggle_song_favorite(fav: false)
         @spage.add_song_tag('#thvfavs', asong) if marking
         Plog.dump_info(msg: 'Unfav', stitle: asong[:stitle],
-                          record_by: asong[:record_by])
+                       record_by: asong[:record_by])
       end
     end
 
@@ -359,16 +363,19 @@ module SmuleAuto
     class_option :verbose,  type: :boolean
 
     desc 'collect_songs user', 'Collect all songs and collabs of user'
+    option :with_collabs, type: :boolean
     def collect_songs(user)
       cli_wrap do
         _tdir_check
         content  = SmuleDB.instance(user, cdir: options[:data_dir])
         newsongs = _collect_songs(user, content)
-        content.add_new_songs(newsongs, isfav: false)
-        # if options[:with_collabs]
-        newsongs = SmuleSong.collect_collabs(user, options[:days])
-        content.add_new_songs(newsongs, isfav: false)
-        # end
+        addc, repc = content.add_new_songs(newsongs, isfav: false)
+        Plog.info("My joins: #{addc} added, #{repc} replaced")
+        if options[:with_collabs]
+          newsongs = SmuleSong.collect_collabs(user, options[:days])
+          addc, repc = content.add_new_songs(newsongs, isfav: false)
+          Plog.info("Other joins: #{addc} added, #{repc} replaced")
+        end
         true
       end
     end
@@ -429,8 +436,8 @@ module SmuleAuto
         table   = []
         bar = TTY::ProgressBar.new('Follower [:bar] :percent',
                                    total: users['list'].size)
-        Plog.dump(users:users['list'], _ofmt:'Y')
-        users['list'].sort_by{|r| r['handle']}.each do |r|
+        Plog.dump(users: users['list'], _ofmt: 'Y')
+        users['list'].sort_by { |r| r['handle'] }.each do |r|
           fuser = r['handle']
           slist = api.get_songs("https://www.smule.com/#{fuser}/performances/json",
                                 options)
@@ -632,9 +639,9 @@ module SmuleAuto
     long_desc <<~LONGDESC
       List the candidates for open from the matching filter.
       Filters is the list of SQL's into into DB.
-      * Song which has not been opened
-      * Was a favorites
-      * Sorted by date
+      \x5* Song which has not been opened
+      \x5* Was a favorites
+      \x5* Sorted by date
     LONGDESC
     def to_open(user, *filter)
       cli_wrap do
@@ -658,8 +665,14 @@ module SmuleAuto
           return false
         end
         table = []
-        topen.sort_by { |_k, v| v[0] }.each do |name, sinfo|
-          table << [sinfo[0], name, sinfo[1]]
+        if true
+          topen.sort_by { rand }.each do |name, sinfo|
+            table << [sinfo[0], name, sinfo[1]]
+          end
+        else
+          topen.sort_by { |_k, v| v[0] }.each do |name, sinfo|
+            table << [sinfo[0], name, sinfo[1]]
+          end
         end
         print_table(table)
         true
@@ -789,18 +802,18 @@ module SmuleAuto
     option :table, type: :boolean
     def clean_lyrics
       cli_wrap do
-        output = ["=========="] * 3
+        output = ['=========='] * 3
         if options[:table]
-          output << "| | Lyrics |"
-          output << "|-| ------ |"
+          output << '| | Lyrics |'
+          output << '|-| ------ |'
           until (l = $stdin.gets).nil?
             l = l.chomp.gsub(/\[[^\]]+\]/, '')
-            output << "| | " + l.strip + " |"
+            output << "| | #{l.strip} |"
           end
           output.join("\n")
         else
           until (l = $stdin.gets).nil?
-            l = l.chomp.gsub(/\[[^\]]+\]/, '').strip
+            l = l.chomp.gsub(/\[[^\]]+\]/, '').gsub(/ +/, ' ').strip
             output << l
           end
         end
@@ -808,10 +821,10 @@ module SmuleAuto
       end
     end
 
-    desc "add_title_to_file(folder)", "add_title_to_file"
+    desc 'add_title_to_file(folder)', 'add_title_to_file'
     def add_title_to_file(folder, odir='./new')
       cli_wrap do
-        FileUtils.mkdir_p(odir) unless test(?d, odir)
+        FileUtils.mkdir_p(odir) unless test('d', odir)
         Dir.glob("#{folder}/*.md").each do |file|
           title = File.basename(file).sub(/\.md$/, '')
           ofile = File.join(odir, File.basename(file))
@@ -826,20 +839,22 @@ module SmuleAuto
       end
     end
 
-    desc "add_table_to_file(folder, odir='./new')", "add_table_to_file"
+    desc "add_table_to_file(folder, odir='./new')", 'add_table_to_file'
     def add_table_to_file(folder, odir='./new')
       cli_wrap do
-        FileUtils.mkdir_p(odir) unless test(?d, odir)
+        FileUtils.mkdir_p(odir) unless test('d', odir)
         Dir.glob("#{folder}/*.md").each do |file|
           ofile = File.join(odir, File.basename(file))
           File.open(ofile, 'w') do |fod|
-            fod.puts "| | Lyrics |"
-            fod.puts "|-| ------ |"
+            fod.puts '| | Lyrics |'
+            fod.puts '|-| ------ |'
             File.read(file).split("\n").each do |l|
-              if l =~ /^([-\+\d\s]+)/
-                note, remain = $1, $'
+              case l
+              when /^([-+\d\s]+)/
+                note = Regexp.last_match(1)
+                remain = Regexp.last_match.post_match
                 fod.puts "| #{note} | #{remain} |"
-              elsif l =~ /^\|/
+              when /^\|/
                 fod.puts l
               else
                 fod.puts "| | #{l} |"

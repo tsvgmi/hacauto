@@ -27,15 +27,21 @@ module ThorAddition
   end
 
   def cli_wrap
-    if ENV['BYEBUG']
+    if ENV['BYEBUG'] || ENV['PRYBUG']
       say_status(Time.now, "#{File.basename(__FILE__)}:#{__LINE__} Entering debug mode", :yellow)
       ENV.delete('BYEBUG')
-      require 'byebug'
-      byebug
+      ENV.delete('PRYBUG')
+      if true
+        require 'pry-byebug'
+        binding.pry
+      else
+        require 'byebug'
+        byebug
+      end
     end
     Signal.trap('SIGINT')  { exit(1) }
     Signal.trap('SIGQUIT') do
-      Elog.info('Quitting from signal.')
+      Plog.info('Quitting from signal.')
       exit(0)
     end
 
