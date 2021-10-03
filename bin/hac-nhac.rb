@@ -145,9 +145,6 @@ end
 class GuitarTwitt < MusicSource
   # WIP:  Not parseable?
   def lyric_info(url)
-    require 'byebug'
-
-    byebug
     Plog.info("Extract lyrics from #{url}")
     page    = get_page_curl(url)
     content = page.css('.entry-content')
@@ -190,10 +187,6 @@ class ChordsWorld < MusicSource
 
   def lyric_info(url)
     require 'json'
-    require 'byebug'
-
-    byebug
-
     Plog.info("Extract lyrics from #{url}")
     page  = get_page_curl(url)
     blob  = page.css('.contentprotect')

@@ -111,22 +111,24 @@ module SmuleAuto
         newset = @content.where(sid: File.basename(value))
       when :my_open
         newset = @content.where(record_by: @user)
-        if value && !value.empty?
-          newset = newset.where(Sequel.lit('message is null or message not like "%#thvopen%"'))
-        end
+        newset = newset.where(Sequel.lit('message is null or message not like "%#thvopen%"')) if value
       when :my_duets
         newset = @content.where(record_by: "#{@user},#{@user}")
-        if value && !value.empty?
-          newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
-        end
-      when :my_open_duets
-        newset = @content.where(record_by: [@user, "#{@user},#{@user}"])
+        newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"')) if value
       when :my_tags
         newset = @content.where(Sequel.lit(%(message like "%#{value}%")))
       when :isfav
         newset = @content.where(isfav: true)
+        if value
+          newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
+            .where(Sequel.ilike(:record_by, "#{@user}%"))
+        end
       when :favs
         newset = @content.where(Sequel.lit('isfav=1 or oldfav=1'))
+        if value
+          newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
+            .where(Sequel.ilike(:record_by, "#{@user}%"))
+        end
       when :record_by
         newset = @content.where(Sequel.ilike(:record_by, "%#{value}%"))
       when :title
@@ -238,6 +240,7 @@ module SmuleAuto
       @content.update(isfav: nil) if isfav
 
       newcount = 0
+      updcount = 0
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
@@ -251,15 +254,18 @@ module SmuleAuto
             avatar:    r[:avatar],
             message:   r[:message],
           }
-          updset[:oldfav] = true if updset[:isfav]
+          updset[:oldfav]    = true if updset[:isfav]
+          updset[:latlong]   = r[:latlong] if r[:latlong]
+          updset[:latlong_2] = r[:latlong_2] if r[:latlong_2]
           @all_content.where(sid: r[:sid]).update(updset)
+          updcount += 1
         else
           r.delete(:lyrics)
           @all_content.insert(r)
           newcount += 1
         end
       end
-      newcount
+      [newcount, updcount]
     end
 
     def set_follows(followings, followers)

@@ -10,7 +10,7 @@ require 'selenium-webdriver'
 require 'nokogiri'
 require 'yaml'
 require 'cgi'
-require 'byebug'
+require 'pry-byebug'
 require 'tty-progressbar'
 require 'thor'
 require 'core'
@@ -145,8 +145,9 @@ class AutoFill
       ans = $stdin.gets.strip
       case ans
       when /^b/io
-        require 'byebug'
-        byebug
+        require 'pry-byebug'
+        # byebug
+        binding.pry
       when /^(h|\?)/io
         warn HELP_TEXT
       when /^p/io
