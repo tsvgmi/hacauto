@@ -246,7 +246,7 @@ module SmuleAuto
       end
     end
 
-    def star_set(song_set, count)
+    def like_set(song_set, count)
       stars = []
       song_set.each do |sinfo|
         href = sinfo[:href]
@@ -257,7 +257,7 @@ module SmuleAuto
         next if @options[:exclude]&.find { |r| sinfo[:record_by] =~ /#{r}/ }
 
         begin
-          if @spage.star_song(sinfo[:href])
+          if @spage.like_song(sinfo[:href])
             Plog.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
             stars << sinfo
             if @options[:pause]
@@ -705,7 +705,7 @@ module SmuleAuto
       end
     end
 
-    desc 'star_singers(count, singers)', 'star_singers'
+    desc 'like_singers(count, singers)', 'like_singers'
     option :top,     type: :numeric
     option :days,    type: :numeric, default: 15
     option :exclude, type: :string
@@ -714,7 +714,7 @@ module SmuleAuto
     option :offset,  type: :numeric, default: 0
 
     BANNED_LIST = %w[Joseph_TN].freeze
-    def star_singers(user, count, *singers)
+    def like_singers(user, count, *singers)
       cli_wrap do
         _tdir_check
         woptions = writable_options
@@ -746,7 +746,7 @@ module SmuleAuto
           perfset = perfset.select do |r|
             (r[:record_by].split(',') & BANNED_LIST).empty?
           end
-          starred = scanner.star_set(perfset, count)
+          starred = scanner.like_set(perfset, count)
           allsets.concat(starred)
         end
         count = {}

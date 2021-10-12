@@ -184,16 +184,16 @@ module SmuleAuto
     STATE_FILE = 'splayer.state'
 
     def initialize(user, tdir, options={})
-      @user       = user
-      @options    = options
-      @roptions   = {}
-      @content    = SmuleDB.instance(user, cdir: tdir)
-      @tdir       = tdir
-      @scanner    = Scanner.new(user, @options)
-      @sapi       = API.new(options)
-      @wqueue     = Queue.new
-      @playlist   = PlayList.new(File.join(@tdir, STATE_FILE), @content)
-      @logger     = options[:logger] || PLogger.new($stderr)
+      @user     = user
+      @options  = options
+      @roptions = {}
+      @content  = SmuleDB.instance(user, cdir: tdir)
+      @tdir     = tdir
+      @spage    = Scanner.new(user, @options).spage
+      @sapi     = API.new(options)
+      @wqueue   = Queue.new
+      @playlist = PlayList.new(File.join(@tdir, STATE_FILE), @content)
+      @logger   = options[:logger] || PLogger.new($stderr)
       at_exit do
         @playlist.save
         exit 0
@@ -278,7 +278,7 @@ module SmuleAuto
 
       Plog.dump(sitem: sitem)
       @wqueue << sitem
-      psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage, to_play: to_play)
+      psecs, msgs = SmuleSong.new(sitem).play(@spage, to_play: to_play)
 
       case psecs
       when :deleted
@@ -389,7 +389,7 @@ module SmuleAuto
         elsif sitem[:record_by] == @user
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
-          @scanner.spage.add_any_song_tag(@user, sitem)
+          @spage.add_any_song_tag(@user, sitem)
           if (duration = psitem[:duration]) <= 0
             next
           end
@@ -402,10 +402,10 @@ module SmuleAuto
             next
           end
 
-          @scanner.spage.add_any_song_tag(@user, sitem)
+          @spage.add_any_song_tag(@user, sitem)
 
           # Turn off autoplay
-          @scanner.spage.toggle_autoplay if pcount == 0
+          @spage.autoplay_off if pcount == 0
           pcount += 1
           @playlist.save if (pcount % 10) == 0
           endt = Time.now + duration
@@ -423,8 +423,8 @@ module SmuleAuto
                 _show_msgs(sitem, psitem)
                 #               if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
                 #                 _menu_eval do
-                #                   @scanner.spage.add_song_tag('#thvfavs', sitem)
-                #                   @scanner.spage.toggle_play(doplay: true)
+                #                   @spage.add_song_tag('#thvfavs', sitem)
+                #                   @spage.toggle_play(doplay: true)
                 #                 end
                 #               end
               end
@@ -445,7 +445,7 @@ module SmuleAuto
             case hc
             when :pausing
               @paused = !@paused
-              remain  = @scanner.spage.toggle_play(doplay: !@paused)
+              remain  = @spage.toggle_play(doplay: !@paused)
               # This is buggy.  If there is limit on playtime, it would
               # be overritten by this
               endt = Time.now + remain if remain > 0
@@ -523,10 +523,8 @@ module SmuleAuto
                   else
                     prompt.ask("#{ftype} value ?")
                   end
-        if param
-          newset = @content.select_set(ftype.to_sym, param)
-          @playlist.add_to_list(newset, replace: key == '=')
-        end
+        newset = @content.select_set(ftype.to_sym, param)
+        @playlist.add_to_list(newset, replace: key == '=')
       when '*' # Set stars
         sitem[:stars] = prompt.keypress('Value?').to_i if sitem
       when /\d/ # Set stars also
@@ -561,8 +559,8 @@ module SmuleAuto
       when 'F' # Set as favorite and tag
         _menu_eval do
           sitem[:isfav] = true
-          @scanner.spage.add_any_song_tag(@user, sitem)
-          @scanner.spage.toggle_play(doplay: true)
+          @spage.add_any_song_tag(@user, sitem)
+          @spage.toggle_play(doplay: true)
         end
 
       when 'h'
@@ -573,7 +571,7 @@ module SmuleAuto
         end
 
       when 'H'
-        @scanner.spage.set_like
+        @spage.set_like
 
       when 'i'                            # Song Info
         puts @playlist.cur_info.to_yaml
@@ -644,6 +642,27 @@ module SmuleAuto
         unless (tag = prompt.ask('Tag value ?')).nil?
           @content.add_tag(sitem, tag)
         end
+      when 'T' # Test - when tags start changing
+        choices = %w[quit auto_play_off comment like play menu favorite]
+        while true
+          case prompt.enum_select('Test mode', choices)
+          when 'auto_play_off'
+            @spage.autoplay_off
+          when 'comment'
+            puts @spage.comment_from_page
+          when 'like'
+            @spage.like_song
+          when 'play'
+            @paused = !@paused
+            @spage.toggle_play(doplay: !@paused)
+          when 'menu'
+            @spage.click_smule_page(:sc_song_menu, delay: 1)
+            @spage.find_element(:css, 'body').click
+          else
+            break
+          end
+          prompt.keypress('[ME] Press any key to continue ...')
+        end
       when 'x'                            # Quit
         return [:quit, true]
       when 'W'
@@ -654,13 +673,8 @@ module SmuleAuto
         prompt.keypress('Stop watching [:countdown]', timeout: 3)
       when 'Z'                            # Debug
         Plog.level = 0
-        if true
-          require 'byebug'
-          byebug
-        else
-          require 'pry-byebug'
-          binding.pry
-        end
+        require 'byebug'
+        byebug
       end
       [true, true]
     end

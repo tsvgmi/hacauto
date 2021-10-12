@@ -56,19 +56,17 @@ module SmuleAuto
   # Docs for SmulePage
   class SmulePage < SelPage
     LOCATORS = {
-      sc_auto_play:           ['div.sc-qWfkp',            0],
-      sc_comment_close:       ['div.sc-eishCr.jzzsgq',    0],
-      sc_comment_open:        ['div.sc-bTRMAZ.kGehDO',    2],
-      sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
-      sc_expose_play_control: ['div.sc-pZCuu',            0],
-      sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
-      sc_play_toggle:         ['div.sc-dYzljZ svg path',  0],
-      sc_song_menu:           ['button.sc-hmfusV.kjvAVr', 1],
-      sc_star:                ['div.sc-bTRMAZ.kGehDO',    0],
+      sc_auto_play_off:       ['div.sc-jUEnpm.cGPMod',   0],
+      sc_comment_close:       ['div.sc-hYAvag.jfgTmU',   0],
+      sc_comment_open:        ['div.sc-dcwrBW.vDTBn',    2],
+      sc_like:                ['div.sc-oTNDV.jzKNzB',    0],
+      sc_play_toggle:         ['div.sc-fkubWd svg path', 0],
+      sc_song_menu:           ['button.sc-leCWtA.WaKgU', 0],
+      sc_heart:               ['div.sc-dcwrBW.vDTBn',    0],
 
-      sc_favorite_toggle:     ['div.sc-hHKmLs.nJfnd'],
-      sc_comment_text:        ['div.sc-bQVmPH.cROQXQ'],
-      sc_play_time:           ['span.sc-eUWgFQ.hcHFJT'],
+      sc_favorite_toggle:     ['div.sc-gLnrpB.biGEWR'],
+      sc_comment_text:        ['div.sc-jHMygC.gHblQK'],
+      sc_play_time:           ['span.sc-iuGMqu.kKOGoe'],
       sc_play_continue:       ['a.sc-gGTGfU.hjUsKT'],
     }.freeze
 
@@ -101,8 +99,9 @@ module SmuleAuto
         find_element(:css, 'body').click
         return false
       end
-      cpos = find_elements(:css, locator).size / 2
-      click_and_wait(locator, 1, cpos)
+      #cpos = find_elements(:css, locator).size / 2
+      #click_and_wait(locator, 1, cpos)
+      click_and_wait(locator, 1, 0)
       find_element(:css, 'body').click
       true
     end
@@ -159,9 +158,9 @@ module SmuleAuto
       click_and_wait('input#recording-save')
     end
 
-    def star_song(href)
-      goto(href, 3)
-      elem = LOCATORS[:sc_star]
+    def like_song(href=nil)
+      goto(href, 3) if href
+      elem = LOCATORS[:sc_heart]
       raise "#{elem} not defined in Locators" unless elem
 
       fill = (css("#{elem[0]} svg path")[0] || {})[:fill]
@@ -171,7 +170,7 @@ module SmuleAuto
         Plog.error('Already starred')
         return false
       end
-      click_smule_page(:sc_star, delay: 1)
+      click_smule_page(:sc_heart, delay: 1)
       true
     end
 
@@ -254,8 +253,8 @@ module SmuleAuto
       res
     end
 
-    def toggle_autoplay
-      click_smule_page(:sc_auto_play)
+    def autoplay_off
+      click_smule_page(:sc_auto_play_off)
     end
 
     def song_note
