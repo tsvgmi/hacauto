@@ -234,8 +234,9 @@ module SmuleAuto
         box   = TTY::Box.frame(top: 0, left: 15,
                                width: TTY::Screen.width - 20,
                                height: 5) do
+          title = curitem[:title].strip.gsub(/\s+/o, ' ').gsub(/[\u3000\u00a0]/, '')
           <<~EOM
-            [#{isfav}] #{curitem[:title]} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
+            [#{isfav}] #{title} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
                 #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags[0..9]}
             #{curitem[:message]} - #{xtags}
           EOM
@@ -248,7 +249,9 @@ module SmuleAuto
 
         ptags = songtags[witem[:stitle]] || ''
         isfav = witem[:isfav] || witem[:oldfav] ? 'F' : ''
-        row   = [i, isfav, witem[:title], witem[:record_by],
+        title = witem[:title].strip.gsub(/\s+/o, ' ').gsub(/[\u3000\u00a0]/, '')
+
+        row   = [i, isfav, title, witem[:record_by],
                  witem[:listens], witem[:loves],
                  bar[1..witem[:stars].to_i],
                  witem[:created].strftime('%Y-%m-%d'), ptags[0..9]]
@@ -337,6 +340,19 @@ module SmuleAuto
       prompt = TTY::Prompt.new
       @logger.dump_error(e: e, trace: e.backtrace)
       prompt.keypress('[ME] Press any key to continue ...')
+    end
+
+    def reload_app
+      begin
+        [__FILE__, 'lib/smule*rb'].each do |ptn|
+          Dir.glob(ptn).each do |script|
+            @logger.info("Loading #{script}")
+            eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
+          end
+        end
+      rescue StandardError => e
+        Plog.dump_error(e: e)
+      end
     end
 
     HELP_SCREEN = <<~EOH
@@ -571,7 +587,7 @@ module SmuleAuto
         end
 
       when 'H'
-        @spage.set_like
+        @spage.like_song
 
       when 'i'                            # Song Info
         puts @playlist.cur_info.to_yaml
@@ -608,19 +624,8 @@ module SmuleAuto
         print TTY::Cursor.clear_screen
       # rubocop:disable Security/Eval
       when 'R' # Reload script
-        _menu_eval do
-          begin
-            [__FILE__, 'lib/smule*rb'].each do |ptn|
-              Dir.glob(ptn).each do |script|
-                @logger.info("Loading #{script}")
-                eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
-              end
-            end
-          rescue StandardError => e
-            Plog.dump_error(e: e)
-          end
-          prompt.keypress('Press any key [:countdown]', timeout: 3)
-        end
+        reload_app
+        prompt.keypress('Press any key [:countdown]', timeout: 3)
       # rubocop:enable Security/Eval
       when 's' # Sort current list
         choices = %w[random play love star date title
@@ -629,9 +634,9 @@ module SmuleAuto
         @playlist.order = prompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
-          perfset = @sapi.get_performances(@user, limit: 500, days: 2)
+          perfset = @sapi.get_performances(@user, limit: 500, days: 3)
           nc, uc = @content.add_new_songs(perfset, isfav: false)
-          perfset = SmuleSong.collect_collabs(@user, 10)
+          perfset = SmuleSong.collect_collabs(@user, 14)
           nc2, uc2 = @content.add_new_songs(perfset, isfav: false)
           nc += nc2
           uc += uc2

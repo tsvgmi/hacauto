@@ -280,7 +280,7 @@ module SmuleAuto
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.toggle_song_favorite(fav: false)
-        @spage.add_song_tag('#thvfavs', asong) if marking
+        @spage.add_song_tag(['#thvfavs_%y'], asong) if marking
         Plog.dump_info(msg: 'Unfav', stitle: asong[:stitle],
                        record_by: asong[:record_by])
       end
@@ -631,6 +631,14 @@ module SmuleAuto
       end
     end
 
+    desc "song_page(url)", "song_page"
+    def song_page(url)
+      cli_wrap do
+        olink = url.sub(%r{/ensembles$}, '')
+        HTTP.follow.get(olink).to_s
+      end
+    end
+
     desc 'to_open(user)', 'Show list of potential to open songs'
     option :tags,  type: :string
     option :favs,  type: :boolean, default: true
@@ -665,14 +673,8 @@ module SmuleAuto
           return false
         end
         table = []
-        if true
-          topen.sort_by { rand }.each do |name, sinfo|
-            table << [sinfo[0], name, sinfo[1]]
-          end
-        else
-          topen.sort_by { |_k, v| v[0] }.each do |name, sinfo|
-            table << [sinfo[0], name, sinfo[1]]
-          end
+        topen.sort_by { rand }.each do |name, sinfo|
+          table << [sinfo[0], name, sinfo[1]]
         end
         print_table(table)
         true
@@ -792,7 +794,7 @@ module SmuleAuto
 
           href = sinfo[:href].sub(%r{/ensembles$}, '')
           scanner.spage.goto(href, 3)
-          scanner.spage.add_song_tag('#thvfavs', sinfo)
+          scanner.spage.add_song_tag(['#thvfavs_%y'], sinfo)
         end
         true
       end
