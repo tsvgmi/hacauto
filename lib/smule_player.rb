@@ -184,16 +184,16 @@ module SmuleAuto
     STATE_FILE = 'splayer.state'
 
     def initialize(user, tdir, options={})
-      @user       = user
-      @options    = options
-      @roptions   = {}
-      @content    = SmuleDB.instance(user, cdir: tdir)
-      @tdir       = tdir
-      @scanner    = Scanner.new(user, @options)
-      @sapi       = API.new(options)
-      @wqueue     = Queue.new
-      @playlist   = PlayList.new(File.join(@tdir, STATE_FILE), @content)
-      @logger     = options[:logger] || PLogger.new($stderr)
+      @user     = user
+      @options  = options
+      @roptions = {}
+      @content  = SmuleDB.instance(user, cdir: tdir)
+      @tdir     = tdir
+      @spage    = Scanner.new(user, @options).spage
+      @sapi     = API.new(options)
+      @wqueue   = Queue.new
+      @playlist = PlayList.new(File.join(@tdir, STATE_FILE), @content)
+      @logger   = options[:logger] || PLogger.new($stderr)
       at_exit do
         @playlist.save
         exit 0
@@ -234,8 +234,9 @@ module SmuleAuto
         box   = TTY::Box.frame(top: 0, left: 15,
                                width: TTY::Screen.width - 20,
                                height: 5) do
+          title = curitem[:title].strip.gsub(/\s+/o, ' ').gsub(/[\u3000\u00a0]/, '')
           <<~EOM
-            [#{isfav}] #{curitem[:title]} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
+            [#{isfav}] #{title} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
                 #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags[0..9]}
             #{curitem[:message]} - #{xtags}
           EOM
@@ -248,7 +249,9 @@ module SmuleAuto
 
         ptags = songtags[witem[:stitle]] || ''
         isfav = witem[:isfav] || witem[:oldfav] ? 'F' : ''
-        row   = [i, isfav, witem[:title], witem[:record_by],
+        title = witem[:title].strip.gsub(/\s+/o, ' ').gsub(/[\u3000\u00a0]/, '')
+
+        row   = [i, isfav, title, witem[:record_by],
                  witem[:listens], witem[:loves],
                  bar[1..witem[:stars].to_i],
                  witem[:created].strftime('%Y-%m-%d'), ptags[0..9]]
@@ -278,7 +281,7 @@ module SmuleAuto
 
       Plog.dump(sitem: sitem)
       @wqueue << sitem
-      psecs, msgs = SmuleSong.new(sitem).play(@scanner.spage, to_play: to_play)
+      psecs, msgs = SmuleSong.new(sitem).play(@spage, to_play: to_play)
 
       case psecs
       when :deleted
@@ -339,6 +342,19 @@ module SmuleAuto
       prompt.keypress('[ME] Press any key to continue ...')
     end
 
+    def reload_app
+      begin
+        [__FILE__, 'lib/smule*rb'].each do |ptn|
+          Dir.glob(ptn).each do |script|
+            @logger.info("Loading #{script}")
+            eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
+          end
+        end
+      rescue StandardError => e
+        Plog.dump_error(e: e)
+      end
+    end
+
     HELP_SCREEN = <<~EOH
             Command:
             ? Help
@@ -389,7 +405,7 @@ module SmuleAuto
         elsif sitem[:record_by] == @user
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
-          @scanner.spage.add_any_song_tag(@user, sitem)
+          @spage.add_any_song_tag(@user, sitem)
           if (duration = psitem[:duration]) <= 0
             next
           end
@@ -402,10 +418,10 @@ module SmuleAuto
             next
           end
 
-          @scanner.spage.add_any_song_tag(@user, sitem)
+          @spage.add_any_song_tag(@user, sitem)
 
           # Turn off autoplay
-          @scanner.spage.toggle_autoplay if pcount == 0
+          @spage.autoplay_off if pcount == 0
           pcount += 1
           @playlist.save if (pcount % 10) == 0
           endt = Time.now + duration
@@ -423,8 +439,8 @@ module SmuleAuto
                 _show_msgs(sitem, psitem)
                 #               if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
                 #                 _menu_eval do
-                #                   @scanner.spage.add_song_tag('#thvfavs', sitem)
-                #                   @scanner.spage.toggle_play(doplay: true)
+                #                   @spage.add_song_tag('#thvfavs', sitem)
+                #                   @spage.toggle_play(doplay: true)
                 #                 end
                 #               end
               end
@@ -445,7 +461,7 @@ module SmuleAuto
             case hc
             when :pausing
               @paused = !@paused
-              remain  = @scanner.spage.toggle_play(doplay: !@paused)
+              remain  = @spage.toggle_play(doplay: !@paused)
               # This is buggy.  If there is limit on playtime, it would
               # be overritten by this
               endt = Time.now + remain if remain > 0
@@ -523,10 +539,8 @@ module SmuleAuto
                   else
                     prompt.ask("#{ftype} value ?")
                   end
-        if param
-          newset = @content.select_set(ftype.to_sym, param)
-          @playlist.add_to_list(newset, replace: key == '=')
-        end
+        newset = @content.select_set(ftype.to_sym, param)
+        @playlist.add_to_list(newset, replace: key == '=')
       when '*' # Set stars
         sitem[:stars] = prompt.keypress('Value?').to_i if sitem
       when /\d/ # Set stars also
@@ -561,8 +575,8 @@ module SmuleAuto
       when 'F' # Set as favorite and tag
         _menu_eval do
           sitem[:isfav] = true
-          @scanner.spage.add_any_song_tag(@user, sitem)
-          @scanner.spage.toggle_play(doplay: true)
+          @spage.add_any_song_tag(@user, sitem)
+          @spage.toggle_play(doplay: true)
         end
 
       when 'h'
@@ -573,7 +587,7 @@ module SmuleAuto
         end
 
       when 'H'
-        @scanner.spage.set_like
+        @spage.like_song
 
       when 'i'                            # Song Info
         puts @playlist.cur_info.to_yaml
@@ -610,19 +624,8 @@ module SmuleAuto
         print TTY::Cursor.clear_screen
       # rubocop:disable Security/Eval
       when 'R' # Reload script
-        _menu_eval do
-          begin
-            [__FILE__, 'lib/smule*rb'].each do |ptn|
-              Dir.glob(ptn).each do |script|
-                @logger.info("Loading #{script}")
-                eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
-              end
-            end
-          rescue StandardError => e
-            Plog.dump_error(e: e)
-          end
-          prompt.keypress('Press any key [:countdown]', timeout: 3)
-        end
+        reload_app
+        prompt.keypress('Press any key [:countdown]', timeout: 3)
       # rubocop:enable Security/Eval
       when 's' # Sort current list
         choices = %w[random play love star date title
@@ -631,9 +634,9 @@ module SmuleAuto
         @playlist.order = prompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
-          perfset = @sapi.get_performances(@user, limit: 500, days: 2)
+          perfset = @sapi.get_performances(@user, limit: 500, days: 3)
           nc, uc = @content.add_new_songs(perfset, isfav: false)
-          perfset = SmuleSong.collect_collabs(@user, 10)
+          perfset = SmuleSong.collect_collabs(@user, 14)
           nc2, uc2 = @content.add_new_songs(perfset, isfav: false)
           nc += nc2
           uc += uc2
@@ -643,6 +646,27 @@ module SmuleAuto
       when 't' # Set tag
         unless (tag = prompt.ask('Tag value ?')).nil?
           @content.add_tag(sitem, tag)
+        end
+      when 'T' # Test - when tags start changing
+        choices = %w[quit auto_play_off comment like play menu favorite]
+        while true
+          case prompt.enum_select('Test mode', choices)
+          when 'auto_play_off'
+            @spage.autoplay_off
+          when 'comment'
+            puts @spage.comment_from_page
+          when 'like'
+            @spage.like_song
+          when 'play'
+            @paused = !@paused
+            @spage.toggle_play(doplay: !@paused)
+          when 'menu'
+            @spage.click_smule_page(:sc_song_menu, delay: 1)
+            @spage.find_element(:css, 'body').click
+          else
+            break
+          end
+          prompt.keypress('[ME] Press any key to continue ...')
         end
       when 'x'                            # Quit
         return [:quit, true]
@@ -654,13 +678,8 @@ module SmuleAuto
         prompt.keypress('Stop watching [:countdown]', timeout: 3)
       when 'Z'                            # Debug
         Plog.level = 0
-        if true
-          require 'byebug'
-          byebug
-        else
-          require 'pry-byebug'
-          binding.pry
-        end
+        require 'byebug'
+        byebug
       end
       [true, true]
     end

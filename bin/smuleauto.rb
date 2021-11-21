@@ -246,7 +246,7 @@ module SmuleAuto
       end
     end
 
-    def star_set(song_set, count)
+    def like_set(song_set, count)
       stars = []
       song_set.each do |sinfo|
         href = sinfo[:href]
@@ -257,7 +257,7 @@ module SmuleAuto
         next if @options[:exclude]&.find { |r| sinfo[:record_by] =~ /#{r}/ }
 
         begin
-          if @spage.star_song(sinfo[:href])
+          if @spage.like_song(sinfo[:href])
             Plog.info("Marking #{sinfo[:stitle]} (#{sinfo[:record_by]})")
             stars << sinfo
             if @options[:pause]
@@ -280,7 +280,7 @@ module SmuleAuto
       songs.each do |asong|
         @spage.goto(asong[:href])
         @spage.toggle_song_favorite(fav: false)
-        @spage.add_song_tag('#thvfavs', asong) if marking
+        @spage.add_song_tag(['#thvfavs_%y'], asong) if marking
         Plog.dump_info(msg: 'Unfav', stitle: asong[:stitle],
                        record_by: asong[:record_by])
       end
@@ -631,6 +631,14 @@ module SmuleAuto
       end
     end
 
+    desc "song_page(url)", "song_page"
+    def song_page(url)
+      cli_wrap do
+        olink = url.sub(%r{/ensembles$}, '')
+        HTTP.follow.get(olink).to_s
+      end
+    end
+
     desc 'to_open(user)', 'Show list of potential to open songs'
     option :tags,  type: :string
     option :favs,  type: :boolean, default: true
@@ -665,14 +673,8 @@ module SmuleAuto
           return false
         end
         table = []
-        if true
-          topen.sort_by { rand }.each do |name, sinfo|
-            table << [sinfo[0], name, sinfo[1]]
-          end
-        else
-          topen.sort_by { |_k, v| v[0] }.each do |name, sinfo|
-            table << [sinfo[0], name, sinfo[1]]
-          end
+        topen.sort_by { rand }.each do |name, sinfo|
+          table << [sinfo[0], name, sinfo[1]]
         end
         print_table(table)
         true
@@ -705,7 +707,7 @@ module SmuleAuto
       end
     end
 
-    desc 'star_singers(count, singers)', 'star_singers'
+    desc 'like_singers(count, singers)', 'like_singers'
     option :top,     type: :numeric
     option :days,    type: :numeric, default: 15
     option :exclude, type: :string
@@ -714,7 +716,7 @@ module SmuleAuto
     option :offset,  type: :numeric, default: 0
 
     BANNED_LIST = %w[Joseph_TN].freeze
-    def star_singers(user, count, *singers)
+    def like_singers(user, count, *singers)
       cli_wrap do
         _tdir_check
         woptions = writable_options
@@ -746,7 +748,7 @@ module SmuleAuto
           perfset = perfset.select do |r|
             (r[:record_by].split(',') & BANNED_LIST).empty?
           end
-          starred = scanner.star_set(perfset, count)
+          starred = scanner.like_set(perfset, count)
           allsets.concat(starred)
         end
         count = {}
@@ -792,7 +794,7 @@ module SmuleAuto
 
           href = sinfo[:href].sub(%r{/ensembles$}, '')
           scanner.spage.goto(href, 3)
-          scanner.spage.add_song_tag('#thvfavs', sinfo)
+          scanner.spage.add_song_tag(['#thvfavs_%y'], sinfo)
         end
         true
       end

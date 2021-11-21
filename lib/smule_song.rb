@@ -55,25 +55,25 @@ module SmuleAuto
 
   # Docs for SmulePage
   class SmulePage < SelPage
-    LOCATORS = {
-      sc_auto_play:           ['div.sc-qWfkp',            0],
-      sc_comment_close:       ['div.sc-eishCr.jzzsgq',    0],
-      sc_comment_open:        ['div.sc-bTRMAZ.kGehDO',    2],
-      sc_cont_after_arch:     ['a.sc-cvJHqN',             1],
-      sc_expose_play_control: ['div.sc-pZCuu',            0],
-      sc_like:                ['div.sc-oTNDV.jzKNzB',     0],
-      sc_play_toggle:         ['div.sc-dYzljZ svg path',  0],
-      sc_song_menu:           ['button.sc-hmfusV.kjvAVr', 1],
-      sc_star:                ['div.sc-bTRMAZ.kGehDO',    0],
+    LOCATORS_3 = {
+      sc_auto_play_off:   ['div.sc-dacFzL.gYONUC',    0],
+      sc_comment_close:   ['div.sc-hJJQhR.jkZEL',     0],
+      sc_comment_open:    ['div.sc-ehsPrw.conNwD',    2],
+      sc_play_toggle:     ['div.sc-iuGMqu svg path',  0],
+      sc_song_menu:       ['button.sc-hmfusV.kjvAVr', 0],
+      sc_heart:           ['div.sc-ehsPrw.conNwD',    0],
 
-      sc_favorite_toggle:     ['div.sc-hHKmLs.nJfnd'],
-      sc_comment_text:        ['div.sc-bQVmPH.cROQXQ'],
-      sc_play_time:           ['span.sc-eUWgFQ.hcHFJT'],
-      sc_play_continue:       ['a.sc-gGTGfU.hjUsKT'],
+      sc_favorite_toggle: ['div.sc-hHKmLs.nJfnd'],
+      sc_comment_text:    ['div.sc-bQVmPH.cROQXQ'],
+      sc_play_time:       ['span.sc-eCjkpP.iDHATf'],
+      sc_play_continue:   ['a.sc-gGTGfU.hjUsKT'],
+      sc_song_menu_text:  ['span.sc-gLnrpB.biGEWR'],
+      sc_song_note:       ['span.sc-gTgzIj.dLCNLt'],
+      sc_loves:           ['button.sc-iWFSnp.gUOMoh', 0],
     }.freeze
 
     def click_smule_page(elem, delay: 2)
-      unless elem = LOCATORS[elem]
+      unless elem = LOCATORS_3[elem]
         Plog.error "#{elem} not defined in Locators"
         return false
       end
@@ -88,7 +88,7 @@ module SmuleAuto
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 
-      locator = LOCATORS[:sc_favorite_toggle].first
+      locator = LOCATORS_3[:sc_favorite_toggle].first
       cval = (css("#{locator} svg path")[0] || {})[:fill]
       return false unless cval
 
@@ -101,67 +101,97 @@ module SmuleAuto
         find_element(:css, 'body').click
         return false
       end
-      cpos = find_elements(:css, locator).size / 2
-      click_and_wait(locator, 1, cpos)
+      click_and_wait(locator, 1, 0)
       find_element(:css, 'body').click
       true
-    end
-
-    def set_like
-      click_smule_page(:sc_like, delay: 0)
     end
 
     def add_any_song_tag(user, sinfo=nil, _options={})
       return unless sinfo
 
-      if sinfo[:isfav]
-        add_song_tag('#thvfavs', sinfo) if sinfo[:record_by].start_with?("#{user},")
-        toggle_song_favorite(fav: true)
+      locator = LOCATORS_3[:sc_loves][0]
+      page.css(locator).each do |entry|
+        case entry.text
+        when /love/
+          sinfo[:loves] = entry.text.to_i
+        when /gifts/
+          sinfo[:gifts] = entry.text.to_i
+        end
       end
-      if sinfo[:record_by] == user &&
-         sinfo[:expire_at] && (Time.now > sinfo[:expire_at])
-        add_song_tag('#thvopen', sinfo)
+
+      tagset = []
+      if sinfo[:isfav]
+        toggle_song_favorite(fav: true)
+        tagset << '#thvfavs_%y'
+      end
+      return unless sinfo[:record_by].start_with?(user)
+
+      if (sinfo[:record_by] == user) &&
+         (sinfo[:created] < Time.now-8*24*3600)
+        tagset << '#thvopen_%y'
       end
       if sinfo[:record_by] == "#{user},#{user}" &&
          (!sinfo[:message] || !sinfo[:message].include?('#thvduets'))
-        add_song_tag('#thvduets', sinfo, notime: true)
+        tagset << '#thvduets'
       end
+      dbtags = ((SongTag.first(name: sinfo[:stitle]) || {})[:tags] || '')
+                        .split(',')
+      smtags = Tag.where(sname:dbtags).map{|r| r[:lname]}.compact
+      tagset += smtags
+
+      add_song_tag(tagset, sinfo) if tagset.size > 0
       toggle_play(doplay: true)
     end
 
-    def add_song_tag(tag, sinfo=nil, options={})
-      otag  = tag
+    def add_song_tag(tags, sinfo=nil)
+
+      # Get the current note
       snote = ''
       if sinfo
-        tag += sinfo[:created].strftime('_%y') unless options[:notime]
         if (snote = sinfo[:message]).nil?
           snote = sinfo[:message] = song_note
         end
-        if snote =~ /#{tag}/
-          Plog.debug "Message already containing #{tag}"
-          return false
+      end
+
+      osnote  = snote
+      newnote = snote
+      tags.each do |tag_t|
+        if sinfo
+          tag = sinfo[:created].strftime(tag_t)
+          if snote !~ /#{tag}/
+            newnote = newnote + " #{tag}"
+          end
+        else
+          tag = Time.now.strftime(tag_t)
+          newnote = newnote + " #{tag}"
         end
       end
+
+      # Nothing change - just return
+      if osnote == newnote
+        return true
+      end
+
       click_smule_page(:sc_song_menu)
 
-      locator = 'span.sc-gTgzIj.brYKCX'
+      locator = LOCATORS_3[:sc_song_menu_text][0]
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, '//html').click
         return false
       end
-      cpos = (find_elements(:css, locator).size + 1) / 2
-      click_and_wait(locator, 1, cpos + 1)
 
-      text = snote.strip.gsub(/ #{otag}/, '').gsub(/ #{tag}/, '') + " #{tag}"
-      type('textarea#message', text, append: false) # Enter tag
-      sinfo[:message] = text if sinfo
-      Plog.info("Setting note to: #{text}")
+      cpos = (find_elements(:css, locator).size + 1) / 2
+      click_and_wait(locator, 1, cpos)
+
+      type('textarea#message', newnote, append: false) # Enter tag
+      sinfo[:message] = newnote if sinfo
+      Plog.info("Setting note to: #{newnote}")
       click_and_wait('input#recording-save')
     end
 
-    def star_song(href)
-      goto(href, 3)
-      elem = LOCATORS[:sc_star]
+    def like_song(href=nil)
+      goto(href, 3) if href
+      elem = LOCATORS_3[:sc_heart]
       raise "#{elem} not defined in Locators" unless elem
 
       fill = (css("#{elem[0]} svg path")[0] || {})[:fill]
@@ -171,7 +201,7 @@ module SmuleAuto
         Plog.error('Already starred')
         return false
       end
-      click_smule_page(:sc_star, delay: 1)
+      click_smule_page(:sc_heart, delay: 1)
       true
     end
 
@@ -180,7 +210,7 @@ module SmuleAuto
       remain = 0
       refresh
 
-      paths    = css(LOCATORS[:sc_play_toggle].first).size
+      paths    = css(LOCATORS_3[:sc_play_toggle].first).size
       toggling = true
       if doplay && paths == 2
         Plog.debug('Already playing.  Do nothing')
@@ -190,7 +220,7 @@ module SmuleAuto
         toggling = false
       end
 
-      play_locator = LOCATORS[:sc_play_time][0]
+      play_locator = LOCATORS_3[:sc_play_time][0]
 
       if toggling
         Plog.debug("Think play = #{doplay}")
@@ -244,7 +274,7 @@ module SmuleAuto
     def comment_from_page
       click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
-      css(LOCATORS[:sc_comment_text].first).reverse.each do |acmt|
+      css(LOCATORS_3[:sc_comment_text].first).reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..] || []).join(' ')
@@ -254,12 +284,12 @@ module SmuleAuto
       res
     end
 
-    def toggle_autoplay
-      click_smule_page(:sc_auto_play)
+    def autoplay_off
+      click_smule_page(:sc_auto_play_off)
     end
 
     def song_note
-      locator = 'span.sc-gTgzIj.dLCNLt'
+      locator = LOCATORS_3[:sc_song_note].first
       if css(locator).empty?
         Plog.error("#{locator} not found (song note)")
         ''
@@ -274,7 +304,12 @@ module SmuleAuto
     class << self
       def check_and_download(info_source, media_file, user, options={})
         fsize = File.size(media_file)
-        return if fsize < 1_000_000 || `file #{media_file}` !~ /Apple.*Audio/
+        return if fsize < 1_000_000
+
+        ftype = `file #{media_file}`
+        Plog.dump(media_file:media_file, ftype:ftype)
+
+        return if ftype !~ /Apple.*(Audio|Video)/
 
         sinfo = case info_source
                 when Hash
@@ -450,58 +485,36 @@ module SmuleAuto
       end
 
       document = Nokogiri::HTML(source)
-      asset_str = nil
-
-      if !(stream = document.at('meta[name="twitter:player:stream"]')).nil?
-        asset_str = document.css('head script')[0].text.split("\n")
-                            .grep(/Recording:/)[0].sub(/^\s*Recording: /, '')[0..-2]
-      elsif !(stream = document.css('script')[0]).nil?
-        asset_str = stream.text.split("\n").grep(/^\s+Recording: /)[0]
-        asset_str = asset_str.sub(/^\s+Recording: /, '').sub(/,$/, '') if asset_str
-      end
-      return {} unless asset_str
-
-      res  = JSON.parse(asset_str, symbolize_names: true) || {}
-      perf = res[:performance]
-      unless perf
+      stream   = document.css('script')[1]
+      if !stream || stream.text.empty?
         @logger.dump_error(msg: 'No performance data found', olink: olink)
         return {}
       end
 
-      lyrics = nil
-      if perf[:lyrics]
-        lyrics = JSON.parse(perf[:lyrics], symbolize_names: true)
-                     .map { |line| line.map { |w| w[:text] }.join }.join("\n")
-      end
+      new_asset = JSON.parse(stream, symbolized: true)
+      website   = new_asset.find{|r| r['@type'] == 'Website'}
+      audio     = new_asset.find{|r| r['@type'] =~ /(Audio|Video)Object/}
+      recording = new_asset.find{|r| r['@type'] == 'MusicRecording'}
+      minsec    = recording['duration'][2..-2].split(':')
 
-      Plog.dump(perf: perf.reject { |k, _v| k == :lyrics }, _ofmt: 'Y')
-      output = {
-        sid:           perf[:key],
-        title:         perf[:title],
-        stitle:        to_search_str(perf[:title]),
-        href:          perf[:web_url],
-        message:       perf[:message],
-        psecs:         perf[:song_length],
-        created:       Time.parse(perf[:created_at]),
-        expire_at:     perf[:expire_at] ? Time.parse(perf[:expire_at]) : nil,
-        avatar:        perf[:cover_url],
-        orig_city:     (perf[:orig_track_city] || {}).values.join(', '),
-        listens:       perf[:stats][:total_listens],
-        loves:         perf[:stats][:total_loves],
-        gifts:         perf[:stats][:total_gifts],
-        record_by:     perf[:performed_by],
-        song_info_url: perf[:song_info_url],
-        lyrics:        lyrics,
-        latlong:       [perf.dig(:owner, :price), perf.dig(:owner, :discount)].join(','),
-      }
-      if perf[:child_count] <= 0 && operf = (perf[:other_performers][0] || {})
-        output.update(
-          other_city: (operf[:city] || {}).values.join(', '),
-          record_by:  [perf[:performed_by], operf[:handle]].join(','),
-          latlong_2:  [operf[:price], operf[:discount]].join(',')
-        )
+      descr     = (document.css('meta[name="description"]')[0] || {})['content']
+      record_by = nil
+      if descr =~ /recorded by (\S+) and (\S+)/
+        record_by = [$1, $2].join(',')
       end
-      output.update(res: res) if @options[:verbose]
+      output = {
+        sid:           File.basename(website['url']).sub(/\/ensembles/, ''),
+        title:         website['name'],
+        stitle:        to_search_str(website['name']),
+        href:          audio['url'].sub(%r{^https://www.smule.com}, ''),
+        message:       audio['description'],
+        psecs:         minsec[0].to_i*60 + minsec[1].to_i,
+        created:       Time.parse(audio['datePublished']),
+        avatar:        audio['thumbnailUrl'],
+        listens:       audio['interactionCount'],
+        record_by:     record_by,
+      }
+      output.update(res: new_asset) if Plog.debug?
       output
     end
 
@@ -549,10 +562,10 @@ module SmuleAuto
         @info[:other_city] = asset[:other_city] if @info[:href] !~ /ensembles$/ && @info[:other_city].to_s != ''
 
         # Click on play
-        @info.update(listens: asset[:listens], loves: asset[:loves],
+        @info.update(listens: asset[:listens],
                      psecs: asset[:psecs], message: asset[:message],
                      other_city: asset[:other_city],
-                     expire_at: asset[:expire_at])
+                    )
       end
       [@info[:psecs], msgs]
     end
