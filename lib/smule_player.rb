@@ -198,7 +198,13 @@ module SmuleAuto
         @playlist.save
         exit 0
       end
-      listen_for_download if @options[:download]
+      if @options[:download]
+        if test(?d, SmuleSong.song_dir)
+          listen_for_download
+        else
+          @logger.error("#{SmuleSong.song_dir} does not exist for download")
+        end
+      end
       @logger.info("Playing #{@playlist.clist.size} songs")
     end
 
