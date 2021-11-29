@@ -155,9 +155,14 @@ class SDriver
     return unless data
 
     Plog.debug "Enter on #{selector} - #{data[0..19]}"
-    elem = @driver.find_element(:css, selector)
-    elem.clear unless options[:append]
-    elem.send_keys(data)
+    begin
+      elem = @driver.find_element(:css, selector)
+      elem.clear unless options[:append]
+      elem.send_keys(data)
+    rescue Selenium::WebDriver::Error::NoSuchElementError => errmsg
+      Plog.error(errmsg)
+      sleep(3)
+    end
   end
 
   def goto(path)

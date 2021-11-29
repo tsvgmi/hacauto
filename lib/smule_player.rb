@@ -443,12 +443,6 @@ module SmuleAuto
                 _list_show(curset: @playlist.toplay_list,
                            clear: false, curitem: sitem)
                 _show_msgs(sitem, psitem)
-                #               if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
-                #                 _menu_eval do
-                #                   @spage.add_song_tag('#thvfavs', sitem)
-                #                   @spage.toggle_play(doplay: true)
-                #                 end
-                #               end
               end
               wait_t = endt - Time.now
               key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",

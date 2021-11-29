@@ -55,25 +55,25 @@ module SmuleAuto
 
   # Docs for SmulePage
   class SmulePage < SelPage
-    LOCATORS_3 = {
-      sc_auto_play_off:   ['div.sc-dacFzL.gYONUC',    0],
-      sc_comment_close:   ['div.sc-hJJQhR.jkZEL',     0],
-      sc_comment_open:    ['div.sc-ehsPrw.conNwD',    2],
-      sc_play_toggle:     ['div.sc-iuGMqu svg path',  0],
-      sc_song_menu:       ['button.sc-hmfusV.kjvAVr', 0],
-      sc_heart:           ['div.sc-ehsPrw.conNwD',    0],
+    LOCATORS_4 = {
+      sc_auto_play_off:   ['div.sc-dtwoBo.inCwUZ',    0],  # Fixed
+      sc_comment_close:   ['div.sc-gYhigD.gdlclw',    0],  # Fixed
+      sc_comment_open:    ['div.sc-licaXj.dFTVoZ',    2],  # Fixed
+      sc_play_toggle:     ['div.sc-fFYUoA.FCJNq svg path', 0],  # Fixed
+      sc_song_menu:       ['button.sc-gLnrpB.biGEWR', 0],  # Fixed
+      sc_heart:           ['div.sc-fIYLYf.ePOaOy',    0],  # Fixed
 
-      sc_favorite_toggle: ['div.sc-hHKmLs.nJfnd'],
-      sc_comment_text:    ['div.sc-bQVmPH.cROQXQ'],
-      sc_play_time:       ['span.sc-eCjkpP.iDHATf'],
+      sc_favorite_toggle: ['div.sc-ihsSHl.eVBZHh'],        # Fixed
+      sc_comment_text:    ['div.sc-icwmWt.cILGdH'],        # Fixed
+      sc_play_time:       ['span.sc-hlWvWH.dgxEoC'],       # Fixed
       sc_play_continue:   ['a.sc-gGTGfU.hjUsKT'],
-      sc_song_menu_text:  ['span.sc-gLnrpB.biGEWR'],
-      sc_song_note:       ['span.sc-gTgzIj.dLCNLt'],
-      sc_loves:           ['button.sc-iWFSnp.gUOMoh', 0],
+      sc_song_menu_text:  ['span.sc-fvFlmW.eaimfk'],       # Fixed
+      sc_song_note:       ['span.sc-gTgzIj.dLCNLt'],       # Fixed
+      sc_loves:           ['button.sc-JAcuL.bZQbVF', 0],   # Fixed
     }.freeze
 
     def click_smule_page(elem, delay: 2)
-      unless elem = LOCATORS_3[elem]
+      unless elem = LOCATORS_4[elem]
         Plog.error "#{elem} not defined in Locators"
         return false
       end
@@ -88,7 +88,7 @@ module SmuleAuto
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 
-      locator = LOCATORS_3[:sc_favorite_toggle].first
+      locator = LOCATORS_4[:sc_favorite_toggle].first
       cval = (css("#{locator} svg path")[0] || {})[:fill]
       return false unless cval
 
@@ -109,7 +109,7 @@ module SmuleAuto
     def add_any_song_tag(user, sinfo=nil, _options={})
       return unless sinfo
 
-      locator = LOCATORS_3[:sc_loves][0]
+      locator = LOCATORS_4[:sc_loves][0]
       page.css(locator).each do |entry|
         case entry.text
         when /love/
@@ -139,8 +139,9 @@ module SmuleAuto
       smtags = Tag.where(sname:dbtags).map{|r| r[:lname]}.compact
       tagset += smtags
 
-      add_song_tag(tagset, sinfo) if tagset.size > 0
-      toggle_play(doplay: true)
+      #if tagset.size > 0
+        add_song_tag(tagset, sinfo)
+      #end
     end
 
     def add_song_tag(tags, sinfo=nil)
@@ -174,24 +175,25 @@ module SmuleAuto
 
       click_smule_page(:sc_song_menu)
 
-      locator = LOCATORS_3[:sc_song_menu_text][0]
+      locator = LOCATORS_4[:sc_song_menu_text][0]
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, '//html').click
         return false
       end
 
-      cpos = (find_elements(:css, locator).size + 1) / 2
-      click_and_wait(locator, 1, cpos)
+      #cpos = (find_elements(:css, locator).size + 1) / 2
+      click_and_wait(locator, 1, 2)
 
       type('textarea#message', newnote, append: false) # Enter tag
       sinfo[:message] = newnote if sinfo
       Plog.info("Setting note to: #{newnote}")
       click_and_wait('input#recording-save')
+      toggle_play(doplay: true)
     end
 
     def like_song(href=nil)
       goto(href, 3) if href
-      elem = LOCATORS_3[:sc_heart]
+      elem = LOCATORS_4[:sc_heart]
       raise "#{elem} not defined in Locators" unless elem
 
       fill = (css("#{elem[0]} svg path")[0] || {})[:fill]
@@ -210,20 +212,20 @@ module SmuleAuto
       remain = 0
       refresh
 
-      paths    = css(LOCATORS_3[:sc_play_toggle].first).size
+      paths    = css(LOCATORS_4[:sc_play_toggle].first).size
       toggling = true
       if doplay && paths == 2
-        Plog.debug('Already playing.  Do nothing')
+        Plog.debug("Already playing [#{paths}].  Do nothing")
         toggling = false
       elsif !doplay && paths == 1
-        Plog.debug('Already stopped.  Do nothing')
+        Plog.debug("Already stopped [#{paths}].  Do nothing")
         toggling = false
       end
 
-      play_locator = LOCATORS_3[:sc_play_time][0]
+      play_locator = LOCATORS_4[:sc_play_time][0]
 
       if toggling
-        Plog.debug("Think play = #{doplay}")
+        Plog.debug("Think play = #{doplay} [#{paths}]")
         click_smule_page(:sc_play_toggle, delay: 0)
         if doplay
           if css(play_locator).size == 2
@@ -274,7 +276,7 @@ module SmuleAuto
     def comment_from_page
       click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
-      css(LOCATORS_3[:sc_comment_text].first).reverse.each do |acmt|
+      css(LOCATORS_4[:sc_comment_text].first).reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..] || []).join(' ')
@@ -289,7 +291,7 @@ module SmuleAuto
     end
 
     def song_note
-      locator = LOCATORS_3[:sc_song_note].first
+      locator = LOCATORS_4[:sc_song_note].first
       if css(locator).empty?
         Plog.error("#{locator} not found (song note)")
         ''
