@@ -365,6 +365,7 @@ module SmuleAuto
             Command:
             ? Help
             C           Cut current playlist to the set
+            c           Show comments on song or user
             F           Mark the song as favorite
             f           Filter existing song list
               *=0       Filter songs w/o star

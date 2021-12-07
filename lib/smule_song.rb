@@ -61,12 +61,12 @@ module SmuleAuto
       sc_comment_open:    ['div.sc-licaXj.dFTVoZ',    2],  # Fixed
       sc_play_toggle:     ['div.sc-fFYUoA.FCJNq svg path', 0],  # Fixed
       sc_song_menu:       ['button.sc-gLnrpB.biGEWR', 0],  # Fixed
-      sc_heart:           ['div.sc-fIYLYf.ePOaOy',    0],  # Fixed
+      sc_heart:           ['div.sc-licaXj.dFTVoZ',    0],  # Fixed
 
       sc_favorite_toggle: ['div.sc-ihsSHl.eVBZHh'],        # Fixed
       sc_comment_text:    ['div.sc-icwmWt.cILGdH'],        # Fixed
       sc_play_time:       ['span.sc-hlWvWH.dgxEoC'],       # Fixed
-      sc_play_continue:   ['a.sc-gGTGfU.hjUsKT'],
+      sc_play_continue:   ['span.sc-gTgzIj.jLdwwx',   1],  # Fixed
       sc_song_menu_text:  ['span.sc-fvFlmW.eaimfk'],       # Fixed
       sc_song_note:       ['span.sc-gTgzIj.dLCNLt'],       # Fixed
       sc_loves:           ['button.sc-JAcuL.bZQbVF', 0],   # Fixed
@@ -212,7 +212,13 @@ module SmuleAuto
       remain = 0
       refresh
 
-      paths    = css(LOCATORS_4[:sc_play_toggle].first).size
+      limit = 5
+      while limit > 0
+        paths = css(LOCATORS_4[:sc_play_toggle].first).size
+        break if paths > 0
+        click_smule_page(:sc_play_time, delay:1)
+        limit -= 1
+      end
       toggling = true
       if doplay && paths == 2
         Plog.debug("Already playing [#{paths}].  Do nothing")
@@ -220,6 +226,8 @@ module SmuleAuto
       elsif !doplay && paths == 1
         Plog.debug("Already stopped [#{paths}].  Do nothing")
         toggling = false
+      else
+        Plog.dump(paths:paths)
       end
 
       play_locator = LOCATORS_4[:sc_play_time][0]
@@ -234,17 +242,17 @@ module SmuleAuto
               endtime = css(play_locator)[1]
               if endtime && (endtime.text != '00:00')
                 if href
-                  sleep(1)
+                  #sleep(1)
                   # This means it pulled from archive.  It needs another
                   # click to continue
-                  if sleep_round > 2
+                  if sleep_round > 5
                     click_smule_page(:sc_play_continue, delay: 0)
                     click_smule_page(:sc_play_continue, delay: 0)
                   end
                 end
                 break
               end
-              sleep 2
+              sleep 1
               sleep_round += 1
               refresh
             end
