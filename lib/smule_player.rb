@@ -356,7 +356,7 @@ module SmuleAuto
             eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
           end
         end
-      rescue StandardError => e
+      rescue => e
         Plog.dump_error(e: e)
       end
     end
@@ -484,6 +484,8 @@ module SmuleAuto
     end
 
     def show_comment(ftype, sitem)
+      require 'tempfile'
+
       wset = nil
       case ftype
       when :by_singer
@@ -494,9 +496,16 @@ module SmuleAuto
                           .join_table(:left, :song_tags, name: :stitle)
       when :by_song
         wset = Performance.where(Sequel.lit('performances.stitle = ?', (sitem[:stitle]).to_s))
+      else
+        return
       end
       wset = wset.join_table(:inner, :comments,
                              Sequel.lit('performances.sid = comments.sid'))
+      fod = Tempfile.new(['comment', '.md'])
+      fod.puts <<~EOH
+        | Record By | Title / Comment |
+        | --------- | --------------- |
+      EOH
       wset.each do |sinfo|
         next unless sinfo[:comments]
 
@@ -504,13 +513,15 @@ module SmuleAuto
                        .select { |_c, m| m && !m.empty? }
         next if comments.empty?
 
-        puts format("\n%<title>-50.50s %<record>-20.20s %<created>s",
-                    title: sinfo[:stitle], record: sinfo[:record_by],
-                    created: sinfo[:created])
+        srecord_by = sinfo[:record_by].sub(/,?#{@user},?/, '')
+        fod.puts "| **#{srecord_by}** | **[#{sinfo[:title]}](https://smule.com/#{sinfo[:href]})** - #{sinfo[:created]} | "
         comments.each do |cuser, msg|
-          puts format('  %<cuser>-14.14s | %<msg>s', cuser: cuser, msg: msg)
+          fod.puts "| <sup>#{cuser}</sup> | <sup>#{msg}</sup> |"
         end
       end
+      fod.close
+      system("cat #{fod.path}; open #{fod.path}")
+      sleep(10)
     end
 
     # rubocop:disable Metrics/AbcSize
@@ -558,7 +569,7 @@ module SmuleAuto
         choices = %i[by_singer by_song]
         ftype   = prompt.enum_select('Comment type?', choices)
         show_comment(ftype, sitem)
-        prompt.keypress('Press any key to continue ...')
+        prompt.keypress('Press any key [:countdown]', timeout: 3)
 
       when 'D'
         if prompt.keypress('Are you sure? ') =~ /^y/i

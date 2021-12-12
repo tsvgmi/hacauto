@@ -54,7 +54,7 @@ def to_search_str(str)
   ACCENT_MAP.each do |ptn, rep|
     stitle = stitle.gsub(ptn, rep)
   end
-  stitle.gsub(/\s+/, ' ').strip
+  stitle.gsub(/[^a-z0-9 ]/, '').gsub(/\s+/, ' ').strip
 end
 
 def curl(path, ofile: nil)
@@ -563,11 +563,28 @@ module SmuleAuto
           end
           ccount = content.add_tag(recs, data.join(','))
         when :stitle
-          query  = Performance.where(stitle: nil)
-          ccount = query.count
-          query.each do |r|
-            stitle = to_search_str(r[:title])
-            r.update(stitle: stitle)
+          ccount = 0
+          content.each(filter: data.join('/')) do |_sid, sinfo|
+            stitle = to_search_str(sinfo[:title])
+            if stitle != sinfo[:stitle]
+              Plog.dump_info(stitle:stitle, ostitle:sinfo[:stitle],
+                             type:sinfo.class)
+              sinfo[:stitle] = stitle
+              content.update_song(sinfo)
+              ccount += 1
+            end
+          end
+
+          ccount = 0
+          song_tags = content.db[:song_tags]
+          progress_set(song_tags.all, 'song_tags') do |sinfo|
+            stitle = to_search_str(sinfo[:name])
+            if stitle != sinfo[:name]
+              Plog.dump_info(stitle:stitle, ostitle:sinfo[:name])
+              sinfo[:name] = stitle
+              song_tags.insert_conflict(:replace).insert(sinfo)
+              ccount += 1
+            end
           end
         when :favs
           query  = Performance.where(isfav: 1, oldfav: 1)
