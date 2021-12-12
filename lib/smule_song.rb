@@ -55,7 +55,7 @@ module SmuleAuto
 
   # Docs for SmulePage
   class SmulePage < SelPage
-    LOCATORS_4 = {
+    LOCATORS_3 = {
       sc_auto_play_off:   ['div.sc-dtwoBo.inCwUZ',    0],  # Fixed
       sc_comment_close:   ['div.sc-gYhigD.gdlclw',    0],  # Fixed
       sc_comment_open:    ['div.sc-licaXj.dFTVoZ',    2],  # Fixed
@@ -73,7 +73,7 @@ module SmuleAuto
     }.freeze
 
     def click_smule_page(elem, delay: 2)
-      unless elem = LOCATORS_4[elem]
+      unless elem = LOCATORS_3[elem]
         Plog.error "#{elem} not defined in Locators"
         return false
       end
@@ -88,7 +88,7 @@ module SmuleAuto
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 
-      locator = LOCATORS_4[:sc_favorite_toggle].first
+      locator = LOCATORS_3[:sc_favorite_toggle].first
       cval = (css("#{locator} svg path")[0] || {})[:fill]
       return false unless cval
 
@@ -109,7 +109,7 @@ module SmuleAuto
     def add_any_song_tag(user, sinfo=nil, _options={})
       return unless sinfo
 
-      locator = LOCATORS_4[:sc_loves][0]
+      locator = LOCATORS_3[:sc_loves][0]
       page.css(locator).each do |entry|
         case entry.text
         when /love/
@@ -175,7 +175,7 @@ module SmuleAuto
 
       click_smule_page(:sc_song_menu)
 
-      locator = LOCATORS_4[:sc_song_menu_text][0]
+      locator = LOCATORS_3[:sc_song_menu_text][0]
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, '//html').click
         return false
@@ -193,7 +193,7 @@ module SmuleAuto
 
     def like_song(href=nil)
       goto(href, 3) if href
-      elem = LOCATORS_4[:sc_heart]
+      elem = LOCATORS_3[:sc_heart]
       raise "#{elem} not defined in Locators" unless elem
 
       fill = (css("#{elem[0]} svg path")[0] || {})[:fill]
@@ -214,7 +214,7 @@ module SmuleAuto
 
       limit = 5
       while limit > 0
-        paths = css(LOCATORS_4[:sc_play_toggle].first).size
+        paths = css(LOCATORS_3[:sc_play_toggle].first).size
         break if paths > 0
         click_smule_page(:sc_play_time, delay:1)
         limit -= 1
@@ -230,7 +230,7 @@ module SmuleAuto
         Plog.dump(paths:paths)
       end
 
-      play_locator = LOCATORS_4[:sc_play_time][0]
+      play_locator = LOCATORS_3[:sc_play_time][0]
 
       if toggling
         Plog.debug("Think play = #{doplay} [#{paths}]")
@@ -284,7 +284,7 @@ module SmuleAuto
     def comment_from_page
       click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
-      css(LOCATORS_4[:sc_comment_text].first).reverse.each do |acmt|
+      css(LOCATORS_3[:sc_comment_text].first).reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..] || []).join(' ')
@@ -299,7 +299,7 @@ module SmuleAuto
     end
 
     def song_note
-      locator = LOCATORS_4[:sc_song_note].first
+      locator = LOCATORS_3[:sc_song_note].first
       if css(locator).empty?
         Plog.error("#{locator} not found (song note)")
         ''
