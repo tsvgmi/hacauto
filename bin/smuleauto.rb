@@ -21,42 +21,6 @@ require 'thor'
 require 'smule-db'
 require 'smule_song'
 
-def clean_emoji(str)
-  str = str.force_encoding('utf-8').encode
-  arr_regex = [/[\u{1f600}-\u{1f64f}]/, /[\u{2702}-\u{27b0}]/, /[\u{1f680}-\u{1f6ff}]/, /[\u{24C2}-\u{1F251}]/,
-               /[\u{1f300}-\u{1f5ff}]/]
-  arr_regex.each do |regex|
-    str = str.gsub regex, ''
-  end
-  str
-end
-
-ACCENT_MAP = {
-  /[áàảãạâấầẩẫậăắằẳẵặ]/ => 'a',
-  /[ÁÀẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶ]/ => 'A',
-  /đ/                 => 'd',
-  /Đ/                 => 'D',
-  /[éèẻẽẹêếềểễệ]/       => 'e',
-  /[ÉÈẺẼẸÊẾỀỂỄỆ]/       => 'E',
-  /[íìỉĩị]/             => 'i',
-  /[ÍÌỈĨỊ]/             => 'I',
-  /[óòỏõọôốồổỗộơớờởỡợ]/ => 'o',
-  /[ÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢ]/ => 'O',
-  /[úùủũụưứừửữự]/       => 'u',
-  /[ÚÙỦŨỤƯỨỪỬỮỰ]/       => 'U',
-  /[ýỳỷỹỵ]/             => 'y',
-  /[ÝỲỶỸỴ]/             => 'Y',
-}.freeze
-
-def to_search_str(str)
-  stitle = clean_emoji(str).downcase.sub(/\s*\(.*$/, '')
-                           .sub(/\s+[-=].*$/, '').sub(/"/, '').strip
-  ACCENT_MAP.each do |ptn, rep|
-    stitle = stitle.gsub(ptn, rep)
-  end
-  stitle.gsub(/[^a-z0-9 ]/, '').gsub(/\s+/, ' ').strip
-end
-
 def curl(path, ofile: nil)
   cmd = 'curl -s -H "User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0"'
   cmd += " -o #{ofile}" if ofile
@@ -94,11 +58,11 @@ end
 # new one and we want to associate with new account
 ALTERNATE = {
   'Annygermany'   => 'Dang_Anh_Anh',
-  '_NOEXIST_'     => 'Dang_Anh_Anh',
+  'ChiHoang55'    => 'ChiMHoang',
   'Eddy2020_'     => 'Mina_________',
   '_Huong'        => '__HUONG',
+  '_NOEXIST_'     => 'Dang_Anh_Anh',
   '__MinaTrinh__' => 'Mina_________',
-  'ChiHoang55'    => 'ChiMHoang',
 }.freeze
 
 def _record_by_map(record_by)

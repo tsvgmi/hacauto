@@ -520,8 +520,7 @@ module SmuleAuto
         end
       end
       fod.close
-      system("cat #{fod.path}; open #{fod.path}")
-      sleep(10)
+      system("open #{fod.path}")
     end
 
     # rubocop:disable Metrics/AbcSize
