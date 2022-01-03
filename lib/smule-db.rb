@@ -139,6 +139,10 @@ module SmuleAuto
         newset = @content.where(sid: value.split(/[, ]+/))
       when :star
         newset = @content.where { stars >= value.to_i }
+      when :untagged
+        newset = @content
+            .where(Sequel.lit('message is null or message not like "%#%"'))
+            .where(Sequel.ilike(:record_by, "#{@user}%"))
       else
         Plog.info("Unknown selection - #{ftype}")
         newset = @content

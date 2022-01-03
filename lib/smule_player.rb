@@ -279,7 +279,9 @@ module SmuleAuto
     end
 
     def _setprompt
-      @prompt = "lnswx*+= (#{@playlist.filter.inspect})>"
+      @prompt = @autoplay ? '▷||' : '❚❚'
+      @prompt += "lnswx*+="
+      @prompt += " (#{@playlist.filter.inspect})>"
     end
 
     def play_asong(sitem, to_play: true)
@@ -349,21 +351,22 @@ module SmuleAuto
     end
 
     def reload_app
-      begin
+      #begin
         [__FILE__, 'lib/smule*rb'].each do |ptn|
           Dir.glob(ptn).each do |script|
             @logger.info("Loading #{script}")
             eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
           end
         end
-      rescue => e
-        Plog.dump_error(e: e)
-      end
+      #rescue => e
+        #Plog.dump_error(e: e)
+      #end
     end
 
     HELP_SCREEN = <<~EOH
             Command:
             ? Help
+            a           Toggle autoplay
             C           Cut current playlist to the set
             c           Show comments on song or user
             F           Mark the song as favorite
@@ -400,8 +403,9 @@ module SmuleAuto
     def play_all
       pcount = 0
       _setprompt
-      prompt = TTY::Prompt.new
-      sitem  = nil
+      prompt    = TTY::Prompt.new
+      sitem     = nil
+      @autoplay = true
       loop do
         # Update into db last one played
         @content.update_song(sitem) if sitem
@@ -413,6 +417,7 @@ module SmuleAuto
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
           @spage.add_any_song_tag(@user, sitem)
+          @spage.toggle_play(doplay: @autoplay)
           if (duration = psitem[:duration]) <= 0
             next
           end
@@ -420,21 +425,22 @@ module SmuleAuto
           endt = Time.now + duration
         else
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
-          psitem = play_asong(sitem)
+          psitem = play_asong(sitem, to_play: @autoplay)
           if (duration = psitem[:duration]) <= 0
             next
           end
 
           @spage.add_any_song_tag(@user, sitem)
+          @spage.toggle_play(doplay: @autoplay)
 
           # Turn off autoplay
-          @spage.autoplay_off if pcount == 0
+          @spage.autoplay_off # if pcount == 0
           pcount += 1
           @playlist.save if (pcount % 10) == 0
           endt = Time.now + duration
         end
 
-        @paused = false
+        @paused = !@autoplay
         refresh = true
         loop do
           # Show the menu + list
@@ -449,7 +455,15 @@ module SmuleAuto
               key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
                                        timeout: wait_t)
             else
-              key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
+              # In paused mode
+              if @autoplay
+                key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
+              else
+                # but if autoplay is also off.  We still timeout for next song
+                wait_t = endt - Time.now
+                key = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
+                                      timeout: wait_t)
+              end
             end
           rescue StandardError => e
             @logger.dump_error(e: e, trace: e.backtrace)
@@ -542,11 +556,12 @@ module SmuleAuto
         return [:next, true]
       when /^[+=]/i # Add/replace list
         choices = %w[favs isfav recent record_by my_open my_duets
-                     star title my_tags query]
+                     star title my_tags query untagged]
         ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
         param   = case ftype
                   when /fav|my_open|my_duets/
                     prompt.yes?("Not tagged yet ?")
+                  when 'untagged'
                   else
                     prompt.ask("#{ftype} value ?")
                   end
@@ -556,6 +571,10 @@ module SmuleAuto
         sitem[:stars] = prompt.keypress('Value?').to_i if sitem
       when /\d/ # Set stars also
         sitem[:stars] = key.to_i if sitem
+      when 'a'
+        @autoplay = !@autoplay
+        _setprompt
+        prompt.keypress("Autoplay is #{@autoplay} [:countdown]", timeout: 3)
       when 'C'
         list_length = prompt.ask('List Length to cut: ').to_i
         if list_length > 0
@@ -587,7 +606,7 @@ module SmuleAuto
         _menu_eval do
           sitem[:isfav] = true
           @spage.add_any_song_tag(@user, sitem)
-          @spage.toggle_play(doplay: true)
+          @spage.toggle_play(doplay: @autoplay)
         end
 
       when 'h'

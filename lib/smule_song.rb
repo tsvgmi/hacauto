@@ -139,9 +139,8 @@ module SmuleAuto
       smtags = Tag.where(sname:dbtags).map{|r| r[:lname]}.compact
       tagset += smtags
 
-      #if tagset.size > 0
-        add_song_tag(tagset, sinfo)
-      #end
+      add_song_tag(tagset, sinfo)
+      #toggle_play(doplay: true)
     end
 
     def add_song_tag(tags, sinfo=nil)
@@ -188,7 +187,6 @@ module SmuleAuto
       sinfo[:message] = newnote if sinfo
       Plog.info("Setting note to: #{newnote}")
       click_and_wait('input#recording-save')
-      toggle_play(doplay: true)
     end
 
     def like_song(href=nil)
