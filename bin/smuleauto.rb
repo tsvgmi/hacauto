@@ -169,6 +169,31 @@ module SmuleAuto
       get_songs("https://www.smule.com/#{user}/favorites/json", options)
     end
 
+    def get_users(users, agroup)
+      result = []
+      bar = TTY::ProgressBar.new("Users [#{users.size}] [:bar] :percent",
+                                 total: users.size)
+      users.each do |user|
+        res = HTTP.follow.get("https://www.smule.com/#{user}").to_s
+        res = Nokogiri::HTML(res).css('script')[0].to_s.split("\n")
+                                 .find {|l| l =~ /Profile: {/}
+        if res
+          res = res.sub(/^\s*Profile:\s*/, '').sub(/,\s*$/, '')
+          res = JSON.parse(res)['user']
+          result << {
+            account_id: res['account_id'],
+            name:       user,
+            avatar:     res['pic_url']
+          }
+        else
+          Plog.warn("No info found for #{user}")
+        end
+        bar.advance
+      end
+      Plog.dump_info(agroup:agroup, size: result.size)
+      result
+    end
+
     def get_user_group(user, agroup)
       result = []
       offset = 0
@@ -380,11 +405,21 @@ module SmuleAuto
       cli_wrap do
         _tdir_check
         api  = API.new
+
+        db      = SmuleDB.instance(user, cdir: options[:data_dir])
+        joiners = db.content.group(:record_by).all
+                    .map{|r| r[:record_by].sub(/(^#{user},|,#{user}$)/, '')}
+                    .uniq.sort
+        knowns   = db.singers.all.map{|r| r[:name]}.sort
+        unknowns = joiners - knowns
+
+        unknown_set = api.get_users(unknowns, :unknown)
+
         fset = %w[following followers].map do |agroup|
           api.get_user_group(user, agroup)
         end
         SmuleDB.instance(user, cdir: options[:data_dir])
-               .set_follows(fset[0], fset[1])
+               .set_follows(fset[0], fset[1], unknown_set)
         true
       end
     end
