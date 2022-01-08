@@ -426,6 +426,10 @@ module SmuleAuto
                      .map { |line| line.map { |w| w[:text] }.join }.join("\n")
       end
 
+      record_by_ids = ([perf[:owner][:account_id]] +
+                        perf[:other_performers].map{|r| r[:account_id]})
+                      .join(',')
+
       output = {
         sid:           perf[:key],
         title:         perf[:title],
@@ -440,6 +444,7 @@ module SmuleAuto
         loves:         perf[:stats][:total_loves],
         gifts:         perf[:stats][:total_gifts],
         record_by:     perf[:performed_by_url].sub(%r{^/}, ''),
+        record_by_ids: record_by_ids,
         song_info_url: perf[:song_info_url],
         lyrics:        lyrics,
       }
@@ -510,6 +515,7 @@ module SmuleAuto
       if descr =~ /recorded by (\S+) and (\S+)/
         record_by = [$1, $2].join(',')
       end
+      record_by_ids = audio['author'].map{|r| File.basename(r['url'])}.join(',')
       output = {
         sid:           File.basename(website['url']).sub(/\/ensembles/, ''),
         title:         website['name'],
@@ -521,6 +527,7 @@ module SmuleAuto
         avatar:        audio['thumbnailUrl'],
         listens:       audio['interactionCount'],
         record_by:     record_by,
+        record_by_ids: record_by_ids,
       }
       output.update(res: new_asset) if Plog.debug?
       output
