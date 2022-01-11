@@ -515,7 +515,11 @@ module SmuleAuto
       if descr =~ /recorded by (\S+) and (\S+)/
         record_by = [$1, $2].join(',')
       end
-      record_by_ids = audio['author'].map{|r| File.basename(r['url'])}.join(',')
+      authors = audio['author']
+      if authors.is_a?(Hash)
+        authors = [authors]
+      end
+      record_by_ids = authors.map{|r| File.basename(r['url'])}.join(',')
       output = {
         sid:           File.basename(website['url']).sub(/\/ensembles/, ''),
         title:         website['name'],

@@ -25,8 +25,8 @@ gem 'webdrivers'
 group 'devel' do
   gem 'byebug'
   gem 'code-scanning-rubocop'
-  gem 'pry-byebug'
-  gem 'pry-doc'
+  #gem 'pry-byebug'
+  #gem 'pry-doc'
   gem 'rake'
   gem 'rubocop-sequel'
 end
