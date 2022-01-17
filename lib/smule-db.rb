@@ -343,66 +343,6 @@ module SmuleAuto
       end
     end
 
-    desc 'edit_songtag', 'Edit tag of existing song'
-    long_desc <<~LONGDESC
-      Dump the tag data into a text file.  Allow user to edit and update with any
-      changes back into the database
-    LONGDESC
-    option :format, type: :string, default: 'json'
-    def edit_songtag(user)
-      cli_wrap do
-        tdir = _tdir_check
-        # Must call once to init db connection/model
-        SmuleDB.instance(user, cdir: tdir)
-        records        = SongTag.all
-                                .sort_by { |r| r[:name] }
-                                .map(&:values)
-        insset, delset = _edit_file(records, format: options[:format])
-        SongTag.where(id: delset.map { |r| r[:id] }).destroy unless delset.empty?
-        insset.each do |r|
-          r.delete(:id)
-          SongTag.new(r).save
-        end
-        true
-      end
-    end
-
-    desc 'edit_singer', 'edit_singer'
-    option :format, type: :string, default: 'yaml'
-    def edit_singer(user)
-      cli_wrap do
-        tdir = _tdir_check
-        # Must call once to init db connection/model
-        SmuleDB.instance(user, cdir: tdir)
-        records = Singer.all.sort_by { |r| r[:name] }.map(&:values)
-        insset, delset = _edit_file(records, format: options[:format])
-        Singer.where(id: delset.map { |r| r[:id] }).destroy unless delset.empty?
-        insset.each do |r|
-          r.delete(:id)
-          Singer.new(r).save
-        end
-        true
-      end
-    end
-
-    desc 'edit_tags(user)', 'edit_tags'
-    option :format, type: :string, default: 'json'
-    def edit_tags(user)
-      cli_wrap do
-        tdir = _tdir_check
-        # Must call once to init db connection/model
-        SmuleDB.instance(user, cdir: tdir)
-        records = Tag.all.sort_by { |r| r[:sname] }.map(&:values)
-        insset, delset = _edit_file(records, format: options[:format])
-        Tag.where(id: delset.map { |r| r[:id] }).destroy unless delset.empty?
-        insset.each do |r|
-          r.delete(:id)
-          Tag.new(r).save
-        end
-        true
-      end
-    end
-
     desc 'rank_singer(user)', 'rank_singer'
     option :days, type: :numeric, default: 180, alias: '-d',
       desc: 'Look back the specified number of days only'

@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 #---------------------------------------------------------------------------
 # File:        smule_player.rb
@@ -23,7 +24,7 @@ module SmuleAuto
       @state_file = state_file
       @content    = content
       @options    = options
-      @logger     = options[:logger] || PLogger.new($stderr)
+      #@logger     = options[:logger] || PLogger.new($stderr)
       if test('s', @state_file)
         config   = YAML.safe_load_file(@state_file)
         @clist   = @content.select_sids(config[:clist]) if config[:clist]
@@ -60,7 +61,7 @@ module SmuleAuto
       }
       File.open(@state_file, 'w') do |fod|
         fod.puts(data.to_yaml)
-        @logger.info("Updating #{@state_file}")
+        Plog.info("Updating #{@state_file}")
       end
     end
 
@@ -89,7 +90,7 @@ module SmuleAuto
         end
       end
       if state == :skip
-        @logger.info("Skipping #{sitem[:title]}")
+        Plog.info("Skipping #{sitem[:title]}")
         return false
       end
       true
@@ -115,12 +116,19 @@ module SmuleAuto
         count += 1
         increment = nextinc
       end
-      @logger.error('No matching song in list')
+      Plog.error('No matching song in list')
       nil
     end
 
-    def insert(*songs)
-      @clist.insert(@listpos, *songs)
+    def insert(songs, newonly=false)
+      if newonly
+        newsongs = songs.select do |asong|
+          !@clist.find{|r| r[:sid] == asong[:sid]}
+        end
+        Plog.info("#{newsongs.size} found to be added")
+        songs = newsongs
+      end
+      @clist.insert(@listpos, *songs) if songs.size > 0
     end
 
     def remains
@@ -154,7 +162,7 @@ module SmuleAuto
     end
 
     def sort_selection(cselect)
-      @logger.info("Resort based on #{@order}")
+      Plog.info("Resort based on #{@order}")
       cselect =
         case @order
         when /^random/
@@ -170,11 +178,11 @@ module SmuleAuto
         when /^title/
           cselect.sort_by { |v| v[:stitle] }
         else
-          @logger.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
+          Plog.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
           cselect
         end
       cselect = cselect.reverse if @order =~ /\.d$/
-      @logger.info("Sorted #{cselect.size} entries")
+      Plog.info("Sorted #{cselect.size} entries")
       cselect
     end
   end
@@ -193,7 +201,7 @@ module SmuleAuto
       @sapi     = API.new(options)
       @wqueue   = Queue.new
       @playlist = PlayList.new(File.join(@tdir, STATE_FILE), @content)
-      @logger   = options[:logger] || PLogger.new($stderr)
+      #@logger   = options[:logger] || PLogger.new($stderr)
       at_exit do
         @playlist.save
         exit 0
@@ -202,10 +210,10 @@ module SmuleAuto
         if test(?d, SmuleSong.song_dir)
           listen_for_download
         else
-          @logger.error("#{SmuleSong.song_dir} does not exist for download")
+          Plog.error("#{SmuleSong.song_dir} does not exist for download")
         end
       end
-      @logger.info("Playing #{@playlist.clist.size} songs")
+      Plog.info("Playing #{@playlist.clist.size} songs")
     end
 
     def listen_for_download(enable: true)
@@ -279,7 +287,7 @@ module SmuleAuto
     end
 
     def _setprompt
-      @prompt = @autoplay ? '▷||' : '❚❚'
+      @prompt = @autoplay ? '[P]' : '[S]'
       @prompt += "lnswx*+="
       @prompt += " (#{@playlist.filter.inspect})>"
     end
@@ -346,7 +354,7 @@ module SmuleAuto
       yield
     rescue StandardError => e
       prompt = TTY::Prompt.new
-      @logger.dump_error(e: e, trace: e.backtrace)
+      Plog.dump_error(e: e, trace: e.backtrace)
       prompt.keypress('[ME] Press any key to continue ...')
     end
 
@@ -354,7 +362,7 @@ module SmuleAuto
       #begin
         [__FILE__, 'lib/smule*rb'].each do |ptn|
           Dir.glob(ptn).each do |script|
-            @logger.info("Loading #{script}")
+            Plog.info("Loading #{script}")
             eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
           end
         end
@@ -466,7 +474,7 @@ module SmuleAuto
               end
             end
           rescue StandardError => e
-            @logger.dump_error(e: e, trace: e.backtrace)
+            Plog.dump_error(e: e, trace: e.backtrace)
             next
           end
 
@@ -612,16 +620,14 @@ module SmuleAuto
       when 'h'
         unless (url = prompt.ask('URL:')).nil?
           newsongs = SmuleSong.update_from_url(url, update: true)
-          @playlist.insert(*newsongs)
+          @playlist.insert(newsongs)
           return [:next, true]
         end
-
-      when 'H'
-        @spage.like_song
 
       when 'i'                            # Song Info
         puts @playlist.cur_info.to_yaml
         prompt.keypress('Press any key to continue ...')
+
       when 'l'                            # List playlist
         offset      = 10
         toplay_list = @playlist.toplay_list
@@ -641,8 +647,15 @@ module SmuleAuto
         return [:next, true]
       when 'N'                            # Next n songs
         offset = key == 'N' ? prompt.ask('Next track offset?').to_i : 0
-        @logger.info("Skip #{offset} songs")
+        Plog.info("Skip #{offset} songs")
         @playlist.next_song(increment: offset)
+        return [:next, true]
+      when 'O'                            # Next n songs
+        hlist    = get_songs_from_notification
+        newsongs = hlist.map do |url|
+          SmuleSong.update_from_url(url, update: true, singer:@user)
+        end.flatten.compact
+        @playlist.insert(newsongs, true) if newsongs.size > 0
         return [:next, true]
       when '<'                            # Play prev song
         @playlist.next_song(increment: -2, nextinc: -1)
@@ -713,6 +726,18 @@ module SmuleAuto
       end
       [true, true]
     end
+
+    # Go to notification page and collect all joined links
+    def get_songs_from_notification
+      @spage.goto("https://www.smule.com/user/notifications")
+      selector = "div.block.recording.recording-audio.recording-listItem a.title"
+      links    = @spage.css(selector)
+                       .map {|r| "https://www.smule.com#{r[:href]}"}.uniq
+      @spage.navigate.back
+      Plog.info("Picked up #{links.size} songs from notification")
+      links
+    end
+
     # rubocop:enable Metrics/AbcSize
     # rubocop:enable Metrics/CyclomaticComplexity
     # rubocop:enable Metrics/MethodLength

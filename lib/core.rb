@@ -39,11 +39,11 @@ module ThorAddition
       exit(0)
     end
 
-    @logger = if options[:logfile]
-                PLogger.new(value)
-              else
-                PLogger.new($stderr)
-              end
+    if options[:logfile]
+      #STDERR.puts("Writing log to #{options[:logfile]}")
+      ENV['LOG_LEVEL'] = "1,file:#{options[:logfile]},s"
+    end
+    @logger = Plog.set_logger
 
     result = yield
 
@@ -452,12 +452,14 @@ class Plog
 
     def set_logger
       logspec = (ENV['LOG_LEVEL'] || '')
-      logger = if logspec =~ /:f/
-                 PLogger.new(Regexp.last_match.post_match.sub(/:.*$/, ''))
+      logger = if logspec =~ /file:/
+                 file = Regexp.last_match.post_match.sub(/,.*$/, '')
+                 STDERR.puts("Log is in #{file}")
+                 PLogger.new(file)
                else
                  PLogger.new($stderr)
                end
-      log_level, *logopts = logspec.split(':')
+      log_level, *logopts = logspec.split(',')
       logopts.each do |anopt|
         oname = anopt[0]
         # ovalue = anopt[1..]

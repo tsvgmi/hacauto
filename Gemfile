@@ -21,6 +21,7 @@ gem 'tty-prompt'
 gem 'tty-spinner'
 gem 'tty-table'
 gem 'webdrivers'
+gem 'iconv'
 
 group 'devel' do
   gem 'byebug'

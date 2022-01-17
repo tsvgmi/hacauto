@@ -18,11 +18,11 @@ module SmuleAuto
                       .split("\n").max_by { |d| File.mtime(d) }
       @watch_dir    = watch_dir
       @csong_source = csong_file
-      @logger       = options[:logger] || PLogger.new($stderr)
+      #@logger       = options[:logger] || PLogger.new($stderr)
       @options      = options
 
-      @logger.info("Watching #{@watch_dir}")
-      @logger.dump_info(msg: "Watching #{@watch_dir}")
+      Plog.info("Watching #{@watch_dir}")
+      Plog.dump_info(msg: "Watching #{@watch_dir}")
     end
 
     def change_handler(added)
@@ -124,6 +124,7 @@ module SmuleAuto
         toggle_song_favorite(fav: true)
         tagset << '#thvfavs_%y'
       end
+      return unless sinfo[:record_by]
       return unless sinfo[:record_by].start_with?(user)
 
       if (sinfo[:record_by] == user) &&
@@ -345,7 +346,11 @@ module SmuleAuto
                  else
                    [song.asset_from_page]
                  end
-        api_key = YAML.load_file('access.yml').dig('google_api', :key)
+
+        if singer = options[:singer]
+          result = result.reject{|r| r[:record_by] !~ /#{singer}/}
+        end
+
         if options[:update]
           result.each do |sdata|
             sdata.delete(:lyrics)
@@ -372,7 +377,7 @@ module SmuleAuto
       @info          = sinfo
       @options       = options
       @surl          = "https://www.smule.com#{@info[:href]}"
-      @logger        = options[:logger] || PLogger.new($stderr)
+      #@logger        = options[:logger] || PLogger.new($stderr)
 
       @info[:created] ||= Date.today
       @info[:created]          = Date.parse(@info[:created]) if @info[:created].is_a?(String)
@@ -391,7 +396,7 @@ module SmuleAuto
       title = @info[:title].strip.gsub(%r{[/"]}, '-')
       ofile = File.join(odir, "#{title.gsub(/&/, '-').gsub(/'/, '-')}.m4a")
       sfile = ssfile
-      @logger.dump_info(sfile: sfile, ofile: ofile)
+      Plog.dump_info(sfile: sfile, ofile: ofile)
       if File.exist?(sfile) && !File.symlink?(ofile)
         FileUtils.remove(ofile, verbose: true, force: true)
         FileUtils.ln_s(sfile, ofile, verbose: true, force: true)
@@ -403,7 +408,7 @@ module SmuleAuto
       cur_record = @info[:record_by]
       new_record = cur_record.gsub(old_name, new_name)
       if new_record == cur_record
-        @logger.info('No change in data')
+        Plog.info('No change in data')
         return false
       end
       @info[:record_by] = new_record
@@ -500,7 +505,7 @@ module SmuleAuto
       document = Nokogiri::HTML(source)
       stream   = document.css('script')[1]
       if !stream || stream.text.empty?
-        @logger.dump_error(msg: 'No performance data found', olink: olink)
+        Plog.dump_error(msg: 'No performance data found', olink: olink)
         return {}
       end
 
@@ -533,7 +538,7 @@ module SmuleAuto
         record_by:     record_by,
         record_by_ids: record_by_ids,
       }
-      output.update(res: new_asset) if Plog.debug?
+      #output.update(res: new_asset) if Plog.debug?
       output
     end
 
@@ -592,7 +597,7 @@ module SmuleAuto
     def mp4_tags
       sfile = ssfile
       if !sfile || !test('s', sfile)
-        @logger.error("#{@info[:stitle]}:#{sfile} empty or not exist")
+        Plog.error("#{@info[:stitle]}:#{sfile} empty or not exist")
         return nil
       end
       wset = _run_command("atomicparsley #{sfile} -t")
@@ -620,16 +625,16 @@ module SmuleAuto
       if wset[:nam] == 'ver:1' || wset[:alb] != album || \
          wset[:day] != release || wset[:aART].to_s != aartist
         wset.delete(:lyr)
-        @logger.dump_info(msg: "Tagging not matched for #{ssfile}",
-                          wset: wset, title: @info[:title],
-                          record_by: @info[:record_by])
+        Plog.dump_info(msg: "Tagging not matched for #{ssfile}",
+                       wset: wset, title: @info[:title],
+                       record_by: @info[:record_by])
         return false
       end
       true
     end
 
     def _run_command(command)
-      @logger.info(command)
+      Plog.debug(command)
       `#{command}`.chomp.encode('UTF-8', invalid: :replace, replace: '')
     end
 
@@ -682,10 +687,9 @@ module SmuleAuto
     end
 
     def check_and_download(file, user)
-      @logger.info format('%<file>s %<size>d', file: File.basename(file),
-                          size: File.size(file))
-      @logger.info format('%<sid>s %<title>s %<record>s', sid: @info[:sid],
-                          title: @info[:stitle], record: @info[:record_by])
+      #Plog.dump_info(file:File.basename(file), size: File.size(file))
+      Plog.dump_info(sid: @info[:sid],
+                     title: @info[:stitle], record: @info[:record_by])
 
       sfile = ssfile
       if test('f', sfile)
@@ -696,14 +700,13 @@ module SmuleAuto
         csize  = media_size(sfile)
         fmsize = media_size(file)
         if (csize == fmsize) && mp4_tagged?(excuser: user)
-          @logger.info("Verify same media size and tags: #{csize}")
+          Plog.info("Verify same media size and tags: #{csize}")
           sofile
           return
         end
-        @logger.info("Size: #{csize} <>? #{fmsize}")
       end
 
-      @logger.info('Song missing or bad tag on local disk.  Create')
+      Plog.info('Song missing/ wrong size/ or bad tag on local disk.  Create')
       FileUtils.cp(file, sfile, verbose: true)
       update_mp4tag(excuser: user)
       sofile
