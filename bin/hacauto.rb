@@ -1117,10 +1117,10 @@ class HACAuto < Thor
   end
 
   desc 'youtube_dl url', 'Download MP3 file from Youtube URL'
-  option :odir,      type: :string, desc:'Directory to save file to'
-  option :open,      type: :boolean, desc:'Open file after download (play)'
+  option :odir,      type: :string, desc: 'Directory to save file to'
+  option :open,      type: :boolean, desc: 'Open file after download (play)'
   option :split,     type: :boolean
-  option :transpose, type: :numeric, desc:'Transpose by +- steps'
+  option :transpose, type: :numeric, desc: 'Transpose by +- steps'
   long_desc <<~LONGDESC
     Download mp3 from youtube.  Optionally transpose, and/or split into
     multiple mp3 files
@@ -1144,9 +1144,7 @@ class HACAuto < Thor
     system("touch \"#{mp3file}\"")
 
     newfile = mp3file.sub(/-[a-z0-9_]+.*mp3/, '.mp3')
-    if moptions[:odir]
-      newfile = "#{moptions[:odir]}/#{newfile}"
-    end
+    newfile = "#{moptions[:odir]}/#{newfile}" if moptions[:odir]
     if newfile != mp3file
       File.rename(mp3file, newfile)
       mp3file = newfile
@@ -1171,7 +1169,7 @@ class HACAuto < Thor
     system("set -x; open -a 'Sonic Visualiser' \"#{mp3file}\"") if moptions[:open]
   end
 
-  desc "split_mp3(mp3file, cuefile)", "Split mp3 file using cuefile"
+  desc 'split_mp3(mp3file, cuefile)', 'Split mp3 file using cuefile'
   def split_mp3(mp3file, cuefile)
     cli_wrap do
       # Convert a simple CSV input to the cue file to be used by mp3splt
@@ -1179,22 +1177,22 @@ class HACAuto < Thor
       #   MM:SS:00 | Title | Performer
       if cuefile =~ /\.csv/
         tmpf = Tempfile.new(['', '.cue'])
-        fdefs = File.read(cuefile).split("\n").map{|r| r.split('|')}
+        fdefs = File.read(cuefile).split("\n").map { |r| r.split('|') }
         trackno = 1
         tmpf.puts <<~EOH
-REM GENRE Vietnamese
-REM DATE #{Time.now.strftime('%Y')}
-PERFORMER ""
-TITLE ""
-FILE "#{mp3file}" MP3
+          REM GENRE Vietnamese
+          REM DATE #{Time.now.strftime('%Y')}
+          PERFORMER ""
+          TITLE ""
+          FILE "#{mp3file}" MP3
         EOH
         flist = fdefs.each do |time, title, performer|
-          track_s = "%02d" % trackno
+          track_s = '%02d' % trackno
           tmpf.puts <<~EOD
-  TRACK #{track_s} AUDIO
-    TITLE     "#{title.strip}"
-    PERFORMER "#{(performer || '').strip}"
-    INDEX 01  #{time.strip}
+            TRACK #{track_s} AUDIO
+              TITLE     "#{title.strip}"
+              PERFORMER "#{(performer || '').strip}"
+              INDEX 01  #{time.strip}
           EOD
           trackno += 1
         end
@@ -1202,26 +1200,26 @@ FILE "#{mp3file}" MP3
         puts File.read(tmpf.path)
         cuefile = tmpf.path
       end
-      
+
       # mp3split cannot deal with '/' in name.  So we have to remove
       ocuefile = File.basename(mp3file).sub(/\.mp3/, '.cue')
       system "set -x; mp3splt -c #{cuefile} -E \"#{ocuefile}\" -o \"@t - @p\" \"#{mp3file}\""
     end
   end
 
-  desc "retag_mp3_from_vc(mp3file)", "retag_mp3_from_vc"
+  desc 'retag_mp3_from_vc(mp3file)', 'retag_mp3_from_vc'
   def retag_mp3_from_vc(mp3file)
     cli_wrap do
       title, artist = File.basename(mp3file).split(' - ')
 
       # iTunes cannot deal with specia chars in id3lib - so have to strip it
       # down
-      artist  = to_search_str(artist.sub(/\..*$/, ''), has_case:true)
-      title   = to_search_str(title, has_case:true)
-      command = "id3v2"
+      artist  = to_search_str(artist.sub(/\..*$/, ''), has_case: true)
+      title   = to_search_str(title, has_case: true)
+      command = 'id3v2'
       command += " --song '#{title}'"
       command += " --artist '#{artist}'"
-      command += " --album VC"
+      command += ' --album VC'
       command += " '#{mp3file}'"
       system("set -x; #{command}")
     end

@@ -40,7 +40,7 @@ module ThorAddition
     end
 
     if options[:logfile]
-      #STDERR.puts("Writing log to #{options[:logfile]}")
+      # STDERR.puts("Writing log to #{options[:logfile]}")
       ENV['LOG_LEVEL'] = "1,file:#{options[:logfile]},s"
     end
     @logger = Plog.set_logger
@@ -454,7 +454,7 @@ class Plog
       logspec = (ENV['LOG_LEVEL'] || '')
       logger = if logspec =~ /file:/
                  file = Regexp.last_match.post_match.sub(/,.*$/, '')
-                 STDERR.puts("Log is in #{file}")
+                 warn("Log is in #{file}")
                  PLogger.new(file)
                else
                  PLogger.new($stderr)
@@ -579,4 +579,3 @@ def to_search_str(str, soptions={})
     stitle.downcase.gsub(/[^a-z0-9 ]/, '').gsub(/\s+/, ' ').strip
   end
 end
-

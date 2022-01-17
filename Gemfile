@@ -5,6 +5,7 @@ source 'http://rubygems.org'
 # gem 'progress_bar'
 gem 'activesupport'
 gem 'http'
+gem 'iconv'
 gem 'listen'
 gem 'mysql2'
 gem 'nokogiri'
@@ -21,14 +22,12 @@ gem 'tty-prompt'
 gem 'tty-spinner'
 gem 'tty-table'
 gem 'webdrivers'
-gem 'iconv'
 
 group 'devel' do
   gem 'byebug'
   gem 'code-scanning-rubocop'
-  #gem 'pry-byebug'
-  #gem 'pry-doc'
   gem 'rake'
+  gem 'rubocop-rake'
   gem 'rubocop-sequel'
 end
 

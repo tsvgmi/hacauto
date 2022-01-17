@@ -55,7 +55,7 @@ module SmuleAuto
     def initialize(user, cdir: '.')
       dbname = File.join(cdir, DBNAME)
       @user  = user
-      @db    = Sequel.sqlite(database:dbname, timeout: 1_000_000)
+      @db    = Sequel.sqlite(database: dbname, timeout: 1_000_000)
       Sequel::Model.plugin :insert_conflict
       YAML.safe_load_file('etc/db_models.yml').each do |model, minfo|
         klass = Class.new(Sequel::Model)
@@ -121,13 +121,13 @@ module SmuleAuto
         newset = @content.where(isfav: true)
         if value
           newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
-            .where(Sequel.ilike(:record_by, "#{@user}%"))
+                         .where(Sequel.ilike(:record_by, "#{@user}%"))
         end
       when :favs
         newset = @content.where(Sequel.lit('isfav=1 or oldfav=1'))
         if value
           newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
-            .where(Sequel.ilike(:record_by, "#{@user}%"))
+                         .where(Sequel.ilike(:record_by, "#{@user}%"))
         end
       when :record_by
         newset = @content.where(Sequel.ilike(:record_by, "%#{value}%"))
@@ -141,8 +141,8 @@ module SmuleAuto
         newset = @content.where { stars >= value.to_i }
       when :untagged
         newset = @content
-            .where(Sequel.lit('message is null or message not like "%#%"'))
-            .where(Sequel.ilike(:record_by, "#{@user}%"))
+                 .where(Sequel.lit('message is null or message not like "%#%"'))
+                 .where(Sequel.ilike(:record_by, "#{@user}%"))
       else
         Plog.info("Unknown selection - #{ftype}")
         newset = @content

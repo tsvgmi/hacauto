@@ -176,21 +176,21 @@ module SmuleAuto
       users.each do |user|
         res = HTTP.follow.get("https://www.smule.com/#{user}").to_s
         res = Nokogiri::HTML(res).css('script')[0].to_s.split("\n")
-                                 .find {|l| l =~ /Profile: {/}
+                      .find { |l| l =~ /Profile: {/ }
         if res
           res = res.sub(/^\s*Profile:\s*/, '').sub(/,\s*$/, '')
           res = JSON.parse(res)['user']
           result << {
             account_id: res['account_id'],
             name:       user,
-            avatar:     res['pic_url']
+            avatar:     res['pic_url'],
           }
         else
           Plog.warn("No info found for #{user}")
         end
         bar.advance
       end
-      Plog.dump_info(agroup:agroup, size: result.size)
+      Plog.dump_info(agroup: agroup, size: result.size)
       result
     end
 
@@ -201,6 +201,7 @@ module SmuleAuto
         begin
           data = JSON.parse(curl("https://www.smule.com/#{user}/#{agroup}/json?offset=#{offset}&limit=25"))['list']
         rescue JSON::ParserError => e
+          Elog.error(e)
           break
         end
         break if data.size <= 0
@@ -283,6 +284,7 @@ module SmuleAuto
     end
   end
 
+  # subcommand for db oeperations
   class DbCommand < Thor
     include ThorAddition
 
@@ -375,7 +377,7 @@ module SmuleAuto
         days    = coptions[:days]  || 7
         sapi    = API.new(options)
         perfset = sapi.get_performances(user, limit: limit, days: days)
-        content.add_new_songs(perfset, isfav: false) if content
+        content&.add_new_songs(perfset, isfav: false)
         perfset
       end
 
@@ -437,7 +439,7 @@ module SmuleAuto
       end
     end
 
-    desc "check_collabs singer ...", "check_collabs"
+    desc 'check_collabs singer ...', 'check_collabs'
     option :top,      type: :numeric
     option :lookback, type: :numeric
     def check_collabs(user, *singers)
@@ -446,20 +448,20 @@ module SmuleAuto
         content = SmuleDB.instance(user, cdir: tdir)
         if options[:top]
           limit = options[:top] || 10
-          singers.concat(content.top_partners(limit, days:90).map{|r| r[0]})
+          singers.concat(content.top_partners(limit, days: 90).map { |r| r[0] })
         end
 
         collabs = []
         singers.each do |singer|
-          perfs = _collect_songs(singer, nil, days:8)
-          ucollabs = perfs.select {|r| r[:href] =~ /ensembles$/}
+          perfs = _collect_songs(singer, nil, days: 8)
+          ucollabs = perfs.select { |r| r[:href] =~ /ensembles$/ }
           collabs.concat(ucollabs)
         end
         collabs = collabs.reject do |r|
           record_by = "#{r[:record_by]},#{user}"
-          Performance.where(record_by:record_by, stitle:r[:stitle]).count > 0
+          Performance.where(record_by: record_by, stitle: r[:stitle]).count > 0
         end
-        collabs = collabs.map {|r| [r[:record_by], r[:title], r[:created]]}
+        collabs = collabs.map { |r| [r[:record_by], r[:title], r[:created]] }
         print_table(collabs)
         true
       end
@@ -500,13 +502,13 @@ module SmuleAuto
     def scan_follows(user)
       cli_wrap do
         _tdir_check
-        api  = API.new
+        api = API.new
 
         db      = SmuleDB.instance(user, cdir: options[:data_dir])
         joiners = db.content.group(:record_by).all
-                    .map{|r| r[:record_by].sub(/(^#{user},|,#{user}$)/, '')}
+                    .map { |r| r[:record_by].sub(/(^#{user},|,#{user}$)/, '') }
                     .uniq.sort
-        knowns   = db.singers.all.map{|r| r[:name]}.sort
+        knowns   = db.singers.all.map { |r| r[:name] }.sort
         unknowns = joiners - knowns
 
         unknown_set = api.get_users(unknowns, :unknown)
@@ -661,13 +663,13 @@ module SmuleAuto
           ccount = 0
           content.each(filter: data.join('/')) do |_sid, sinfo|
             stitle = to_search_str(sinfo[:title])
-            if stitle != sinfo[:stitle]
-              Plog.dump_info(stitle:stitle, ostitle:sinfo[:stitle],
-                             type:sinfo.class)
-              sinfo[:stitle] = stitle
-              content.update_song(sinfo)
-              ccount += 1
-            end
+            next unless stitle != sinfo[:stitle]
+
+            Plog.dump_info(stitle: stitle, ostitle: sinfo[:stitle],
+                           type: sinfo.class)
+            sinfo[:stitle] = stitle
+            content.update_song(sinfo)
+            ccount += 1
           end
 
           ccount = 0
@@ -675,7 +677,7 @@ module SmuleAuto
           progress_set(song_tags.all, 'song_tags') do |sinfo|
             stitle = to_search_str(sinfo[:name])
             if stitle != sinfo[:name]
-              Plog.dump_info(stitle:stitle, ostitle:sinfo[:name])
+              Plog.dump_info(stitle: stitle, ostitle: sinfo[:name])
               sinfo[:name] = stitle
               song_tags.insert_conflict(:replace).insert(sinfo)
               ccount += 1
@@ -706,20 +708,19 @@ module SmuleAuto
       Singer changes login all the times.  That would change control data as
       well as storage folder.  This needs to run to track user
     LONGDESC
-    option :audit, type: :boolean, desc:'Scan and check mp3 file to verify'
+    option :audit, type: :boolean, desc: 'Scan and check mp3 file to verify'
     def move_singer(user, old_name, new_name)
       cli_wrap do
         _tdir_check
-        content  = SmuleDB.instance(user, cdir: options[:data_dir])
+        SmuleDB.instance(user, cdir: options[:data_dir])
         name_chk = options[:audit] ? new_name : old_name
         Performance.where(Sequel.ilike(:record_by, "%#{user}%"))
                    .where(Sequel.ilike(:record_by, "%#{name_chk}%")).each do |v|
           asong = SmuleSong.new(v, options)
           next unless v[:record_by] =~ /,#{name_chk}$|^#{name_chk},/
+
           if otions[:audit]
-            if asong.update_mp4tag(excuser: user) == :updated
-              asong._run_command("open -g #{asong.ssfile}")
-            end
+            asong._run_command("open -g #{asong.ssfile}") if asong.update_mp4tag(excuser: user) == :updated
           else
             if asong.move_song(old_name, new_name) && (asong.update_mp4tag(excuser: user) == :updated)
               asong._run_command("open -g #{asong.ssfile}")
@@ -745,7 +746,7 @@ module SmuleAuto
       end
     end
 
-    desc "song_page(url)", "song_page"
+    desc 'song_page(url)', 'song_page'
     def song_page(url)
       cli_wrap do
         olink = url.sub(%r{/ensembles$}, '')

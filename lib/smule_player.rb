@@ -1,6 +1,5 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
-# encoding: utf-8
 
 #---------------------------------------------------------------------------
 # File:        smule_player.rb
@@ -24,7 +23,7 @@ module SmuleAuto
       @state_file = state_file
       @content    = content
       @options    = options
-      #@logger     = options[:logger] || PLogger.new($stderr)
+      # @logger     = options[:logger] || PLogger.new($stderr)
       if test('s', @state_file)
         config   = YAML.safe_load_file(@state_file)
         @clist   = @content.select_sids(config[:clist]) if config[:clist]
@@ -120,15 +119,15 @@ module SmuleAuto
       nil
     end
 
-    def insert(songs, newonly=false)
+    def insert(songs, newonly: false)
       if newonly
-        newsongs = songs.select do |asong|
-          !@clist.find{|r| r[:sid] == asong[:sid]}
+        newsongs = songs.reject do |asong|
+          @clist.find { |r| r[:sid] == asong[:sid] }
         end
         Plog.info("#{newsongs.size} found to be added")
         songs = newsongs
       end
-      @clist.insert(@listpos, *songs) if songs.size > 0
+      @clist.insert(@listpos, *songs) unless songs.empty?
     end
 
     def remains
@@ -201,13 +200,13 @@ module SmuleAuto
       @sapi     = API.new(options)
       @wqueue   = Queue.new
       @playlist = PlayList.new(File.join(@tdir, STATE_FILE), @content)
-      #@logger   = options[:logger] || PLogger.new($stderr)
+      # @logger   = options[:logger] || PLogger.new($stderr)
       at_exit do
         @playlist.save
         exit 0
       end
       if @options[:download]
-        if test(?d, SmuleSong.song_dir)
+        if test('d', SmuleSong.song_dir)
           listen_for_download
         else
           Plog.error("#{SmuleSong.song_dir} does not exist for download")
@@ -288,7 +287,7 @@ module SmuleAuto
 
     def _setprompt
       @prompt = @autoplay ? '[P]' : '[S]'
-      @prompt += "lnswx*+="
+      @prompt += 'lnswx*+='
       @prompt += " (#{@playlist.filter.inspect})>"
     end
 
@@ -359,19 +358,19 @@ module SmuleAuto
     end
 
     def reload_app
-      #begin
-        [__FILE__, 'lib/smule*rb'].each do |ptn|
-          Dir.glob(ptn).each do |script|
-            Plog.info("Loading #{script}")
-            eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
-          end
+      # begin
+      [__FILE__, 'lib/smule*rb'].each do |ptn|
+        Dir.glob(ptn).each do |script|
+          Plog.info("Loading #{script}")
+          eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
         end
-      #rescue => e
-        #Plog.dump_error(e: e)
-      #end
+      end
+      # rescue => e
+      # Plog.dump_error(e: e)
+      # end
     end
 
-    HELP_SCREEN = <<~EOH
+    HELP_SCREEN = <<~EOH.freeze
             Command:
             ? Help
             a           Toggle autoplay
@@ -462,16 +461,14 @@ module SmuleAuto
               wait_t = endt - Time.now
               key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
                                        timeout: wait_t)
-            else
+            elsif @autoplay
               # In paused mode
-              if @autoplay
-                key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
-              else
-                # but if autoplay is also off.  We still timeout for next song
-                wait_t = endt - Time.now
-                key = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
-                                      timeout: wait_t)
-              end
+              key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
+            else
+              # but if autoplay is also off.  We still timeout for next song
+              wait_t = endt - Time.now
+              key = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
+                                    timeout: wait_t)
             end
           rescue StandardError => e
             Plog.dump_error(e: e, trace: e.backtrace)
@@ -566,13 +563,14 @@ module SmuleAuto
         choices = %w[favs isfav recent record_by my_open my_duets
                      star title my_tags query untagged]
         ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
-        param   = case ftype
-                  when /fav|my_open|my_duets/
-                    prompt.yes?("Not tagged yet ?")
-                  when 'untagged'
-                  else
-                    prompt.ask("#{ftype} value ?")
-                  end
+        if ftype != 'untagged'
+          param   = case ftype
+                    when /fav|my_open|my_duets/
+                      prompt.yes?('Not tagged yet ?')
+                    else
+                      prompt.ask("#{ftype} value ?")
+                    end
+        end
         newset = @content.select_set(ftype.to_sym, param)
         @playlist.add_to_list(newset, replace: key == '=')
       when '*' # Set stars
@@ -651,11 +649,11 @@ module SmuleAuto
         @playlist.next_song(increment: offset)
         return [:next, true]
       when 'O'                            # Next n songs
-        hlist    = get_songs_from_notification
-        newsongs = hlist.map do |url|
-          SmuleSong.update_from_url(url, update: true, singer:@user)
+        hlist    = songs_from_notification
+        newsongs = hlist.map do |surl|
+          SmuleSong.update_from_url(surl, update: true, singer: @user)
         end.flatten.compact
-        @playlist.insert(newsongs, true) if newsongs.size > 0
+        @playlist.insert(newsongs, newonly: true) unless newsongs.empty?
         return [:next, true]
       when '<'                            # Play prev song
         @playlist.next_song(increment: -2, nextinc: -1)
@@ -665,11 +663,9 @@ module SmuleAuto
         _list_show(curset: @playlist.done_list.reverse, start: offset.to_i)
         prompt.keypress('Press any key [:countdown]', timeout: 3)
         print TTY::Cursor.clear_screen
-      # rubocop:disable Security/Eval
       when 'R' # Reload script
         reload_app
         prompt.keypress('Press any key [:countdown]', timeout: 3)
-      # rubocop:enable Security/Eval
       when 's' # Sort current list
         choices = %w[random play love star date title
                      play.d love.d star.d date.d title.d]
@@ -692,7 +688,7 @@ module SmuleAuto
         end
       when 'T' # Test - when tags start changing
         choices = %w[quit auto_play_off comment like play menu favorite]
-        while true
+        loop do
           case prompt.enum_select('Test mode', choices)
           when 'auto_play_off'
             @spage.autoplay_off
@@ -728,11 +724,11 @@ module SmuleAuto
     end
 
     # Go to notification page and collect all joined links
-    def get_songs_from_notification
-      @spage.goto("https://www.smule.com/user/notifications")
-      selector = "div.block.recording.recording-audio.recording-listItem a.title"
+    def songs_from_notification
+      @spage.goto('https://www.smule.com/user/notifications')
+      selector = 'div.block.recording.recording-audio.recording-listItem a.title'
       links    = @spage.css(selector)
-                       .map {|r| "https://www.smule.com#{r[:href]}"}.uniq
+                       .map { |r| "https://www.smule.com#{r[:href]}" }.uniq
       @spage.navigate.back
       Plog.info("Picked up #{links.size} songs from notification")
       links
