@@ -23,7 +23,7 @@ module SmuleAuto
       @state_file = state_file
       @content    = content
       @options    = options
-      @logger     = options[:logger] || PLogger.new($stderr)
+      # @logger     = options[:logger] || PLogger.new($stderr)
       if test('s', @state_file)
         config   = YAML.safe_load_file(@state_file)
         @clist   = @content.select_sids(config[:clist]) if config[:clist]
@@ -60,7 +60,7 @@ module SmuleAuto
       }
       File.open(@state_file, 'w') do |fod|
         fod.puts(data.to_yaml)
-        @logger.info("Updating #{@state_file}")
+        Plog.info("Updating #{@state_file}")
       end
     end
 
@@ -89,7 +89,7 @@ module SmuleAuto
         end
       end
       if state == :skip
-        @logger.info("Skipping #{sitem[:title]}")
+        Plog.info("Skipping #{sitem[:title]}")
         return false
       end
       true
@@ -115,12 +115,19 @@ module SmuleAuto
         count += 1
         increment = nextinc
       end
-      @logger.error('No matching song in list')
+      Plog.error('No matching song in list')
       nil
     end
 
-    def insert(*songs)
-      @clist.insert(@listpos, *songs)
+    def insert(songs, newonly: false)
+      if newonly
+        newsongs = songs.reject do |asong|
+          @clist.find { |r| r[:sid] == asong[:sid] }
+        end
+        Plog.info("#{newsongs.size} found to be added")
+        songs = newsongs
+      end
+      @clist.insert(@listpos, *songs) unless songs.empty?
     end
 
     def remains
@@ -154,7 +161,7 @@ module SmuleAuto
     end
 
     def sort_selection(cselect)
-      @logger.info("Resort based on #{@order}")
+      Plog.info("Resort based on #{@order}")
       cselect =
         case @order
         when /^random/
@@ -170,11 +177,11 @@ module SmuleAuto
         when /^title/
           cselect.sort_by { |v| v[:stitle] }
         else
-          @logger.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
+          Plog.error "Unknown sort mode: #{@order}.  Known are random|play|love|star|date"
           cselect
         end
       cselect = cselect.reverse if @order =~ /\.d$/
-      @logger.info("Sorted #{cselect.size} entries")
+      Plog.info("Sorted #{cselect.size} entries")
       cselect
     end
   end
@@ -193,13 +200,19 @@ module SmuleAuto
       @sapi     = API.new(options)
       @wqueue   = Queue.new
       @playlist = PlayList.new(File.join(@tdir, STATE_FILE), @content)
-      @logger   = options[:logger] || PLogger.new($stderr)
+      # @logger   = options[:logger] || PLogger.new($stderr)
       at_exit do
         @playlist.save
         exit 0
       end
-      listen_for_download if @options[:download]
-      @logger.info("Playing #{@playlist.clist.size} songs")
+      if @options[:download]
+        if test('d', SmuleSong.song_dir)
+          listen_for_download
+        else
+          Plog.error("#{SmuleSong.song_dir} does not exist for download")
+        end
+      end
+      Plog.info("Playing #{@playlist.clist.size} songs")
     end
 
     def listen_for_download(enable: true)
@@ -273,7 +286,9 @@ module SmuleAuto
     end
 
     def _setprompt
-      @prompt = "lnswx*+= (#{@playlist.filter.inspect})>"
+      @prompt = @autoplay ? '[P]' : '[S]'
+      @prompt += 'lnswx*+='
+      @prompt += " (#{@playlist.filter.inspect})>"
     end
 
     def play_asong(sitem, to_play: true)
@@ -338,27 +353,29 @@ module SmuleAuto
       yield
     rescue StandardError => e
       prompt = TTY::Prompt.new
-      @logger.dump_error(e: e, trace: e.backtrace)
+      Plog.dump_error(e: e, trace: e.backtrace)
       prompt.keypress('[ME] Press any key to continue ...')
     end
 
     def reload_app
-      begin
-        [__FILE__, 'lib/smule*rb'].each do |ptn|
-          Dir.glob(ptn).each do |script|
-            @logger.info("Loading #{script}")
-            eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
-          end
+      # begin
+      [__FILE__, 'lib/smule*rb'].each do |ptn|
+        Dir.glob(ptn).each do |script|
+          Plog.info("Loading #{script}")
+          eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
         end
-      rescue StandardError => e
-        Plog.dump_error(e: e)
       end
+      # rescue => e
+      # Plog.dump_error(e: e)
+      # end
     end
 
-    HELP_SCREEN = <<~EOH
+    HELP_SCREEN = <<~EOH.freeze
             Command:
             ? Help
+            a           Toggle autoplay
             C           Cut current playlist to the set
+            c           Show comments on song or user
             F           Mark the song as favorite
             f           Filter existing song list
               *=0       Filter songs w/o star
@@ -393,8 +410,9 @@ module SmuleAuto
     def play_all
       pcount = 0
       _setprompt
-      prompt = TTY::Prompt.new
-      sitem  = nil
+      prompt    = TTY::Prompt.new
+      sitem     = nil
+      @autoplay = true
       loop do
         # Update into db last one played
         @content.update_song(sitem) if sitem
@@ -406,6 +424,7 @@ module SmuleAuto
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
           psitem = play_asong(sitem)
           @spage.add_any_song_tag(@user, sitem)
+          @spage.toggle_play(doplay: @autoplay)
           if (duration = psitem[:duration]) <= 0
             next
           end
@@ -413,21 +432,22 @@ module SmuleAuto
           endt = Time.now + duration
         else
           _list_show(curset: @playlist.toplay_list, curitem: sitem)
-          psitem = play_asong(sitem)
+          psitem = play_asong(sitem, to_play: @autoplay)
           if (duration = psitem[:duration]) <= 0
             next
           end
 
           @spage.add_any_song_tag(@user, sitem)
+          @spage.toggle_play(doplay: @autoplay)
 
           # Turn off autoplay
-          @spage.autoplay_off if pcount == 0
+          @spage.autoplay_off # if pcount == 0
           pcount += 1
           @playlist.save if (pcount % 10) == 0
           endt = Time.now + duration
         end
 
-        @paused = false
+        @paused = !@autoplay
         refresh = true
         loop do
           # Show the menu + list
@@ -437,21 +457,21 @@ module SmuleAuto
                 _list_show(curset: @playlist.toplay_list,
                            clear: false, curitem: sitem)
                 _show_msgs(sitem, psitem)
-                #               if (sitem[:isfav] || sitem[:oldfav]) && sitem[:record_by].start_with?(@user)
-                #                 _menu_eval do
-                #                   @spage.add_song_tag('#thvfavs', sitem)
-                #                   @spage.toggle_play(doplay: true)
-                #                 end
-                #               end
               end
               wait_t = endt - Time.now
               key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
                                        timeout: wait_t)
-            else
+            elsif @autoplay
+              # In paused mode
               key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
+            else
+              # but if autoplay is also off.  We still timeout for next song
+              wait_t = endt - Time.now
+              key = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
+                                    timeout: wait_t)
             end
           rescue StandardError => e
-            @logger.dump_error(e: e, trace: e.backtrace)
+            Plog.dump_error(e: e, trace: e.backtrace)
             next
           end
 
@@ -483,6 +503,8 @@ module SmuleAuto
     end
 
     def show_comment(ftype, sitem)
+      require 'tempfile'
+
       wset = nil
       case ftype
       when :by_singer
@@ -493,9 +515,16 @@ module SmuleAuto
                           .join_table(:left, :song_tags, name: :stitle)
       when :by_song
         wset = Performance.where(Sequel.lit('performances.stitle = ?', (sitem[:stitle]).to_s))
+      else
+        return
       end
       wset = wset.join_table(:inner, :comments,
                              Sequel.lit('performances.sid = comments.sid'))
+      fod = Tempfile.new(['comment', '.md'])
+      fod.puts <<~EOH
+        | Record By | Title / Comment |
+        | --------- | --------------- |
+      EOH
       wset.each do |sinfo|
         next unless sinfo[:comments]
 
@@ -503,13 +532,14 @@ module SmuleAuto
                        .select { |_c, m| m && !m.empty? }
         next if comments.empty?
 
-        puts format("\n%<title>-50.50s %<record>-20.20s %<created>s",
-                    title: sinfo[:stitle], record: sinfo[:record_by],
-                    created: sinfo[:created])
+        srecord_by = sinfo[:record_by].sub(/,?#{@user},?/, '')
+        fod.puts "| **#{srecord_by}** | **[#{sinfo[:title]}](https://smule.com/#{sinfo[:href]})** - #{sinfo[:created]} | "
         comments.each do |cuser, msg|
-          puts format('  %<cuser>-14.14s | %<msg>s', cuser: cuser, msg: msg)
+          fod.puts "| <sup>#{cuser}</sup> | <sup>#{msg}</sup> |"
         end
       end
+      fod.close
+      system("open #{fod.path}")
     end
 
     # rubocop:disable Metrics/AbcSize
@@ -531,20 +561,26 @@ module SmuleAuto
         return [:next, true]
       when /^[+=]/i # Add/replace list
         choices = %w[favs isfav recent record_by my_open my_duets
-                     star title my_tags query]
+                     star title my_tags query untagged]
         ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
-        param   = case ftype
-                  when /fav|my_open|my_duets/
-                    prompt.yes?("Not tagged yet ?")
-                  else
-                    prompt.ask("#{ftype} value ?")
-                  end
+        if ftype != 'untagged'
+          param   = case ftype
+                    when /fav|my_open|my_duets/
+                      prompt.yes?('Not tagged yet ?')
+                    else
+                      prompt.ask("#{ftype} value ?")
+                    end
+        end
         newset = @content.select_set(ftype.to_sym, param)
         @playlist.add_to_list(newset, replace: key == '=')
       when '*' # Set stars
         sitem[:stars] = prompt.keypress('Value?').to_i if sitem
       when /\d/ # Set stars also
         sitem[:stars] = key.to_i if sitem
+      when 'a'
+        @autoplay = !@autoplay
+        _setprompt
+        prompt.keypress("Autoplay is #{@autoplay} [:countdown]", timeout: 3)
       when 'C'
         list_length = prompt.ask('List Length to cut: ').to_i
         if list_length > 0
@@ -557,7 +593,7 @@ module SmuleAuto
         choices = %i[by_singer by_song]
         ftype   = prompt.enum_select('Comment type?', choices)
         show_comment(ftype, sitem)
-        prompt.keypress('Press any key to continue ...')
+        prompt.keypress('Press any key [:countdown]', timeout: 3)
 
       when 'D'
         if prompt.keypress('Are you sure? ') =~ /^y/i
@@ -576,22 +612,20 @@ module SmuleAuto
         _menu_eval do
           sitem[:isfav] = true
           @spage.add_any_song_tag(@user, sitem)
-          @spage.toggle_play(doplay: true)
+          @spage.toggle_play(doplay: @autoplay)
         end
 
       when 'h'
         unless (url = prompt.ask('URL:')).nil?
           newsongs = SmuleSong.update_from_url(url, update: true)
-          @playlist.insert(*newsongs)
+          @playlist.insert(newsongs)
           return [:next, true]
         end
-
-      when 'H'
-        @spage.like_song
 
       when 'i'                            # Song Info
         puts @playlist.cur_info.to_yaml
         prompt.keypress('Press any key to continue ...')
+
       when 'l'                            # List playlist
         offset      = 10
         toplay_list = @playlist.toplay_list
@@ -611,8 +645,15 @@ module SmuleAuto
         return [:next, true]
       when 'N'                            # Next n songs
         offset = key == 'N' ? prompt.ask('Next track offset?').to_i : 0
-        @logger.info("Skip #{offset} songs")
+        Plog.info("Skip #{offset} songs")
         @playlist.next_song(increment: offset)
+        return [:next, true]
+      when 'O'                            # Next n songs
+        hlist    = songs_from_notification
+        newsongs = hlist.map do |surl|
+          SmuleSong.update_from_url(surl, update: true, singer: @user)
+        end.flatten.compact
+        @playlist.insert(newsongs, newonly: true) unless newsongs.empty?
         return [:next, true]
       when '<'                            # Play prev song
         @playlist.next_song(increment: -2, nextinc: -1)
@@ -622,11 +663,9 @@ module SmuleAuto
         _list_show(curset: @playlist.done_list.reverse, start: offset.to_i)
         prompt.keypress('Press any key [:countdown]', timeout: 3)
         print TTY::Cursor.clear_screen
-      # rubocop:disable Security/Eval
       when 'R' # Reload script
         reload_app
         prompt.keypress('Press any key [:countdown]', timeout: 3)
-      # rubocop:enable Security/Eval
       when 's' # Sort current list
         choices = %w[random play love star date title
                      play.d love.d star.d date.d title.d]
@@ -649,7 +688,7 @@ module SmuleAuto
         end
       when 'T' # Test - when tags start changing
         choices = %w[quit auto_play_off comment like play menu favorite]
-        while true
+        loop do
           case prompt.enum_select('Test mode', choices)
           when 'auto_play_off'
             @spage.autoplay_off
@@ -683,6 +722,18 @@ module SmuleAuto
       end
       [true, true]
     end
+
+    # Go to notification page and collect all joined links
+    def songs_from_notification
+      @spage.goto('https://www.smule.com/user/notifications')
+      selector = 'div.block.recording.recording-audio.recording-listItem a.title'
+      links    = @spage.css(selector)
+                       .map { |r| "https://www.smule.com#{r[:href]}" }.uniq
+      @spage.navigate.back
+      Plog.info("Picked up #{links.size} songs from notification")
+      links
+    end
+
     # rubocop:enable Metrics/AbcSize
     # rubocop:enable Metrics/CyclomaticComplexity
     # rubocop:enable Metrics/MethodLength

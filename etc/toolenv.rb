@@ -6,7 +6,7 @@
 #+++
 unless ENV['TOOL_DEFINED']
   ENV['TOOL_DEFINED'] = '1'
-  ENV['T_TOOL_DIR']  = T_TOOL_BASE = "#{File.dirname(__FILE__)}/.."
+  ENV['T_TOOL_DIR']  = T_TOOL_BASE = "#{File.dirname(__FILE__)}/..".freeze
   ENV['T_TOOL_BIN']  = "#{ENV['T_TOOL_DIR']}/bin"
   $LOAD_PATH << "#{T_TOOL_BASE}/bin"
   $LOAD_PATH << "#{T_TOOL_BASE}/lib"

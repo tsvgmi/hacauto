@@ -848,9 +848,9 @@ class HACAuto < Thor
     def _transpose(file, offset)
       offset = offset.sub(/^m/, '-') if offset.is_a?(String)
       Plog.info "Transpose #{file} by #{offset} semitone"
-      ofile   = "t#{offset}-" + file
+      ofile = file.sub(/\./, "-t#{offset}.")
       command = "sox \"#{file}\" \"#{ofile}\" pitch #{offset}00"
-      system("set -x; #{command} && mv \"#{ofile}\" \"#{file}\"")
+      system("set -x; #{command}")
     end
   end
 
@@ -1116,32 +1116,49 @@ class HACAuto < Thor
     _transpose(file, offset)
   end
 
-  desc 'youtube_dl(url)', 'youtube_dl'
+  desc 'youtube_dl url', 'Download MP3 file from Youtube URL'
+  option :odir,      type: :string, desc: 'Directory to save file to'
+  option :open,      type: :boolean, desc: 'Open file after download (play)'
   option :split,     type: :boolean
-  option :transpose, type: :numeric
-  option :open,      type: :boolean
+  option :transpose, type: :numeric, desc: 'Transpose by +- steps'
+  long_desc <<~LONGDESC
+    Download mp3 from youtube.  Optionally transpose, and/or split into
+    multiple mp3 files
+  LONGDESC
   def youtube_dl(url)
     require 'tempfile'
 
     moptions = _get_options
     tmpf     = Tempfile.new('youtube')
+    ffmt     = '%(title)s - %(artist)s.%(ext)s'
+    command  = "youtube-dl --get-filename -o '#{ffmt}' '#{url}'"
+    basename = `set -x; #{command}`.chomp.split('.').first
 
-    command  = "youtube-dl --get-filename '#{url}'"
-    basename = `set -x; #{command}`.chomp.sub(/\..*$/, '')
-
-    command = "youtube-dl --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail '#{url}'"
+    command = "youtube-dl --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail -o '#{ffmt}' '#{url}'"
     system "set -x; #{command} | tee #{tmpf.path}"
 
     mp3file = "#{basename}.mp3"
     raise "Failed to download mp3 from #{url}" unless test('s', mp3file)
 
+    # Set the download date
     system("touch \"#{mp3file}\"")
+
+    newfile = mp3file.sub(/-[a-z0-9_]+.*mp3/, '.mp3')
+    newfile = "#{moptions[:odir]}/#{newfile}" if moptions[:odir]
+    if newfile != mp3file
+      File.rename(mp3file, newfile)
+      mp3file = newfile
+    end
 
     if moptions[:split]
       fline = File.read(tmpf.path).split("\n")
                   .find { |l| l.start_with?('[ffmpeg] Adding thumbnail') }
       return unless fline
 
+      # Split using silence detection.  See split_mp3 operation because you'd
+      # wind up having to rename/adding metadata im this mode.  It could be
+      # used. however. as a dry run to build the final cue file to be used
+      # for split_mp3 operation
       system "set -x; mp3splt -s \"#{mp3file}\""
     end
 
@@ -1150,6 +1167,62 @@ class HACAuto < Thor
     end
 
     system("set -x; open -a 'Sonic Visualiser' \"#{mp3file}\"") if moptions[:open]
+  end
+
+  desc 'split_mp3(mp3file, cuefile)', 'Split mp3 file using cuefile'
+  def split_mp3(mp3file, cuefile)
+    cli_wrap do
+      # Convert a simple CSV input to the cue file to be used by mp3splt
+      # Line is
+      #   MM:SS:00 | Title | Performer
+      if cuefile =~ /\.csv/
+        tmpf = Tempfile.new(['', '.cue'])
+        fdefs = File.read(cuefile).split("\n").map { |r| r.split('|') }
+        trackno = 1
+        tmpf.puts <<~EOH
+          REM GENRE Vietnamese
+          REM DATE #{Time.now.strftime('%Y')}
+          PERFORMER ""
+          TITLE ""
+          FILE "#{mp3file}" MP3
+        EOH
+        flist = fdefs.each do |time, title, performer|
+          track_s = '%02d' % trackno
+          tmpf.puts <<~EOD
+            TRACK #{track_s} AUDIO
+              TITLE     "#{title.strip}"
+              PERFORMER "#{(performer || '').strip}"
+              INDEX 01  #{time.strip}
+          EOD
+          trackno += 1
+        end
+        tmpf.close
+        puts File.read(tmpf.path)
+        cuefile = tmpf.path
+      end
+
+      # mp3split cannot deal with '/' in name.  So we have to remove
+      ocuefile = File.basename(mp3file).sub(/\.mp3/, '.cue')
+      system "set -x; mp3splt -c #{cuefile} -E \"#{ocuefile}\" -o \"@t - @p\" \"#{mp3file}\""
+    end
+  end
+
+  desc 'retag_mp3_from_vc(mp3file)', 'retag_mp3_from_vc'
+  def retag_mp3_from_vc(mp3file)
+    cli_wrap do
+      title, artist = File.basename(mp3file).split(' - ')
+
+      # iTunes cannot deal with specia chars in id3lib - so have to strip it
+      # down
+      artist  = to_search_str(artist.sub(/\..*$/, ''), has_case: true)
+      title   = to_search_str(title, has_case: true)
+      command = 'id3v2'
+      command += " --song '#{title}'"
+      command += " --artist '#{artist}'"
+      command += ' --album VC'
+      command += " '#{mp3file}'"
+      system("set -x; #{command}")
+    end
   end
 
   desc "mylist(dir='./SLIST')", 'mylist'

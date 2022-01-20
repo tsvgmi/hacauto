@@ -39,11 +39,11 @@ module ThorAddition
       exit(0)
     end
 
-    @logger = if options[:logfile]
-                PLogger.new(value)
-              else
-                PLogger.new($stderr)
-              end
+    if options[:logfile]
+      # STDERR.puts("Writing log to #{options[:logfile]}")
+      ENV['LOG_LEVEL'] = "1,file:#{options[:logfile]},s"
+    end
+    @logger = Plog.set_logger
 
     result = yield
 
@@ -452,12 +452,14 @@ class Plog
 
     def set_logger
       logspec = (ENV['LOG_LEVEL'] || '')
-      logger = if logspec =~ /:f/
-                 PLogger.new(Regexp.last_match.post_match.sub(/:.*$/, ''))
+      logger = if logspec =~ /file:/
+                 file = Regexp.last_match.post_match.sub(/,.*$/, '')
+                 warn("Log is in #{file}")
+                 PLogger.new(file)
                else
                  PLogger.new($stderr)
                end
-      log_level, *logopts = logspec.split(':')
+      log_level, *logopts = logspec.split(',')
       logopts.each do |anopt|
         oname = anopt[0]
         # ovalue = anopt[1..]
@@ -535,5 +537,45 @@ class Psyslog
     def respond_to_missing?(_method, _include_private=false)
       true
     end
+  end
+end
+
+def clean_emoji(str)
+  str = str.force_encoding('utf-8').encode
+  arr_regex = [/[\u{1f600}-\u{1f64f}]/, /[\u{2702}-\u{27b0}]/, /[\u{1f680}-\u{1f6ff}]/, /[\u{24C2}-\u{1F251}]/,
+               /[\u{1f300}-\u{1f5ff}]/]
+  arr_regex.each do |regex|
+    str = str.gsub regex, ''
+  end
+  str
+end
+
+ACCENT_MAP = {
+  /[áàảãạâấầẩẫậăắằẳẵặ]/ => 'a',
+  /[ÁÀẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶ]/ => 'A',
+  /đ/                 => 'd',
+  /Đ/                 => 'D',
+  /[éèẻẽẹêếềểễệ]/       => 'e',
+  /[ÉÈẺẼẸÊẾỀỂỄỆ]/       => 'E',
+  /[íìỉĩị]/             => 'i',
+  /[ÍÌỈĨỊ]/             => 'I',
+  /[óòỏõọôốồổỗộơớờởỡợ]/ => 'o',
+  /[ÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢ]/ => 'O',
+  /[úùủũụưứừửữự]/       => 'u',
+  /[ÚÙỦŨỤƯỨỪỬỮỰ]/       => 'U',
+  /[ýỳỷỹỵ]/             => 'y',
+  /[ÝỲỶỸỴ]/             => 'Y',
+}.freeze
+
+def to_search_str(str, soptions={})
+  stitle = clean_emoji(str).sub(/\s*\(.*$/, '')
+                           .sub(/\s+[-=].*$/, '').sub(/"/, '').strip
+  ACCENT_MAP.each do |ptn, rep|
+    stitle = stitle.gsub(ptn, rep)
+  end
+  if soptions[:has_case]
+    stitle.gsub(/\s+/, ' ').strip
+  else
+    stitle.downcase.gsub(/[^a-z0-9 ]/, '').gsub(/\s+/, ' ').strip
   end
 end
