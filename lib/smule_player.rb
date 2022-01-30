@@ -673,13 +673,14 @@ module SmuleAuto
         @playlist.order = prompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
-          perfset = @sapi.get_performances(@user, limit: 500, days: 3)
-          nc, uc = @content.add_new_songs(perfset, isfav: false)
-          perfset = SmuleSong.collect_collabs(@user, 14)
-          nc2, uc2 = @content.add_new_songs(perfset, isfav: false)
-          nc += nc2
-          uc += uc2
-          prompt.keypress("#{nc} added / #{uc} songs updated [:countdown]",
+          perfset          = @sapi.get_performances(@user, limit: 500, days: 3)
+          newset, updset   = @content.add_new_songs(perfset, isfav: false)
+          perfset          = SmuleSong.collect_collabs(@user, 14)
+          newset2, updset2 = @content.add_new_songs(perfset, isfav: false)
+          newset += newset2
+          updset += updset2
+          @playlist.insert(newset, newonly: true) unless newset.empty?
+          prompt.keypress("#{newset.size} added / #{updset.size} songs updated [:countdown]",
                           timeout: 3)
         end
       when 't' # Set tag

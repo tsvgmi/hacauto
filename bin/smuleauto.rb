@@ -429,11 +429,11 @@ module SmuleAuto
         content  = SmuleDB.instance(user, cdir: options[:data_dir])
         newsongs = _collect_songs(user, content)
         addc, repc = content.add_new_songs(newsongs, isfav: false)
-        Plog.info("My joins: #{addc} added, #{repc} replaced")
+        Plog.info("My joins: #{addc.size} added, #{repc.size} replaced")
         if options[:with_collabs]
           newsongs = SmuleSong.collect_collabs(user, options[:days])
           addc, repc = content.add_new_songs(newsongs, isfav: false)
-          Plog.info("Other joins: #{addc} added, #{repc} replaced")
+          Plog.info("Other joins: #{addc.size} added, #{repc.size} replaced")
         end
         true
       end
@@ -719,7 +719,7 @@ module SmuleAuto
           asong = SmuleSong.new(v, options)
           next unless v[:record_by] =~ /,#{name_chk}$|^#{name_chk},/
 
-          if otions[:audit]
+          if options[:audit]
             asong._run_command("open -g #{asong.ssfile}") if asong.update_mp4tag(excuser: user) == :updated
           else
             if asong.move_song(old_name, new_name) && (asong.update_mp4tag(excuser: user) == :updated)

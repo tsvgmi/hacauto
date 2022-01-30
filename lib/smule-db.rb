@@ -175,8 +175,8 @@ module SmuleAuto
       # Favlist must be reset if specified
       @content.update(isfav: nil) if isfav
 
-      newcount = 0
-      updcount = 0
+      newsets = []
+      updsets = []
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
@@ -194,14 +194,14 @@ module SmuleAuto
           updset[:latlong]   = r[:latlong] if r[:latlong]
           updset[:latlong_2] = r[:latlong_2] if r[:latlong_2]
           @all_content.where(sid: r[:sid]).update(updset)
-          updcount += 1
+          updsets << updset
         else
           r.delete(:lyrics)
           @all_content.insert(r)
-          newcount += 1
+          newsets << r
         end
       end
-      [newcount, updcount]
+      [newsets, updsets]
     end
 
     def set_follows(followings, followers, others=nil)

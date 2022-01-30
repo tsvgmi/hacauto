@@ -56,20 +56,20 @@ module SmuleAuto
   # Docs for SmulePage
   class SmulePage < SelPage
     LOCATORS_3 = {
-      sc_auto_play_off:   ['div.sc-dtwoBo.inCwUZ',    0],  # Fixed
-      sc_comment_close:   ['div.sc-gYhigD.gdlclw',    0],  # Fixed
-      sc_comment_open:    ['div.sc-licaXj.dFTVoZ',    2],  # Fixed
-      sc_play_toggle:     ['div.sc-fFYUoA.FCJNq svg path', 0], # Fixed
-      sc_song_menu:       ['button.sc-gLnrpB.biGEWR', 0],  # Fixed
-      sc_heart:           ['div.sc-licaXj.dFTVoZ',    0],  # Fixed
+      sc_auto_play_off:   ['div.sc-dacFzL.fIUiIW',    0],  # Fixed
+      sc_comment_close:   ['div.sc-bGqQkm.jyZRYv',    0],  # Fixed
+      sc_comment_open:    ['div.sc-cuWcWY.jmonRw',    2],  # Fixed
+      sc_play_toggle:     ['div.sc-hlWvWH.dgxEoC svg path', 0], # Fixed
+      sc_song_menu:       ['button.sc-hHKmLs.nJfnd', 0],  # Fixed
+      sc_heart:           ['div.sc-cuWcWY.jmonRw',    0],  # Fixed
 
-      sc_favorite_toggle: ['div.sc-ihsSHl.eVBZHh'],        # Fixed
-      sc_comment_text:    ['div.sc-icwmWt.cILGdH'],        # Fixed
-      sc_play_time:       ['span.sc-hlWvWH.dgxEoC'],       # Fixed
-      sc_play_continue:   ['span.sc-gTgzIj.jLdwwx', 1], # Fixed
-      sc_song_menu_text:  ['span.sc-fvFlmW.eaimfk'],       # Fixed
-      sc_song_note:       ['span.sc-gTgzIj.dLCNLt'],       # Fixed
-      sc_loves:           ['button.sc-JAcuL.bZQbVF', 0],   # Fixed
+      sc_favorite_toggle: ['li.sc-bWNSNh.fbeMZj'],        # Fixed
+      sc_comment_text:    ['div.sc-cKFVac.kvHAyu'],        # Fixed
+      sc_play_time:       ['span.sc-iitrsy.eGMabU'],       # Fixed
+      sc_play_continue:   ['span.sc-gTgzIj.jLdwwx', 1], 
+      sc_song_menu_text:  ['span.sc-laRPJI.joicia'],       # Fixed
+      sc_song_note:       ['span.sc-laRPJI.jDaPvs'],       # Fixed
+      sc_loves:           ['button.sc-gHftXq.ixpbYM', 0],   # Fixed
     }.freeze
 
     def click_smule_page(elem, delay: 2)
@@ -328,11 +328,15 @@ module SmuleAuto
         href  = url.sub(%r{^https://www.smule.com}, '')
         sinfo = Performance.first(sid: sid) || Performance.new(sid: sid, href: href)
         song  = SmuleSong.new(sinfo, options)
-        result = if url =~ /ensembles$/
-                   song.ensemble_asset_from_page
-                 else
-                   [song.asset_from_page]
-                 end
+        if url =~ /ensembles$/
+          result = song.ensemble_asset_from_page
+        else
+          rdata = song.asset_from_page
+          if rdata.empty?
+            return []
+          end
+          result = [rdata]
+        end
 
         singer = options[:singer]
         result = result.select { |r| r[:record_by] =~ /#{singer}/ } if singer
@@ -685,7 +689,7 @@ module SmuleAuto
         end
       end
 
-      Plog.info('Song missing/ wrong size/ or bad tag on local disk.  Create')
+      #Plog.info('Song missing/ wrong size/ or bad tag on local disk.  Create')
       FileUtils.cp(file, sfile, verbose: true)
       update_mp4tag(excuser: user)
       sofile
