@@ -56,20 +56,20 @@ module SmuleAuto
   # Docs for SmulePage
   class SmulePage < SelPage
     LOCATORS_3 = {
-      sc_auto_play_off:   ['div.sc-dacFzL.fIUiIW',    0],  # Fixed
-      sc_comment_close:   ['div.sc-bGqQkm.jyZRYv',    0],  # Fixed
-      sc_comment_open:    ['div.sc-cuWcWY.jmonRw',    2],  # Fixed
-      sc_play_toggle:     ['div.sc-hlWvWH.dgxEoC svg path', 0], # Fixed
-      sc_song_menu:       ['button.sc-hHKmLs.nJfnd', 0],  # Fixed
-      sc_heart:           ['div.sc-cuWcWY.jmonRw',    0],  # Fixed
+      sc_auto_play_off:   ['div.sc-dtwoBo.kLzgfZ',    0],  # 
+      sc_comment_close:   ['div.sc-ksXhwv.iVzzFR',    0],  # Fixed
+      sc_comment_open:    ['div.sc-hJxCPi.bERasM',    2],  # Fixed
+      sc_play_toggle:     ['div.sc-eJBYSJ.csTlMB svg path', 0], # Fixed
+      sc_song_menu:       ['button.sc-iLcRNb.idNCQo', 0],  # Fixed
+      sc_heart:           ['div.sc-cuWcWY.jmonRw',    0],  # 
 
-      sc_favorite_toggle: ['li.sc-bWNSNh.fbeMZj'],        # Fixed
-      sc_comment_text:    ['div.sc-cKFVac.kvHAyu'],        # Fixed
-      sc_play_time:       ['span.sc-iitrsy.eGMabU'],       # Fixed
+      sc_favorite_toggle: ['li.sc-jnHOtz.gLsOLI'],         # Fixed
+      sc_comment_text:    ['div.sc-cAmlYy.jJRrEL'],        # Fixed
+      sc_play_time:       ['span.sc-iitrsy.eGMabU'],       # 
       sc_play_continue:   ['span.sc-gTgzIj.jLdwwx', 1], 
-      sc_song_menu_text:  ['span.sc-laRPJI.joicia'],       # Fixed
-      sc_song_note:       ['span.sc-laRPJI.jDaPvs'],       # Fixed
-      sc_loves:           ['button.sc-gHftXq.ixpbYM', 0],   # Fixed
+      sc_song_menu_text:  ['span.sc-ezipRf.bSkNQK'],       # Fixed
+      sc_song_note:       ['span.sc-laRPJI.jDaPvs'],       # 
+      sc_loves:           ['button.sc-cHjxUU.kKIftN', 0],   # Fixed
     }.freeze
 
     def click_smule_page(elem, delay: 2)
@@ -376,7 +376,21 @@ module SmuleAuto
     end
 
     def ssfile
-      File.join(SmuleSong.song_dir, 'STORE', "#{@info[:sid]}.m4a")
+      sid     = @info[:sid]
+      new_loc = File.join(SmuleSong.song_dir, 'STORE', "#{sid[0..1]}/#{sid}.m4a")
+      return new_loc if test(?f, new_loc)
+
+      old_loc = File.join(SmuleSong.song_dir, 'STORE', "#{sid}.m4a")
+      if test(?f, old_loc)
+        if true
+          return old_loc
+        end
+        new_dir = File.dirname(new_loc)
+        FileUtils.mkdir_p(new_dir, verbose: true) unless test('d', new_dir)
+        FileUtils.move(old_loc, new_loc, verbose: true)
+        return new_loc
+      end
+      new_loc
     end
 
     def sofile
@@ -384,14 +398,19 @@ module SmuleAuto
              "/#{@info[:record_by].split(',').sort.join('-')}"
       FileUtils.mkdir_p(odir, verbose: true) unless test('d', odir)
       title = @info[:title].strip.gsub(%r{[/"]}, '-')
-      ofile = File.join(odir, "#{title.gsub(/&/, '-').gsub(/'/, '-')}.m4a")
+      #ofile = File.join(odir, "#{title.gsub(/[&']/, '-')}.m4a")
+      ofile = File.join(odir, "#{@info[:stitle]}.m4a")
       sfile = ssfile
-      Plog.dump_info(sfile: sfile, ofile: ofile)
-      if File.exist?(sfile) && !File.symlink?(ofile)
+      #Plog.dump_info(sfile: sfile, ofile: ofile)
+
+      if File.exist?(sfile) &&
+          (!File.symlink?(ofile) || (File.readlink(ofile) != sfile))
         FileUtils.remove(ofile, verbose: true, force: true)
         FileUtils.ln_s(sfile, ofile, verbose: true, force: true)
+        Plog.info(sfile:sfile, ofile:ofile)
+        return [ofile, true]
       end
-      ofile
+      return [ofile, false]
     end
 
     def move_song(old_name, new_name)
@@ -499,7 +518,13 @@ module SmuleAuto
         return {}
       end
 
-      new_asset = JSON.parse(stream, symbolized: true)
+      begin
+        new_asset = JSON.parse(stream, symbolized: true)
+      rescue => errmsg
+        Plog.dump_error(stream:stream)
+        return {}
+      end
+      Plog.dump(new_asset:new_asset, _ofmt:'Y')
       website   = new_asset.find { |r| r['@type'] == 'Website' }
       audio     = new_asset.find { |r| r['@type'] =~ /(Audio|Video)Object/ }
       recording = new_asset.find { |r| r['@type'] == 'MusicRecording' }
@@ -535,7 +560,7 @@ module SmuleAuto
       count = 0
       loop do
         spage.goto(href)
-        unless spage.css('.error-gone').empty?
+        if spage.css('header').text =~ /Recording (Deleted|Disabled)/o
           Plog.info('Song is gone')
           spinner.stop('Done!')
           return :deleted
@@ -684,19 +709,24 @@ module SmuleAuto
         fmsize = media_size(file)
         if (csize == fmsize) && mp4_tagged?(excuser: user)
           Plog.info("Verify same media size and tags: #{csize}")
-          sofile
+          if sofile && @options[:open]
+            _run_command("open -g '#{sfile}'")
+            sleep(2)
+          end
           return
         end
       end
 
       #Plog.info('Song missing/ wrong size/ or bad tag on local disk.  Create')
+      wdir = File.dirname(sfile)
+      FileUtils.mkdir_p(wdir, verbose:true) unless test(?d, wdir)
       FileUtils.cp(file, sfile, verbose: true)
       update_mp4tag(excuser: user)
-      sofile
+      ofile, changed = sofile
 
       return unless @options[:open]
 
-      _run_command("open -g #{sfile}")
+      _run_command("open -g '#{sfile}'")
       sleep(2)
     end
 

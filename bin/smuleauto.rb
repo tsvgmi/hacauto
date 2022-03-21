@@ -60,6 +60,7 @@ ALTERNATE = {
   'Annygermany'   => 'Dang_Anh_Anh',
   'ChiHoang55'    => 'ChiMHoang',
   'Eddy2020_'     => 'Mina_________',
+  'MaiLoan06'     => 'MLOAN06',
   '_Huong'        => '__HUONG',
   '_NOEXIST_'     => 'Dang_Anh_Anh',
   '__MinaTrinh__' => 'Mina_________',
