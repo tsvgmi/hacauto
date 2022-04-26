@@ -65,7 +65,7 @@ module SmuleAuto
 
       sc_favorite_toggle: ['li.sc-jnHOtz.gLsOLI'],         # Fixed
       sc_comment_text:    ['div.sc-cAmlYy.jJRrEL'],        # Fixed
-      sc_play_time:       ['span.sc-iitrsy.eGMabU'],       # 
+      sc_play_time:       ['span.sc-fFYUoA.FCJNq'],       # 
       sc_play_continue:   ['span.sc-gTgzIj.jLdwwx', 1], 
       sc_song_menu_text:  ['span.sc-ezipRf.bSkNQK'],       # Fixed
       sc_song_note:       ['span.sc-laRPJI.jDaPvs'],       # 
@@ -247,6 +247,7 @@ module SmuleAuto
       limit = 5
       paths = nil
 
+      Plog.dump_info(doplay:doplay)
       while limit > 0
         paths = css(LOCATORS_3[:sc_play_toggle].first).size
         break if paths > 0

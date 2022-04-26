@@ -449,6 +449,7 @@ module SmuleAuto
         end
 
         @paused = !@autoplay
+        #@paused = @autoplay
         refresh = true
         loop do
           # Show the menu + list
@@ -482,6 +483,7 @@ module SmuleAuto
             case hc
             when :pausing
               @paused = !@paused
+              Plog.dump_info(paused:@paused)
               remain  = @spage.toggle_play(doplay: !@paused)
               # This is buggy.  If there is limit on playtime, it would
               # be overritten by this
@@ -540,7 +542,7 @@ module SmuleAuto
         end
       end
       fod.close
-      system("open #{fod.path}")
+      system("set -x; open #{fod.path}")
     end
 
     # rubocop:disable Metrics/AbcSize
