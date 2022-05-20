@@ -61,7 +61,7 @@ module SmuleAuto
       sc_comment_open:    ['div.sc-hJxCPi.bERasM',    2],  # Fixed
       sc_play_toggle:     ['div.sc-eJBYSJ.csTlMB svg path', 0], # Fixed
       sc_song_menu:       ['button.sc-iLcRNb.idNCQo', 0],  # Fixed
-      sc_heart:           ['div.sc-cuWcWY.jmonRw',    0],  # 
+      sc_heart:           ['div.sc-hJxCPi.bERasM',    0],  # 
 
       sc_favorite_toggle: ['li.sc-jnHOtz.gLsOLI'],         # Fixed
       sc_comment_text:    ['div.sc-cAmlYy.jJRrEL'],        # Fixed
