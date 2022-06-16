@@ -386,6 +386,7 @@ module SmuleAuto
             i           Song Info
             l           List next songs
             L           Set play length
+            M           Open song in Music
             n           Goto next (1) song
             p           List played (previous) songs
             R           Reload script
@@ -413,6 +414,10 @@ module SmuleAuto
       prompt    = TTY::Prompt.new
       sitem     = nil
       @autoplay = true
+
+      # Clear the cookie prompt
+      @spage.find_element(:css, 'button.sc-hAsxaJ').click
+
       loop do
         # Update into db last one played
         @content.update_song(sitem) if sitem
@@ -440,14 +445,15 @@ module SmuleAuto
           @spage.add_any_song_tag(@user, sitem)
           @spage.toggle_play(doplay: @autoplay)
 
-          # Turn off autoplay
-          @spage.autoplay_off # if pcount == 0
+          # Turn off autoplay.  Can't do because play/pause will disappear
+          # @spage.autoplay_off # if pcount == 0
           pcount += 1
           @playlist.save if (pcount % 10) == 0
           endt = Time.now + duration
         end
 
         @paused = !@autoplay
+        #@paused = @autoplay
         refresh = true
         loop do
           # Show the menu + list
@@ -481,6 +487,7 @@ module SmuleAuto
             case hc
             when :pausing
               @paused = !@paused
+              Plog.dump_info(paused:@paused)
               remain  = @spage.toggle_play(doplay: !@paused)
               # This is buggy.  If there is limit on playtime, it would
               # be overritten by this
@@ -539,7 +546,7 @@ module SmuleAuto
         end
       end
       fod.close
-      system("open #{fod.path}")
+      system("set -x; open #{fod.path}")
     end
 
     # rubocop:disable Metrics/AbcSize
@@ -602,6 +609,7 @@ module SmuleAuto
           prompt.keypress('Press any key [:countdown]', timeout: 3)
           return [:next, true]
         end
+
       when 'f' # Set filter
         param = prompt.ask('Filter value?', default: '')
         _menu_eval do
@@ -637,12 +645,21 @@ module SmuleAuto
           offset += 10
         end
         print TTY::Cursor.clear_screen
+
       when 'L'
         play_length = prompt.ask('Max Play Length: ').to_i
         @roptions[:play_length] = play_length if play_length >= 3
+
+      # Open local file in Music
+      when 'M'
+        sfile = SmuleSong.new(sitem).ssfile
+        Plog.info("open -g '#{sfile}'")
+        system("open -g '#{sfile}'")
+
       when /[>n]/ # Play next song
         @playlist.next_song(increment: 0)
         return [:next, true]
+
       when 'N'                            # Next n songs
         offset = key == 'N' ? prompt.ask('Next track offset?').to_i : 0
         Plog.info("Skip #{offset} songs")
@@ -673,13 +690,14 @@ module SmuleAuto
         @playlist.order = prompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
-          perfset = @sapi.get_performances(@user, limit: 500, days: 3)
-          nc, uc = @content.add_new_songs(perfset, isfav: false)
-          perfset = SmuleSong.collect_collabs(@user, 14)
-          nc2, uc2 = @content.add_new_songs(perfset, isfav: false)
-          nc += nc2
-          uc += uc2
-          prompt.keypress("#{nc} added / #{uc} songs updated [:countdown]",
+          perfset          = @sapi.get_performances(@user, limit: 500, days: 3)
+          newset, updset   = @content.add_new_songs(perfset, isfav: false)
+          perfset          = SmuleSong.collect_collabs(@user, 14)
+          newset2, updset2 = @content.add_new_songs(perfset, isfav: false)
+          newset += newset2
+          updset += updset2
+          @playlist.insert(newset, newonly: true) unless newset.empty?
+          prompt.keypress("#{newset.size} added / #{updset.size} songs updated [:countdown]",
                           timeout: 3)
         end
       when 't' # Set tag
@@ -690,8 +708,8 @@ module SmuleAuto
         choices = %w[quit auto_play_off comment like play menu favorite]
         loop do
           case prompt.enum_select('Test mode', choices)
-          when 'auto_play_off'
-            @spage.autoplay_off
+          #when 'auto_play_off'
+            #@spage.autoplay_off
           when 'comment'
             puts @spage.comment_from_page
           when 'like'
