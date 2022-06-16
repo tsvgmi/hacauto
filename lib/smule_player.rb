@@ -414,6 +414,10 @@ module SmuleAuto
       prompt    = TTY::Prompt.new
       sitem     = nil
       @autoplay = true
+
+      # Clear the cookie prompt
+      @spage.find_element(:css, 'button.sc-hAsxaJ').click
+
       loop do
         # Update into db last one played
         @content.update_song(sitem) if sitem

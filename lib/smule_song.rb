@@ -56,20 +56,20 @@ module SmuleAuto
   # Docs for SmulePage
   class SmulePage < SelPage
     LOCATORS_3 = {
-      sc_auto_play_off:   ['div.sc-dtwoBo.kLzgfZ',    0],  # 
-      sc_comment_close:   ['div.sc-ksXhwv.iVzzFR',    0],  # Fixed
-      sc_comment_open:    ['div.sc-hJxCPi.bERasM',    2],  # Fixed
-      sc_play_toggle:     ['div.sc-eJBYSJ.csTlMB svg path', 0], # Fixed
-      sc_song_menu:       ['button.sc-iLcRNb.idNCQo', 0],  # Fixed
-      sc_heart:           ['div.sc-hJxCPi.bERasM',    0],  # 
+      sc_auto_play_off:   ['div.sc-dsQDmV.bWqwJs',    0],  # Fixed
+      sc_comment_close:   ['div.sc-ktCSKO.cCMlaG',    0],  # Fixed
+      sc_comment_open:    ['div.sc-hKdnnL.htUJRn',    2],  # Fixed
+      sc_play_toggle:     ['div.sc-eIWpXs.vJJdI svg path', 0], # Fixed
+      sc_song_menu:       ['button.sc-iLIByi.cGEGEQ', 0],  # Fixed
+      sc_heart:           ['div.sc-hTtIkV.hlDXCe',    0],  # Fixed
 
-      sc_favorite_toggle: ['li.sc-jnHOtz.gLsOLI'],         # Fixed
-      sc_comment_text:    ['div.sc-cAmlYy.jJRrEL'],        # Fixed
-      sc_play_time:       ['span.sc-fFYUoA.FCJNq'],       # 
+      sc_favorite_toggle: ['li.sc-jonzHS.bdJJbG'],         # Fixed
+      sc_comment_text:    ['div.sc-czGAKf.dtPylx'],        # Fixed
+      sc_play_time:       ['span.sc-fFtkDt.ejlqtK'],       # Fixed
       sc_play_continue:   ['span.sc-gTgzIj.jLdwwx', 1], 
-      sc_song_menu_text:  ['span.sc-ezipRf.bSkNQK'],       # Fixed
+      sc_song_menu_text:  ['span.sc-eyCGVO.daUoSx'],       # Fixed
       sc_song_note:       ['span.sc-laRPJI.jDaPvs'],       # 
-      sc_loves:           ['button.sc-cHjxUU.kKIftN', 0],   # Fixed
+      sc_loves:           ['button.sc-cHPgQl.hDTEGo', 0],   # Fixed
     }.freeze
 
     def click_smule_page(elem, delay: 2)
@@ -525,7 +525,7 @@ module SmuleAuto
         Plog.dump_error(stream:stream)
         return {}
       end
-      Plog.dump(new_asset:new_asset, _ofmt:'Y')
+      Plog.dump(new_asset:new_asset.uniq, _ofmt:'Y')
       website   = new_asset.find { |r| r['@type'] == 'Website' }
       audio     = new_asset.find { |r| r['@type'] =~ /(Audio|Video)Object/ }
       recording = new_asset.find { |r| r['@type'] == 'MusicRecording' }
