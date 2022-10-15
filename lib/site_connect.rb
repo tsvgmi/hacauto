@@ -219,7 +219,8 @@ class SiteConnect
         sdriver.goto('/user/login')
         identity, password = auth.split(':')
         sleep(3)
-        sdriver.click_and_wait('span.sc-dUWWNf.hhGyxu', 1, 3)
+        #sdriver.click_and_wait('span.sc-dUWWNf.hhGyxu', 1, 3)
+        sdriver.click_and_wait('span.sc-kDDrLX.jrKfkY', 1, 3)
         sdriver.type('input[name="snp-username"]', "#{identity}\n")
         sleep 3
         sdriver.type('input[name="snp-password"]', "#{password}\n")
@@ -233,8 +234,8 @@ class SiteConnect
         identity, password = auth.split(':')
         sdriver.click_and_wait('#elUserSignIn')
         sdriver.type('input[name="auth"]', "#{identity}\n")
-        sdriver.type('input[name="password"]', "#{password}\n")
-        sdriver.click_and_wait('#elSignIn_submit')
+        sdriver.type('input[name="snp-password"]', "#{password}\n")
+        #sdriver.click_and_wait('#elSignIn_submit')
       end
       sdriver
     end

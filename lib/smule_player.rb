@@ -67,7 +67,7 @@ module SmuleAuto
     def playable?(sitem)
       return false unless sitem
 
-      return false if (sitem[:stars].to_i == 1) || sitem[:deleted]
+      return false if (sitem[:stars].to_i == 1)
 
       #     if (sitem[:href] =~ %r{/ensembles$})
       #       return false
@@ -191,15 +191,16 @@ module SmuleAuto
     STATE_FILE = 'splayer.state'
 
     def initialize(user, tdir, options={})
-      @user     = user
-      @options  = options
-      @roptions = {}
-      @content  = SmuleDB.instance(user, cdir: tdir)
-      @tdir     = tdir
-      @spage    = Scanner.new(user, @options).spage
-      @sapi     = API.new(options)
-      @wqueue   = Queue.new
-      @playlist = PlayList.new(File.join(@tdir, STATE_FILE), @content)
+      @user      = user
+      @options   = options
+      @roptions  = {}
+      @content   = SmuleDB.instance(user, cdir: tdir)
+      @tdir      = tdir
+      @spage     = Scanner.new(user, @options).spage
+      @sapi      = API.new(options)
+      @wqueue    = Queue.new
+      @playlist  = PlayList.new(File.join(@tdir, STATE_FILE), @content)
+      @ttyprompt = TTY::Prompt.new
       # @logger   = options[:logger] || PLogger.new($stderr)
       at_exit do
         @playlist.save
@@ -260,11 +261,13 @@ module SmuleAuto
         witem = curset[i]
         next unless witem
 
-        ptags = songtags[witem[:stitle]] || ''
-        isfav = witem[:isfav] || witem[:oldfav] ? 'F' : ''
-        title = witem[:title].strip.gsub(/\s+/o, ' ').gsub(/[\u3000\u00a0]/, '')
+        ptags   = songtags[witem[:stitle]] || ''
+        marker  = ''
+        marker += witem[:isfav] || witem[:oldfav] ? 'F' : ' '
+        marker += witem[:deleted] ? 'D' : ' '
+        title   = witem[:title].strip.gsub(/\s+/o, ' ').gsub(/[\u3000\u00a0]/, '')
 
-        row   = [i, isfav, title, witem[:record_by],
+        row   = [i, marker, title, witem[:record_by],
                  witem[:listens], witem[:loves],
                  bar[1..witem[:stars].to_i],
                  witem[:created].strftime('%Y-%m-%d'), ptags[0..9]]
@@ -352,9 +355,8 @@ module SmuleAuto
     def _menu_eval
       yield
     rescue StandardError => e
-      prompt = TTY::Prompt.new
       Plog.dump_error(e: e, trace: e.backtrace)
-      prompt.keypress('[ME] Press any key to continue ...')
+      @ttyprompt.keypress('[ME] Press any key to continue ...')
     end
 
     def reload_app
@@ -368,6 +370,79 @@ module SmuleAuto
       # rescue => e
       # Plog.dump_error(e: e)
       # end
+    end
+
+    def play_next
+      sitem, psitem, endt = nil, nil, Time.now
+
+      # Get next song and play
+      if (sitem = @playlist.next_song).nil?
+        endt = Time.now + 1
+      elsif sitem[:deleted]
+        puts ".... Deleted song.  Try send deleted song to Music ..."
+        Plog.dump_info(msg:'Send to music', sitem:sitem)
+
+        sfile = SmuleSong.new(sitem).ssfile
+        if test(?s, sfile)
+          Plog.info("open -g '#{sfile}'")
+          system("set -x; open -g '#{sfile}'")
+          endt = Time.now + (sitem[:psecs] || 200).to_i
+          sitem[:listens] += 1
+
+          href = sitem[:href].sub(%r{/ensembles$}, '')
+          @spage.goto(href)
+        else
+          puts ".... Sorry - song not found on local disk either..."
+        end
+      elsif sitem[:record_by] == @user
+        _list_show(curset: @playlist.toplay_list, curitem: sitem)
+        psitem = play_asong(sitem)
+        @spage.add_any_song_tag(@user, sitem)
+        @spage.toggle_play(doplay: @autoplay)
+        if (duration = psitem[:duration]) <= 0
+          return nil
+        end
+
+        endt = Time.now + duration
+      else
+        _list_show(curset: @playlist.toplay_list, curitem: sitem)
+        psitem = play_asong(sitem, to_play: @autoplay)
+        if (duration = psitem[:duration]) <= 0
+          return nil
+        end
+
+        @spage.add_any_song_tag(@user, sitem)
+        @spage.toggle_play(doplay: @autoplay)
+        endt = Time.now + duration
+      end
+      {sitem: sitem, psitem: psitem, endt: endt}
+    end
+
+    def play_input_key(sitem, psitem, endt, refresh)
+      begin
+        if sitem && !@paused
+          if refresh
+            _list_show(curset: @playlist.toplay_list,
+                       clear: false, curitem: sitem)
+            _show_msgs(sitem, psitem)
+          end
+          wait_t = [endt - Time.now, 5].max
+          key    = @ttyprompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
+                                   timeout: wait_t)
+        elsif @autoplay
+          # In paused mode
+          key = @ttyprompt.keypress("#{@prompt} [#{@playlist.remains}]")
+        else
+          # but if autoplay is also off.  We still timeout for next song
+          wait_t = endt - Time.now
+          key = @ttyprompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
+                                timeout: wait_t)
+        end
+      rescue StandardError => e
+        Plog.dump_error(e: e, trace: e.backtrace)
+        key = nil
+      end
+      key
     end
 
     HELP_SCREEN = <<~EOH.freeze
@@ -411,76 +486,38 @@ module SmuleAuto
     def play_all
       pcount = 0
       _setprompt
-      prompt    = TTY::Prompt.new
       sitem     = nil
       @autoplay = true
 
-      # Clear the cookie prompt
-      @spage.find_element(:css, 'button.sc-hAsxaJ').click
+      begin
+        @spage.find_element(:css, 'button.sc-hAsxaJ').click
+      rescue => errmsg
+        p errmsg
+      end
 
       loop do
         # Update into db last one played
         @content.update_song(sitem) if sitem
 
-        # Get next song and play
-        if (sitem = @playlist.next_song).nil?
-          endt = Time.now + 1
-        elsif sitem[:record_by] == @user
-          _list_show(curset: @playlist.toplay_list, curitem: sitem)
-          psitem = play_asong(sitem)
-          @spage.add_any_song_tag(@user, sitem)
-          @spage.toggle_play(doplay: @autoplay)
-          if (duration = psitem[:duration]) <= 0
-            next
-          end
+        unless ninfo = play_next
+          next
+        end
+        sitem, psitem, endt = ninfo[:sitem], ninfo[:psitem], ninfo[:endt]
 
-          endt = Time.now + duration
+        pcount += 1
+        @playlist.save if (pcount % 10) == 0
+
+        if !sitem
+          @paused = true
         else
-          _list_show(curset: @playlist.toplay_list, curitem: sitem)
-          psitem = play_asong(sitem, to_play: @autoplay)
-          if (duration = psitem[:duration]) <= 0
-            next
-          end
-
-          @spage.add_any_song_tag(@user, sitem)
-          @spage.toggle_play(doplay: @autoplay)
-
-          # Turn off autoplay.  Can't do because play/pause will disappear
-          # @spage.autoplay_off # if pcount == 0
-          pcount += 1
-          @playlist.save if (pcount % 10) == 0
-          endt = Time.now + duration
+          @paused = !@autoplay
         end
 
-        @paused = !@autoplay
-        #@paused = @autoplay
         refresh = true
         loop do
-          # Show the menu + list
-          begin
-            if sitem && !@paused
-              if refresh
-                _list_show(curset: @playlist.toplay_list,
-                           clear: false, curitem: sitem)
-                _show_msgs(sitem, psitem)
-              end
-              wait_t = endt - Time.now
-              key    = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
-                                       timeout: wait_t)
-            elsif @autoplay
-              # In paused mode
-              key = prompt.keypress("#{@prompt} [#{@playlist.remains}]")
-            else
-              # but if autoplay is also off.  We still timeout for next song
-              wait_t = endt - Time.now
-              key = prompt.keypress("#{@prompt} [#{@playlist.remains}.:countdown]",
-                                    timeout: wait_t)
-            end
-          rescue StandardError => e
-            Plog.dump_error(e: e, trace: e.backtrace)
-            next
+          unless key = play_input_key(sitem, psitem, endt, refresh)
+            break
           end
-
           # Collect user input and process
           begin
             hc, refresh = handle_user_input(key, sitem)
@@ -518,7 +555,8 @@ module SmuleAuto
         singer = sitem[:record_by].split(',').reject { |f| f == @user }[0]
         wset = Performance.where(Sequel.lit('performances.record_by like ?',
                                             "%#{singer}%"))
-                          .order(:created)
+                          .reverse(:created)
+                          .limit(50)
                           .join_table(:left, :song_tags, name: :stitle)
       when :by_song
         wset = Performance.where(Sequel.lit('performances.stitle = ?', (sitem[:stitle]).to_s))
@@ -546,7 +584,7 @@ module SmuleAuto
         end
       end
       fod.close
-      system("set -x; open #{fod.path}")
+      system("set -x; open -a Typora #{fod.path}; sleep 3")
     end
 
     # rubocop:disable Metrics/AbcSize
@@ -556,40 +594,41 @@ module SmuleAuto
     # 1. How to handle: :pausing, :quit, :next
     # 2. Whether to refresh display (display content change)
     def handle_user_input(key, sitem)
-      prompt = TTY::Prompt.new
       case key
       when ' '
         return [:pausing, 0]
       when '?'
         TTY::Pager.new.page(HELP_SCREEN)
-        prompt.keypress('Press any key [:countdown]', timeout: 3)
+        @ttyprompt.keypress('Press any key [:countdown]', timeout: 3)
       when '.'
         @playlist.next_song(increment: -1)
         return [:next, true]
       when /^[+=]/i # Add/replace list
         choices = %w[favs isfav recent record_by my_open my_duets
-                     star title my_tags query untagged]
-        ftype   = prompt.enum_select('Replacing set.  Filter type?', choices)
+                     star title my_tags query untagged deleted]
+        ftype   = @ttyprompt.enum_select('Replacing set.  Filter type?', choices)
         if ftype != 'untagged'
           param   = case ftype
                     when /fav|my_open|my_duets/
-                      prompt.yes?('Not tagged yet ?')
+                      @ttyprompt.yes?('Not tagged yet ?')
+                    when /deleted/
+                      ''
                     else
-                      prompt.ask("#{ftype} value ?")
+                      @ttyprompt.ask("#{ftype} value ?")
                     end
         end
         newset = @content.select_set(ftype.to_sym, param)
         @playlist.add_to_list(newset, replace: key == '=')
       when '*' # Set stars
-        sitem[:stars] = prompt.keypress('Value?').to_i if sitem
+        sitem[:stars] = @ttyprompt.keypress('Value?').to_i if sitem
       when /\d/ # Set stars also
         sitem[:stars] = key.to_i if sitem
       when 'a'
         @autoplay = !@autoplay
         _setprompt
-        prompt.keypress("Autoplay is #{@autoplay} [:countdown]", timeout: 3)
+        @ttyprompt.keypress("Autoplay is #{@autoplay} [:countdown]", timeout: 3)
       when 'C'
-        list_length = prompt.ask('List Length to cut: ').to_i
+        list_length = @ttyprompt.ask('List Length to cut: ').to_i
         if list_length > 0
           @playlist.chop(list_length)
           print TTY::Cursor.clear_screen
@@ -598,20 +637,20 @@ module SmuleAuto
       # See comment
       when 'c'
         choices = %i[by_singer by_song]
-        ftype   = prompt.enum_select('Comment type?', choices)
+        ftype   = @ttyprompt.enum_select('Comment type?', choices)
         show_comment(ftype, sitem)
-        prompt.keypress('Press any key [:countdown]', timeout: 3)
+        @ttyprompt.keypress('Press any key [:countdown]', timeout: 3)
 
       when 'D'
-        if prompt.keypress('Are you sure? ') =~ /^y/i
+        if @ttyprompt.keypress('Are you sure? ') =~ /^y/i
           @content.delete_song(sitem)
           sitem = nil
-          prompt.keypress('Press any key [:countdown]', timeout: 3)
+          @ttyprompt.keypress('Press any key [:countdown]', timeout: 3)
           return [:next, true]
         end
 
       when 'f' # Set filter
-        param = prompt.ask('Filter value?', default: '')
+        param = @ttyprompt.ask('Filter value?', default: '')
         _menu_eval do
           @playlist.filter = Hash[param.split.map { |fs| fs.split('=') }]
         end
@@ -624,7 +663,7 @@ module SmuleAuto
         end
 
       when 'h'
-        unless (url = prompt.ask('URL:')).nil?
+        unless (url = @ttyprompt.ask('URL:')).nil?
           newsongs = SmuleSong.update_from_url(url, update: true)
           @playlist.insert(newsongs)
           return [:next, true]
@@ -632,14 +671,14 @@ module SmuleAuto
 
       when 'i'                            # Song Info
         puts @playlist.cur_info.to_yaml
-        prompt.keypress('Press any key to continue ...')
+        @ttyprompt.keypress('Press any key to continue ...')
 
       when 'l'                            # List playlist
         offset      = 10
         toplay_list = @playlist.toplay_list
         while offset < toplay_list.size
           _list_show(curset: toplay_list, start: offset)
-          key = prompt.keypress('Press any key to continue ...')
+          key = @ttyprompt.keypress('Press any key to continue ...')
           break if key == 'q'
 
           offset += 10
@@ -647,21 +686,25 @@ module SmuleAuto
         print TTY::Cursor.clear_screen
 
       when 'L'
-        play_length = prompt.ask('Max Play Length: ').to_i
+        play_length = @ttyprompt.ask('Max Play Length: ').to_i
         @roptions[:play_length] = play_length if play_length >= 3
 
       # Open local file in Music
       when 'M'
         sfile = SmuleSong.new(sitem).ssfile
-        Plog.info("open -g '#{sfile}'")
-        system("open -g '#{sfile}'")
+        if test(?s, sfile)
+          Plog.info("open -g '#{sfile}'")
+          system("open -g '#{sfile}'")
+        else
+          Plog.error("#{sfile} not found to play")
+        end
 
       when /[>n]/ # Play next song
         @playlist.next_song(increment: 0)
         return [:next, true]
 
       when 'N'                            # Next n songs
-        offset = key == 'N' ? prompt.ask('Next track offset?').to_i : 0
+        offset = key == 'N' ? @ttyprompt.ask('Next track offset?').to_i : 0
         Plog.info("Skip #{offset} songs")
         @playlist.next_song(increment: offset)
         return [:next, true]
@@ -676,18 +719,19 @@ module SmuleAuto
         @playlist.next_song(increment: -2, nextinc: -1)
         return [:next, true]
       when /p/i                           # List history
-        offset = key == 'P' ? prompt.ask('Prev track offset?').to_i : 0
+        offset = key == 'P' ? @ttyprompt.ask('Prev track offset?').to_i : 0
         _list_show(curset: @playlist.done_list.reverse, start: offset.to_i)
-        prompt.keypress('Press any key [:countdown]', timeout: 3)
+        @ttyprompt.keypress('Press any key [:countdown]', timeout: 3)
         print TTY::Cursor.clear_screen
       when 'R' # Reload script
         reload_app
-        prompt.keypress('Press any key [:countdown]', timeout: 3)
+        @spage.set_login_mode
+        @ttyprompt.keypress('Press any key [:countdown]', timeout: 3)
       when 's' # Sort current list
         choices = %w[random play love star date title
                      play.d love.d star.d date.d title.d]
         # TBD what if I don't select anything
-        @playlist.order = prompt.enum_select('Order?', choices)
+        @playlist.order = @ttyprompt.enum_select('Order?', choices)
       when 'S'
         _menu_eval do
           perfset          = @sapi.get_performances(@user, limit: 500, days: 3)
@@ -697,17 +741,17 @@ module SmuleAuto
           newset += newset2
           updset += updset2
           @playlist.insert(newset, newonly: true) unless newset.empty?
-          prompt.keypress("#{newset.size} added / #{updset.size} songs updated [:countdown]",
+          @ttyprompt.keypress("#{newset.size} added / #{updset.size} songs updated [:countdown]",
                           timeout: 3)
         end
       when 't' # Set tag
-        unless (tag = prompt.ask('Tag value ?')).nil?
+        unless (tag = @ttyprompt.ask('Tag value ?')).nil?
           @content.add_tag(sitem, tag)
         end
       when 'T' # Test - when tags start changing
         choices = %w[quit auto_play_off comment like play menu favorite]
         loop do
-          case prompt.enum_select('Test mode', choices)
+          case @ttyprompt.enum_select('Test mode', choices)
           #when 'auto_play_off'
             #@spage.autoplay_off
           when 'comment'
@@ -723,16 +767,16 @@ module SmuleAuto
           else
             break
           end
-          prompt.keypress('[ME] Press any key to continue ...')
+          @ttyprompt.keypress('[ME] Press any key to continue ...')
         end
       when 'x'                            # Quit
         return [:quit, true]
       when 'W'
         listen_for_download(enable: true)
-        prompt.keypress('Start watching [:countdown]', timeout: 3)
+        @ttyprompt.keypress('Start watching [:countdown]', timeout: 3)
       when 'w'
         listen_for_download(enable: false)
-        prompt.keypress('Stop watching [:countdown]', timeout: 3)
+        @ttyprompt.keypress('Stop watching [:countdown]', timeout: 3)
       when 'Z'                            # Debug
         Plog.level = 0
         require 'byebug'

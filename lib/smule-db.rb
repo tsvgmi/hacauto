@@ -63,8 +63,9 @@ module SmuleAuto
         Object.const_set model, klass
       end
 
-      @all_content = @db[:performances].where(deleted: nil).or(deleted: 0)
-      @content     = @all_content.where(Sequel.lit('record_by like ?',
+      @all_content = @db[:performances]
+      @act_content = @db[:performances].where(deleted: nil).or(deleted: 0)
+      @content     = @act_content.where(Sequel.lit('record_by like ?',
                                                    "%#{user}%"))
       @singers     = @db[:singers]
       @songtags    = @db[:song_tags]
@@ -100,9 +101,12 @@ module SmuleAuto
         ldate, edate = edate, ldate if ldate > edate
       end
       case ftype
+      when :deleted
+        newset = @all_content.where(deleted: true)
+        Plog.dump_info(newset:newset)
       when :query
         begin
-          newset = @content.where(Sequel.lit(value))
+          newset = @content.where(sid: File.basename(value))
         rescue StandardError => e
           Plog.dump_error(e: e, value: value, trace: e.backtrace)
           newset = []
@@ -180,7 +184,8 @@ module SmuleAuto
       block.each do |r|
         r[:updated_at] = now
         r[:isfav]      = isfav if isfav
-        if @all_content.where(sid: r[:sid]).first
+        Plog.dump_info(r:r)
+        if @content.where(sid: r[:sid]).first
           updset = {
             listens:   r[:listens],
             loves:     r[:loves],
@@ -193,12 +198,16 @@ module SmuleAuto
           updset[:oldfav]    = true if updset[:isfav]
           updset[:latlong]   = r[:latlong] if r[:latlong]
           updset[:latlong_2] = r[:latlong_2] if r[:latlong_2]
-          @all_content.where(sid: r[:sid]).update(updset)
+          @content.where(sid: r[:sid]).update(updset)
           updsets << updset
         else
-          r.delete(:lyrics)
-          @all_content.insert(r)
-          newsets << r
+          begin
+            r.delete(:lyrics)
+            @content.insert(r)
+            newsets << r
+          rescue => errmsg
+            p errmsg
+          end
         end
       end
       [newsets, updsets]
@@ -217,11 +226,15 @@ module SmuleAuto
         allset[k][:name]       = e[:name]
         allset[k][:avatar]     = e[:avatar]
       end
+      fn_accounts = followings.map {|r| r[:account_id]}
+      fr_accounts = followers.map  {|r| r[:account_id]}
+
       followings.each do |e|
         Plog.dump(name: e[:name])
         k = e[:account_id]
         allset[k] ||= e
         allset[k][:following]  = true
+        allset[k][:follower]   = nil unless fr_accounts.include?(k)
         allset[k][:updated_at] = now
         allset[k][:name]       = e[:name]
         allset[k][:avatar]     = e[:avatar]
@@ -230,6 +243,7 @@ module SmuleAuto
         Plog.dump(name: e[:name])
         k = e[:account_id]
         allset[k] ||= e
+        allset[k][:following]  = nil unless fn_accounts.include?(k)
         allset[k][:follower]   = true
         allset[k][:updated_at] = now
         allset[k][:name]       = e[:name]

@@ -55,25 +55,47 @@ module SmuleAuto
 
   # Docs for SmulePage
   class SmulePage < SelPage
-    LOCATORS_3 = {
-      sc_auto_play_off:   ['div.sc-dsQDmV.bWqwJs',    0],  # Fixed
-      sc_comment_close:   ['div.sc-ktCSKO.cCMlaG',    0],  # Fixed
-      sc_comment_open:    ['div.sc-hKdnnL.htUJRn',    2],  # Fixed
-      sc_play_toggle:     ['div.sc-eIWpXs.vJJdI svg path', 0], # Fixed
-      sc_song_menu:       ['button.sc-iLIByi.cGEGEQ', 0],  # Fixed
-      sc_heart:           ['div.sc-hTtIkV.hlDXCe',    0],  # Fixed
+    LOCATORS_LOGIN = {
+      sc_auto_play_off:   ['div.sc-cZwWEu.eHqoSI',    0],        # Fixed
+      sc_comment_close:   ['div.sc-gYMRRK.kLCzSd',    0],        # Fixed
+      sc_comment_open:    ['div.sc-fSUSjI.bwBiXU',    2],        # Fixed
+      sc_play_toggle:     ['div.sc-ihNHHr.dEHEBx svg path', 0],  # Fixed
+      sc_song_menu:       ['button.sc-jonzHS.bypLNA', 0],        # Fixed
+      sc_heart:           ['div.sc-fSUSjI.bwBiXU',    0],         # Fixed
 
-      sc_favorite_toggle: ['li.sc-jonzHS.bdJJbG'],         # Fixed
-      sc_comment_text:    ['div.sc-czGAKf.dtPylx'],        # Fixed
-      sc_play_time:       ['span.sc-fFtkDt.ejlqtK'],       # Fixed
-      sc_play_continue:   ['span.sc-gTgzIj.jLdwwx', 1], 
-      sc_song_menu_text:  ['span.sc-eyCGVO.daUoSx'],       # Fixed
-      sc_song_note:       ['span.sc-laRPJI.jDaPvs'],       # 
-      sc_loves:           ['button.sc-cHPgQl.hDTEGo', 0],   # Fixed
+      sc_favorite_toggle: ['li.sc-cSFexR.iTOAKh'],               # Fixed
+      sc_comment_text:    ['div.sc-hhFzXm.iIpzDu'],              # Fixed
+      sc_play_time:       ['span.sc-dZeWys.epBFZD'],             # Fixed
+      sc_song_menu_text:  ['span.sc-kDDrLX.XrXfW'],              # Fixed
+      sc_song_note:       ['span.sc-kDDrLX.bnygEQ'],             # Fixed
+      sc_loves:           ['button.sc-KfMfS.iwVDkI', 0],         # Fixed
     }.freeze
 
+    LOCATORS_NO_LOGIN = {
+      sc_auto_play_off:   ['div.sc-dsQDmV.bWqwJs',    0],  
+      sc_comment_close:   ['div.sc-cHPgQl.fESAuQ',    0],  
+      sc_comment_open:    ['div.sc-kItwNn.jxFzRh',    2],  
+      sc_play_toggle:     ['div.sc-chKnlQ.YACrj svg path', 0], 
+      sc_song_menu:       ['button.sc-iLIByi.cGEGEQ', 0],  
+
+      sc_comment_text:    ['div.sc-bgrGEg.hcmHVx'],        
+      sc_play_time:       ['span.sc-kGhOqx.kIQRxr'],       
+      sc_song_menu_text:  ['span.sc-eyCGVO.daUoSx'],       
+      sc_song_note:       ['span.sc-laRPJI.jDaPvs'],       # 
+    }.freeze
+
+
+    def initialize(sdriver)
+      set_login_mode(true)
+      super
+    end
+
+    def set_login_mode(islogin=true)
+      @locators = islogin ? LOCATORS_LOGIN : LOCATORS_NO_LOGIN
+    end
+
     def click_smule_page(elem, delay: 2)
-      if (elem = LOCATORS_3[elem]).nil?
+      if (elem = @locators[elem]).nil?
         Plog.error "#{elem} not defined in Locators"
         return false
       end
@@ -88,7 +110,7 @@ module SmuleAuto
     def toggle_song_favorite(fav: true)
       click_smule_page(:sc_song_menu, delay: 1)
 
-      locator = LOCATORS_3[:sc_favorite_toggle].first
+      locator = @locators[:sc_favorite_toggle].first
       cval = (css("#{locator} svg path")[0] || {})[:fill]
       return false unless cval
 
@@ -109,7 +131,7 @@ module SmuleAuto
     def add_any_song_tag(user, sinfo=nil, _options={})
       return unless sinfo
 
-      locator = LOCATORS_3[:sc_loves][0]
+      locator = @locators[:sc_loves][0]
       page.css(locator).each do |entry|
         case entry.text
         when /love/
@@ -168,7 +190,7 @@ module SmuleAuto
 
       click_smule_page(:sc_song_menu)
 
-      locator = LOCATORS_3[:sc_song_menu_text][0]
+      locator = @locators[:sc_song_menu_text][0]
       if page.css(locator).text !~ /Edit performance/
         find_element(:xpath, '//html').click
         return false
@@ -185,7 +207,7 @@ module SmuleAuto
 
     def like_song(href=nil)
       goto(href, 3) if href
-      elem = LOCATORS_3[:sc_heart]
+      elem = @locators[:sc_heart]
       raise "#{elem} not defined in Locators" unless elem
 
       fill = (css("#{elem[0]} svg path")[0] || {})[:fill]
@@ -202,7 +224,7 @@ module SmuleAuto
     def _toggle_play(doplay: true, href: nil)
       Plog.debug("Think play = #{doplay}")
 
-      play_locator = LOCATORS_3[:sc_play_time][0]
+      play_locator = @locators[:sc_play_time][0]
       click_smule_page(:sc_play_toggle, delay: 0)
       if doplay
         if css(play_locator).size == 2
@@ -211,9 +233,11 @@ module SmuleAuto
             endtime = css(play_locator)[1]
             if endtime && (endtime.text != '00:00')
               if href && (sleep_round > 5)
-                click_smule_page(:sc_play_continue, delay: 0)
-                click_smule_page(:sc_play_continue, delay: 0)
+                sdriver.navigate.refresh
               end
+              break
+            elsif href && (sleep_round > 30)
+              sdriver.navigate.refresh
               break
             end
             sleep 1
@@ -247,9 +271,9 @@ module SmuleAuto
       limit = 5
       paths = nil
 
-      Plog.dump_info(doplay:doplay)
+      Plog.dump(doplay:doplay)
       while limit > 0
-        paths = css(LOCATORS_3[:sc_play_toggle].first).size
+        paths = css(@locators[:sc_play_toggle].first).size
         break if paths > 0
 
         click_smule_page(:sc_play_time, delay: 1)
@@ -271,7 +295,7 @@ module SmuleAuto
     def comment_from_page
       click_smule_page(:sc_comment_open, delay: 0.5)
       res = []
-      css(LOCATORS_3[:sc_comment_text].first).reverse.each do |acmt|
+      css(@locators[:sc_comment_text].first).reverse.each do |acmt|
         comment = acmt.text.split
         user = comment[0]
         msg  = (comment[1..] || []).join(' ')
@@ -286,7 +310,7 @@ module SmuleAuto
     end
 
     def song_note
-      locator = LOCATORS_3[:sc_song_note].first
+      locator = @locators[:sc_song_note].first
       if css(locator).empty?
         Plog.error("#{locator} not found (song note)")
         ''
@@ -554,14 +578,15 @@ module SmuleAuto
     end
 
     def play(spage, to_play: true)
-      href = @info[:href].sub(%r{/ensembles$}, '')
+      href    = @info[:href].sub(%r{/ensembles$}, '')
       spinner = TTY::Spinner.new('[:spinner] Loading ...', format: :pulse_2)
       spinner.auto_spin
 
       count = 0
       loop do
         spage.goto(href)
-        if spage.css('header').text =~ /Recording (Deleted|Disabled)/o
+        header = spage.css('header').text
+        if header =~ /Recording Deleted|Recording Disabled|Right tune, wrong note/o
           Plog.info('Song is gone')
           spinner.stop('Done!')
           return :deleted

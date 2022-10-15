@@ -1119,8 +1119,10 @@ class HACAuto < Thor
   desc 'youtube_dl url', 'Download MP3 file from Youtube URL'
   option :odir,      type: :string, desc: 'Directory to save file to'
   option :open,      type: :boolean, desc: 'Open file after download (play)'
+  option :rate,      type: :string,  desc: 'Limit rate'
   option :split,     type: :boolean
   option :transpose, type: :numeric, desc: 'Transpose by +- steps'
+  option :video,     type: :boolean, desc: 'Download video rather than mp3'
   long_desc <<~LONGDESC
     Download mp3 from youtube.  Optionally transpose, and/or split into
     multiple mp3 files
@@ -1131,14 +1133,19 @@ class HACAuto < Thor
     moptions = _get_options
     tmpf     = Tempfile.new('youtube')
     ffmt     = '%(title)s - %(artist)s.%(ext)s'
-    command  = "youtube-dl --get-filename -o '#{ffmt}' '#{url}'"
+    command  = "yt-dlp --get-filename -o '#{ffmt}' '#{url}'"
     basename = `set -x; #{command}`.chomp.split('.').first
 
-    command = "youtube-dl --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail -o '#{ffmt}' '#{url}'"
-    system "set -x; #{command} | tee #{tmpf.path}"
+    if options[:video]
+      command = "yt-dlp --format mp4"
+    else
+      command = "yt-dlp --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail"
+    end
+    command += " --limit-rate #{moptions[:rate]}" if moptions[:rate]
+    system "set -x; #{command} -o '#{ffmt}' '#{url}'| tee #{tmpf.path}"
 
     mp3file = "#{basename}.mp3"
-    raise "Failed to download mp3 from #{url}" unless test('s', mp3file)
+    raise "Failed to download mp3 from #{url} to #{mp3file}" unless test('s', mp3file)
 
     # Set the download date
     system("touch \"#{mp3file}\"")
@@ -1168,6 +1175,8 @@ class HACAuto < Thor
 
     system("set -x; open -a 'Sonic Visualiser' \"#{mp3file}\"") if moptions[:open]
   end
+
+  map yt_dlp: :youtube_dl
 
   desc 'split_mp3(mp3file, cuefile)', 'Split mp3 file using cuefile'
   def split_mp3(mp3file, cuefile)

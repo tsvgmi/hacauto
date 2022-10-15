@@ -6,10 +6,9 @@
 # Created:	2002-06-23
 # $Id$
 #######################################################################
-PATH=$PATH:/sbin:/usr/sbin
-if [ -f ~/.rvm/scripts/rvm ]; then
-  unset RUBY RUBYOPT RUBYLIB
-  [ -f ~/.rvm/scripts/rvm ] && . ~/.rvm/scripts/rvm
+if [ -d ~/.rbenv ];  then
+  export PATH="$HOME/.rbenv/bin:$PATH"
+  eval "$(rbenv init - zsh)"
 fi
 
 #------------------------------------------------ Begin of script ---
@@ -18,7 +17,7 @@ fi
 
 oper=$1; shift
 case $oper in
-  youtube-dl)
+  youtube-dl|yt-dlp)
     ytopt=
     while getopts :t:o i; do
       case $i in
@@ -58,8 +57,12 @@ case $oper in
 
   smule-*)
     roper=$(echo ${oper#smule-} | tr '-' '_')
+    case $roper in
+      play)
+        rm -f smuleauto.log
+        ;;
+    esac
     set -x
-    #export RUBYOPT="--jit --jit-verbose=15 --jit-max-cache=1000 --jit-min-calls=50"
     exec smuleauto.rb $roper "$@"
     ;;
 
