@@ -1132,41 +1132,29 @@ class HACAuto < Thor
 
     moptions = _get_options
     tmpf     = Tempfile.new('youtube')
-    ffmt     = '%(title)s - %(artist)s.%(ext)s'
-    command  = "yt-dlp --get-filename -o '#{ffmt}' '#{url}'"
-    basename = `set -x; #{command}`.chomp.split('.').first
+    ffmt     = '%(title)s.%(ext)s'
+    odir     = options[:odir] || 'music'
 
     if options[:video]
-      command = "yt-dlp --format mp4"
+      command = "yt-dlp --format mp4 --no-check-certificate"
     else
-      command = "yt-dlp --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail"
+      command = "yt-dlp --extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail --no-check-certificate"
     end
+    command += " --playlist-items 1" if url =~ /index=\d+/
     command += " --limit-rate #{moptions[:rate]}" if moptions[:rate]
-    system "set -x; #{command} -o '#{ffmt}' '#{url}'| tee #{tmpf.path}"
+    system "set -x; #{command} -o '#{odir}/#{ffmt}' '#{url}'| tee #{tmpf.path}"
 
-    mp3file = "#{basename}.mp3"
-    raise "Failed to download mp3 from #{url} to #{mp3file}" unless test('s', mp3file)
-
-    # Set the download date
-    system("touch \"#{mp3file}\"")
-
-    newfile = mp3file.sub(/-[a-z0-9_]+.*mp3/, '.mp3')
-    newfile = "#{moptions[:odir]}/#{newfile}" if moptions[:odir]
-    if newfile != mp3file
-      File.rename(mp3file, newfile)
-      mp3file = newfile
-    end
+    mp3file = File.read(tmpf.path).split("\n")
+      .find { |l| l =~ /Destination: /}
+      .sub(/^.*Destination: /, '').sub(/\.webm$/, '.mp3')
+    return unless mp3file
 
     if moptions[:split]
-      fline = File.read(tmpf.path).split("\n")
-                  .find { |l| l.start_with?('[ffmpeg] Adding thumbnail') }
-      return unless fline
-
       # Split using silence detection.  See split_mp3 operation because you'd
       # wind up having to rename/adding metadata im this mode.  It could be
       # used. however. as a dry run to build the final cue file to be used
       # for split_mp3 operation
-      system "set -x; mp3splt -s \"#{mp3file}\""
+      system "set -x; mp3splt -d #{odir} -s \"#{mp3file}\""
     end
 
     unless (offset = moptions[:transpose]).nil?

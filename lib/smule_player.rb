@@ -190,16 +190,15 @@ module SmuleAuto
   class SmulePlayer
     STATE_FILE = 'splayer.state'
 
-    def initialize(user, tdir, options={})
+    def initialize(user, options={})
       @user      = user
       @options   = options
       @roptions  = {}
-      @content   = SmuleDB.instance(user, cdir: tdir)
-      @tdir      = tdir
+      @content   = SmuleDB.instance(user)
       @spage     = Scanner.new(user, @options).spage
       @sapi      = API.new(options)
       @wqueue    = Queue.new
-      @playlist  = PlayList.new(File.join(@tdir, STATE_FILE), @content)
+      @playlist  = PlayList.new(STATE_FILE, @content)
       @ttyprompt = TTY::Prompt.new
       # @logger   = options[:logger] || PLogger.new($stderr)
       at_exit do
@@ -230,7 +229,6 @@ module SmuleAuto
 
     def _list_show(curset:, curitem: nil, start: 0, limit: 10, clear: true)
       bar      = '*' * 10
-      songtags = @content.songtags
       table    = TTY::Table.new
       cursor   = TTY::Cursor
       print cursor.clear_screen if clear
@@ -242,16 +240,17 @@ module SmuleAuto
           print cursor.move_to(0, 0)
           system "imgcat -r 5 <#{lfile}"
         end
-        ptags = songtags[curitem[:stitle]] || ''
+        #ptags = (SongTag.first(name:curitem[:stitle])[:tags] || '')
+        ptags = Performance.get_tags(curitem).join(' ')
         isfav = curitem[:isfav] || curitem[:oldfav] ? 'F' : ' '
-        xtags = @content.db[:tags].where(sname: ptags.split(',')).map { |r| r[:description] }.join(', ')
+        xtags = Tag.where(sname: ptags.split(',')).map { |r| r[:description] }.join(', ')
         box   = TTY::Box.frame(top: 0, left: 15,
                                width: TTY::Screen.width - 20,
                                height: 5) do
           title = curitem[:title].strip.gsub(/\s+/o, ' ').gsub(/[\u3000\u00a0]/, '')
           <<~EOM
             [#{isfav}] #{title} - #{curitem[:created].strftime('%Y-%m-%d')} - #{bar[1..curitem[:stars].to_i]}
-                #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags[0..9]}
+                #{curitem[:record_by]} - #{curitem[:listens]} plays, #{curitem[:loves]} loves - #{ptags}
             #{curitem[:message]} - #{xtags}
           EOM
         end
@@ -261,7 +260,7 @@ module SmuleAuto
         witem = curset[i]
         next unless witem
 
-        ptags   = songtags[witem[:stitle]] || ''
+        ptags   = SongTag.first(name:witem[:stitle])[:tags] || ''
         marker  = ''
         marker += witem[:isfav] || witem[:oldfav] ? 'F' : ' '
         marker += witem[:deleted] ? 'D' : ' '
@@ -360,16 +359,16 @@ module SmuleAuto
     end
 
     def reload_app
-      # begin
+      begin
       [__FILE__, 'lib/smule*rb'].each do |ptn|
         Dir.glob(ptn).each do |script|
           Plog.info("Loading #{script}")
           eval "load '#{script}'", TOPLEVEL_BINDING, __FILE__, __LINE__
         end
       end
-      # rescue => e
-      # Plog.dump_error(e: e)
-      # end
+      rescue => e
+        Plog.dump_error(e: e)
+      end
     end
 
     def play_next
@@ -497,8 +496,9 @@ module SmuleAuto
 
       loop do
         # Update into db last one played
-        @content.update_song(sitem) if sitem
+        Performance.update_with_sinfo(sitem) if sitem
 
+        # Play the next song
         unless ninfo = play_next
           next
         end
@@ -664,7 +664,7 @@ module SmuleAuto
 
       when 'h'
         unless (url = @ttyprompt.ask('URL:')).nil?
-          newsongs = SmuleSong.update_from_url(url, update: true)
+          newsongs = [SmuleSong.update_from_url(url, update: true)]
           @playlist.insert(newsongs)
           return [:next, true]
         end

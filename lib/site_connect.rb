@@ -108,8 +108,7 @@ class SDriver
         'browser.helperApps.neverAsk.saveToDisk' => 'audio/m4a',
       }
     )
-    @driver = Selenium::WebDriver.for(browser, desired_capabilities: capabilities,
-                                      options: foptions)
+    @driver = Selenium::WebDriver.for(browser)
     @driver.navigate.to(@url)
     sleep(1)
   end

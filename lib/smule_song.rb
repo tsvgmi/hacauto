@@ -157,10 +157,7 @@ module SmuleAuto
          (!sinfo[:message] || !sinfo[:message].include?('#thvduets'))
         tagset << '#thvduets'
       end
-      dbtags = ((SongTag.first(name: sinfo[:stitle]) || {})[:tags] || '')
-               .split(',')
-      smtags = Tag.where(sname: dbtags).map { |r| r[:lname] }.compact
-      tagset += smtags
+      tagset += Performance.get_tags(sinfo)
 
       add_song_tag(tagset, sinfo)
       # toggle_play(doplay: true)
@@ -349,9 +346,9 @@ module SmuleAuto
       end
 
       def update_from_url(url, options)
-        sid   = File.basename(url)
+        sid   = File.basename(url.sub(/\/ensembles$/o, ''))
         href  = url.sub(%r{^https://www.smule.com}, '')
-        sinfo = Performance.first(sid: sid) || Performance.new(sid: sid, href: href)
+        sinfo = Performance.new(sid: sid, href: href)
         song  = SmuleSong.new(sinfo, options)
         if url =~ /ensembles$/
           result = song.ensemble_asset_from_page
@@ -368,14 +365,7 @@ module SmuleAuto
 
         if options[:update]
           result.each do |sdata|
-            sdata.delete(:lyrics)
-            Plog.dump_info(title: sdata[:title], record_by: sdata[:record_by])
-            sinfo = Performance.first(sid: sdata[:sid]) ||
-                    Performance.new(sid: sdata[:sid])
-            Plog.dump_info(data: sdata[:href], info: sinfo[:href],
-                           sid: sinfo[:sid])
-            sinfo.update(sdata)
-            sinfo.save
+            Performance.update_with_sinfo(sdata)
           end
         end
         result
@@ -458,18 +448,21 @@ module SmuleAuto
       @info[key] = value
     end
 
-    def _extract_info(perf)
+    def _extract_main_info(perf)
+      latlong   = [perf.dig(*%i[owner price]), perf.dig(*%i[owner discount])].join(',')
+      latlong_2 = nil
+      if perf[:duet]
+        latlong_2 = [perf.dig(*%i[duet price]), perf.dig(*%i[duet discount])].join(',')
+      end
       lyrics = nil
       if perf[:lyrics]
-        lyrics = JSON.parse(perf[:lyrics], symbolize_names: true)
-                     .map { |line| line.map { |w| w[:text] }.join }.join("\n")
+        lyrics = JSON.parse(perf[:lyrics])
+                     .map{|line| line.map{|r| r['text']}.join(' ')}.join("\n")
       end
 
-      record_by_ids = ([perf[:owner][:account_id]] +
-                        perf[:other_performers].map { |r| r[:account_id] })
-                      .join(',')
-
-      output = {
+      record_by_ids = [perf.dig(:owner, :account_id), perf.dig(:duet, :account_id)].compact.join(',')
+      record_by     = [perf.dig(:owner, :handle), perf.dig(:duet, :handle)].compact.join(',')
+      {
         sid:           perf[:key],
         title:         perf[:title],
         stitle:        to_search_str(perf[:title]),
@@ -478,25 +471,17 @@ module SmuleAuto
         psecs:         perf[:song_length],
         created:       Time.parse(perf[:created_at]),
         avatar:        perf[:cover_url],
-        orig_city:     (perf[:orig_track_city] || {}).values.join(', '),
         listens:       perf[:stats][:total_listens],
         loves:         perf[:stats][:total_loves],
         gifts:         perf[:stats][:total_gifts],
-        record_by:     perf[:performed_by_url].sub(%r{^/}, ''),
+        record_by:     record_by,
         record_by_ids: record_by_ids,
+        orig_city:     (perf.dig(:duet, :city) || {}).values.join(', '),
         song_info_url: perf[:song_info_url],
+        latlong:       latlong.empty? ? nil : latlong,
+        latlong_2:     latlong_2.empty? ? nil : latlong_2,
         lyrics:        lyrics,
       }
-      if perf[:child_count] <= 0
-        operf = perf[:other_performers][0]
-        if operf
-          output.update(
-            # other_city:  operf ? (operf[:city] || {}).values.join(', ') : nil,
-            record_by: [perf[:performed_by], operf[:handle]].join(',')
-          )
-        end
-      end
-      output
     end
 
     def ensemble_asset_from_page
@@ -507,14 +492,18 @@ module SmuleAuto
       outputs   = []
       begin
         res = JSON.parse(asset_str, symbolize_names: true) || {}
-        main_out = _extract_info(res[:recording])
+        File.open('ensembles.yml', 'w') do |fod|
+          fod.puts res.to_yaml
+        end
+        main_out = _extract_main_info(res[:recording])
         outputs << main_out
         res[:performances][:list].each do |jinfo|
-          collab_out = _extract_info(jinfo).update(
+          collab_out = _extract_main_info(jinfo).update(
             psecs:         main_out[:psecs],
             song_info_url: main_out[:song_info_url],
             orig_city:     main_out[:orig_city],
-            lyrics:        main_out[:lyrics]
+            lyrics:        main_out[:lyrics],
+            parent_sid:    @info[:sid],
           )
           outputs << collab_out
         end
@@ -523,6 +512,7 @@ module SmuleAuto
       end
       outputs
     end
+
 
     def asset_from_page
       olink = @surl.sub(%r{/ensembles$}, '')
@@ -537,44 +527,24 @@ module SmuleAuto
       end
 
       document = Nokogiri::HTML(source)
-      stream   = document.css('script')[1]
-      if !stream || stream.text.empty?
+      stream0  = document.css('script')[0]
+      if !stream0 || stream0.text.empty?
         Plog.dump_error(msg: 'No performance data found', olink: olink)
         return {}
       end
-
+      record2 = stream0.text.split("\n").grep(/Recording:/)[0]
+                       .sub(/^\s+Recording: {/, '{').sub(/,$/, '')
       begin
-        new_asset = JSON.parse(stream, symbolized: true)
+        perf = JSON.parse(record2, symbolize_names:true)[:performance]
+        fod  = File.open("record.yaml", 'w')
+        fod.puts perf.to_yaml
+        fod.close
+        Plog.info("Dump perf to record.yaml")
       rescue => errmsg
-        Plog.dump_error(stream:stream)
+        Plog.dump_error(errmsg:errmsg, record2:'')
         return {}
       end
-      Plog.dump(new_asset:new_asset.uniq, _ofmt:'Y')
-      website   = new_asset.find { |r| r['@type'] == 'Website' }
-      audio     = new_asset.find { |r| r['@type'] =~ /(Audio|Video)Object/ }
-      recording = new_asset.find { |r| r['@type'] == 'MusicRecording' }
-      minsec    = recording['duration'][2..-2].split(':')
-
-      descr     = (document.css('meta[name="description"]')[0] || {})['content']
-      record_by = nil
-      record_by = [Regexp.last_match(1), Regexp.last_match(2)].join(',') if descr =~ /recorded by (\S+) and (\S+)/
-      authors = audio['author']
-      authors = [authors] if authors.is_a?(Hash)
-      record_by_ids = authors.map { |r| File.basename(r['url']) }.join(',')
-      {
-        sid:           File.basename(website['url']).sub(%r{/ensembles}, ''),
-        title:         website['name'],
-        stitle:        to_search_str(website['name']),
-        href:          audio['url'].sub(%r{^https://www.smule.com}, ''),
-        message:       audio['description'],
-        psecs:         minsec[0].to_i * 60 + minsec[1].to_i,
-        created:       Time.parse(audio['datePublished']),
-        avatar:        audio['thumbnailUrl'],
-        listens:       audio['interactionCount'],
-        record_by:     record_by,
-        record_by_ids: record_by_ids,
-      }
-      # output.update(res: new_asset) if Plog.debug?
+      _extract_main_info(perf)
     end
 
     def play(spage, to_play: true)

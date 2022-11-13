@@ -24,6 +24,51 @@ module Sequel
   end
 end
 
+def init_db(dbfile)
+  @db = Sequel.sqlite(database: dbfile, timeout: 1_000_000)
+  Sequel::Model.plugin :insert_conflict
+  model_file = 'etc/' + File.basename(dbfile).sub(/\..*$/, '-model.yml')
+  if test(?f, model_file)
+    YAML.safe_load_file(model_file).each do |model, minfo|
+      klass = Class.new(Sequel::Model)
+      klass.dataset = @db[minfo['table'].to_sym]
+      Object.const_set model, klass
+    end
+  end
+end
+
+init_db(ENV['DBFILE'] || 'smule.db')
+
+class Performance
+  class << self
+    def update_with_sinfo(sinfo)
+      sinfo.delete(:lyrics)
+      if crec = first(sid:sinfo[:sid])
+        crec.update(sinfo)
+        crec.save
+      else
+        Performance.insert(sinfo)
+      end
+    rescue StandardError => e
+      Plog.error(e)
+    end
+
+    def get_tags(sinfo)
+      dbtags = ((SongTag.first(name: sinfo[:stitle]) || {})[:tags] || '')
+               .split(',')
+      smtags = Tag.where(sname: dbtags).map { |r| r[:lname] }.compact
+
+      if prec = Performance.first(sid:sinfo[:sid])
+        smtags += (prec.perf_tags || '').split(',')
+        if prec[:parent_sid] && (p2rec = Performance.first(sid:prec[:parent_sid]))
+          smtags += (p2rec.perf_tags || '').split(',')
+        end
+      end
+      smtags.sort.uniq
+    end
+  end
+end
+
 module SmuleAuto
   # Docs for HashableSet
   class HashableSet
@@ -44,47 +89,64 @@ module SmuleAuto
 
   # Docs for SmuleDB
   class SmuleDB
-    DBNAME = 'smule.db'
+    attr_reader :content
 
-    attr_reader :content, :singers, :db
-
-    def self.instance(user, cdir: '.')
-      @instance ||= SmuleDB.new(user, cdir: cdir)
+    def self.instance(user)
+      @instance ||= SmuleDB.new(user)
     end
 
-    def initialize(user, cdir: '.')
-      dbname = File.join(cdir, DBNAME)
-      @user  = user
-      @db    = Sequel.sqlite(database: dbname, timeout: 1_000_000)
-      Sequel::Model.plugin :insert_conflict
-      YAML.safe_load_file('etc/db_models.yml').each do |model, minfo|
-        klass = Class.new(Sequel::Model)
-        klass.dataset = @db[minfo['table'].to_sym]
-        Object.const_set model, klass
+    def initialize(user)
+      @user        = user
+      @content     = Performance.where(Sequel.lit('record_by like ?',
+                                              "%#{user}%"))
+      @act_content = @content.where(deleted: nil).or(deleted: 0)
+    end
+
+    def add_new_songs(block, isfav: false)
+      require 'time'
+
+      now   = Time.now
+
+      # Favlist must be reset if specified
+      @content.where(isfav:true).update(isfav:nil) if isfav
+
+      newsets = []
+      updsets = []
+      block.each do |r|
+        r[:updated_at] = now
+        r[:isfav]      = isfav if isfav
+        r.delete(:lyrics)
+        #Plog.dump_info(r:r)
+        if rec = Performance.where(sid: r[:sid]).first
+          updset = {
+            listens:    r[:listens],
+            loves:      r[:loves],
+            record_by:  r[:record_by], # In case user change login
+            isfav:      r[:isfav],
+            orig_city:  r[:orig_city],
+            avatar:     r[:avatar],
+            message:    r[:message],
+          }
+          updset[:parent_sid] = r[:parent_sid] if r[:parent_sid] != 'ensembles'
+          updset[:oldfav]     = true if updset[:isfav]
+          updset[:latlong]    = r[:latlong] if r[:latlong]
+          updset[:latlong_2]  = r[:latlong_2] if r[:latlong_2]
+          rec.update(updset)
+          rec.save
+        else
+          begin
+            Performance.insert(r)
+            newsets << r
+          rescue => errmsg
+            p errmsg
+          end
+        end
       end
-
-      @all_content = @db[:performances]
-      @act_content = @db[:performances].where(deleted: nil).or(deleted: 0)
-      @content     = @act_content.where(Sequel.lit('record_by like ?',
-                                                   "%#{user}%"))
-      @singers     = @db[:singers]
-      @songtags    = @db[:song_tags]
-    end
-
-    def songtags
-      HashableSet.new(@songtags, :name, vcol: :tags)
-    end
-
-    def update_song(sinfo)
-      sinfo.delete(:lyrics)
-      @content.insert_conflict(:replace).insert(sinfo)
-    rescue StandardError => e
-      Plog.error(e)
+      [newsets, updsets]
     end
 
     def delete_song(sinfo)
       sinfo[:deleted] = true
-      # @content.where(sid: sinfo[:sid]).delete
       @content.where(sid: sinfo[:sid]).update(deleted: true)
     end
 
@@ -102,11 +164,11 @@ module SmuleAuto
       end
       case ftype
       when :deleted
-        newset = @all_content.where(deleted: true)
+        newset = Performance.where(deleted: true)
         Plog.dump_info(newset:newset)
       when :query
         begin
-          newset = @content.where(sid: File.basename(value))
+          newset = @act_content.where(sid: File.basename(value))
         rescue StandardError => e
           Plog.dump_error(e: e, value: value, trace: e.backtrace)
           newset = []
@@ -114,42 +176,42 @@ module SmuleAuto
       when :url
         newset = @content.where(sid: File.basename(value))
       when :my_open
-        newset = @content.where(record_by: @user)
+        newset = @act_content.where(record_by: @user)
         newset = newset.where(Sequel.lit('message is null or message not like "%#thvopen%"')) if value
       when :my_duets
-        newset = @content.where(record_by: "#{@user},#{@user}")
+        newset = @act_content.where(record_by: "#{@user},#{@user}")
         newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"')) if value
       when :my_tags
-        newset = @content.where(Sequel.lit(%(message like "%#{value}%")))
+        newset = @act_content.where(Sequel.lit(%(message like "%#{value}%")))
       when :isfav
-        newset = @content.where(isfav: true)
+        newset = @act_content.where(isfav: true)
         if value
           newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
                          .where(Sequel.ilike(:record_by, "#{@user}%"))
         end
       when :favs
-        newset = @content.where(Sequel.lit('isfav=1 or oldfav=1'))
+        newset = @act_content.where(Sequel.lit('isfav=1 or oldfav=1'))
         if value
           newset = newset.where(Sequel.lit('message is null or message not like "%#thvduets%"'))
                          .where(Sequel.ilike(:record_by, "#{@user}%"))
         end
       when :record_by
-        newset = @content.where(Sequel.ilike(:record_by, "%#{value}%"))
+        newset = @act_content.where(Sequel.ilike(:record_by, "%#{value}%"))
       when :title
-        newset = @content.where(Sequel.ilike(:stitle, "%#{value}%"))
+        newset = @act_content.where(Sequel.ilike(:stitle, "%#{value}%"))
       when :recent
-        newset = @content.where(created: ldate..edate)
+        newset = @act_content.where(created: ldate..edate)
       when :sid
         newset = @content.where(sid: value.split(/[, ]+/))
       when :star
-        newset = @content.where { stars >= value.to_i }
+        newset = @act_content.where { stars >= value.to_i }
       when :untagged
-        newset = @content
+        newset = @act_content
                  .where(Sequel.lit('message is null or message not like "%#%"'))
                  .where(Sequel.ilike(:record_by, "#{@user}%"))
       else
         Plog.info("Unknown selection - #{ftype}")
-        newset = @content
+        newset = @act_content
       end
       Plog.dump_info(msg: "Selecting #{newset.size} songs",
                      ftype: ftype, value: value)
@@ -171,50 +233,8 @@ module SmuleAuto
       @content.where(sid: sids).all
     end
 
-    def add_new_songs(block, isfav: false)
-      require 'time'
-
-      now = Time.now
-
-      # Favlist must be reset if specified
-      @content.update(isfav: nil) if isfav
-
-      newsets = []
-      updsets = []
-      block.each do |r|
-        r[:updated_at] = now
-        r[:isfav]      = isfav if isfav
-        Plog.dump_info(r:r)
-        if @content.where(sid: r[:sid]).first
-          updset = {
-            listens:   r[:listens],
-            loves:     r[:loves],
-            record_by: r[:record_by], # In case user change login
-            isfav:     r[:isfav],
-            orig_city: r[:orig_city],
-            avatar:    r[:avatar],
-            message:   r[:message],
-          }
-          updset[:oldfav]    = true if updset[:isfav]
-          updset[:latlong]   = r[:latlong] if r[:latlong]
-          updset[:latlong_2] = r[:latlong_2] if r[:latlong_2]
-          @content.where(sid: r[:sid]).update(updset)
-          updsets << updset
-        else
-          begin
-            r.delete(:lyrics)
-            @content.insert(r)
-            newsets << r
-          rescue => errmsg
-            p errmsg
-          end
-        end
-      end
-      [newsets, updsets]
-    end
-
     def set_follows(followings, followers, others=nil)
-      allset = @singers.as_hash(:account_id)
+      allset = Singer.as_hash(:account_id)
       now    = Time.now
       (others || []).each do |e|
         Plog.dump(name: e[:name])
@@ -250,25 +270,45 @@ module SmuleAuto
         allset[k][:avatar]     = e[:avatar]
       end
       allset.each do |_k, v|
-        @singers.insert_conflict(:replace).insert(v)
+        Singer.insert_conflict(:replace).insert(v)
       end
       self
     end
 
+    def _pack_tag(addset, delset, dbval)
+      new_val = (((dbval || '').split(',') + addset).uniq - delset).join(',')
+    end
+
     def add_tag(song, tags)
-      songs   = song.is_a?(Array) ? song : [song]
-      stitles = songs.map { |r| r[:stitle] }
-      wset    = SongTag.where(name: stitles)
       addset, delset = tags.split(',').partition { |r| r[0] != '-' }
-      delset = delset.map { |r| r[1..] }
-      SongTag.where(name: stitles).each do |r|
-        new_val = ((r[:tags] || '').split(',') + addset).uniq
-        new_val -= delset
-        new_val = new_val.sort.uniq.join(',')
-        Plog.dump_info(new_val: new_val, r: r)
-        r.update(tags: new_val)
+      delset         = delset.map { |r| r[1..] }
+
+      sa_tags, ta_tags = addset.partition{|f| f.start_with?('#')}
+      sd_tags, td_tags = delset.partition{|f| f.start_with?('#')}
+
+      ccount  = 0
+      songs   = song.is_a?(Array) ? song : [song]
+
+      # Tag based on title4
+      if (ta_tags + td_tags).size > 0
+        stitles = songs.map { |r| r[:stitle] }
+        SongTag.where(name: stitles).each do |r|
+          new_val = _pack_tag(ta_tags, td_tags, r[:tags])
+          r.update(tags: new_val)
+          ccount += 1
+        end
       end
-      wset.count
+
+      # Tag based on song
+      if (sa_tags + sd_tags).size > 0
+        songs.each do |asong|
+          r = Performance.first(sid:asong[:sid])
+          new_val = _pack_tag(sa_tags, sd_tags, r[:perf_tags])
+          r.update(perf_tags: new_val)
+          ccount += 1
+        end
+      end
+      ccount
     end
 
     def top_partners(limit, options={})
@@ -363,7 +403,7 @@ module SmuleAuto
     def rank_singer(user)
       cli_wrap do
         tdir    = _tdir_check
-        content = SmuleDB.instance(user, cdir: tdir)
+        content = SmuleDB.instance(user)
         days    = options[:days]
         limit   = options[:limit] || 100
         rank    = content.top_partners(limit, options)

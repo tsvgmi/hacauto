@@ -104,7 +104,7 @@ module SmuleAuto
       end
       catch(:done) do
         loop do
-          ourl = "#{url}?offset=#{offset}"
+          ourl = "#{url}?order=created&offset=#{offset}"
           bar.log("url: #{ourl}") if bar && Plog.debug?
           output = curl(ourl)
           if output == 'Forbidden'
@@ -298,9 +298,8 @@ module SmuleAuto
     option :format, type: :string, default: 'json'
     def edit_songtag(user)
       cli_wrap do
-        tdir = _tdir_check
+        _tdir_check
         # Must call once to init db connection/model
-        SmuleDB.instance(user, cdir: tdir)
         records        = SongTag.all
                                 .sort_by { |r| r[:name] }
                                 .map(&:values)
@@ -318,9 +317,6 @@ module SmuleAuto
     option :format, type: :string, default: 'yaml'
     def edit_singer(user)
       cli_wrap do
-        tdir = _tdir_check
-        # Must call once to init db connection/model
-        SmuleDB.instance(user, cdir: tdir)
         records = Singer.all.sort_by { |r| r[:name] }.map(&:values)
         insset, delset = _edit_file(records, format: options[:format])
         Singer.where(id: delset.map { |r| r[:id] }).destroy unless delset.empty?
@@ -336,9 +332,6 @@ module SmuleAuto
     option :format, type: :string, default: 'json'
     def edit_tags(user)
       cli_wrap do
-        tdir = _tdir_check
-        # Must call once to init db connection/model
-        SmuleDB.instance(user, cdir: tdir)
         records = Tag.all.sort_by { |r| r[:sname] }.map(&:values)
         insset, delset = _edit_file(records, format: options[:format])
         Tag.where(id: delset.map { |r| r[:id] }).destroy unless delset.empty?
@@ -366,20 +359,18 @@ module SmuleAuto
         end
 
         SmuleSong.song_dir = sdir
-
-        ddir = options[:data_dir]
-        raise "Target dir #{ddir} not accessible to keep database in" unless test('d', ddir)
-
-        ddir
       end
 
-      def _collect_songs(user, content, coptions=nil)
+      def _collect_songs(user, coptions=nil)
         coptions ||= options
         limit   = coptions[:limit] || 100
         days    = coptions[:days]  || 7
         sapi    = API.new(options)
         perfset = sapi.get_performances(user, limit: limit, days: days)
-        content&.add_new_songs(perfset, isfav: false)
+        unless coptions[:nodb]
+          db = SmuleDB.instance(user)
+          db.add_new_songs(perfset, isfav: false)
+        end
         perfset
       end
 
@@ -428,13 +419,13 @@ module SmuleAuto
     def collect_songs(user)
       cli_wrap do
         _tdir_check
-        content  = SmuleDB.instance(user, cdir: options[:data_dir])
-        newsongs = _collect_songs(user, content)
-        addc, repc = content.add_new_songs(newsongs, isfav: false)
+        db         = SmuleDB.instance(user)
+        newsongs   = _collect_songs(user)
+        addc, repc = db.add_new_songs(newsongs, isfav: false)
         Plog.info("My joins: #{addc.size} added, #{repc.size} replaced")
         if options[:with_collabs]
           newsongs = SmuleSong.collect_collabs(user, options[:days])
-          addc, repc = content.add_new_songs(newsongs, isfav: false)
+          addc, repc = db.add_new_songs(newsongs, isfav: false)
           Plog.info("Other joins: #{addc.size} added, #{repc.size} replaced")
         end
         true
@@ -446,8 +437,7 @@ module SmuleAuto
     option :lookback, type: :numeric
     def check_collabs(user, *singers)
       cli_wrap do
-        tdir    = _tdir_check
-        content = SmuleDB.instance(user, cdir: tdir)
+        content = SmuleDB.instance(user)
         if options[:top]
           limit = options[:top] || 10
           singers.concat(content.top_partners(limit, days: 90).map { |r| r[0] })
@@ -455,7 +445,7 @@ module SmuleAuto
 
         collabs = []
         singers.each do |singer|
-          perfs = _collect_songs(singer, nil, days: 8)
+          perfs = _collect_songs(singer, nodb:true, days: 8)
           ucollabs = perfs.select { |r| r[:href] =~ /ensembles$/ }
           collabs.concat(ucollabs)
         end
@@ -472,10 +462,9 @@ module SmuleAuto
     desc 'scan_favs user', 'Scan list of favorites for user'
     def scan_favs(user)
       cli_wrap do
-        _tdir_check
-        content = SmuleDB.instance(user, cdir: options[:data_dir])
         favset  = API.new.get_favs(user)
-        content.add_new_songs(favset, isfav: true)
+        db      = SmuleDB.instance(user)
+        db.add_new_songs(favset, isfav: true)
         true
       end
     end
@@ -491,11 +480,11 @@ module SmuleAuto
     def unfavs_old(user, count=10)
       cli_wrap do
         _tdir_check
-        content  = SmuleDB.instance(user, cdir: options[:data_dir])
+        db       = SmuleDB.instance(user)
         favset   = API.new.get_favs(user)
         woptions = writable_options
-        result = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
-        content.add_new_songs(result, isfav: true)
+        result   = Scanner.new(user, woptions).unfavs_old(count.to_i, favset)
+        db.add_new_songs(result, isfav: true)
         true
       end
     end
@@ -503,14 +492,12 @@ module SmuleAuto
     desc 'scan_follows user', 'Scan the follower/following list'
     def scan_follows(user)
       cli_wrap do
-        _tdir_check
-        api = API.new
-
-        db      = SmuleDB.instance(user, cdir: options[:data_dir])
+        api     = API.new
+        db      = SmuleDB.instance(user)
         joiners = db.content.group(:record_by).all
-                    .map { |r| r[:record_by].sub(/(^#{user},|,#{user}$)/, '') }
-                    .uniq.sort
-        knowns   = db.singers.all.map { |r| r[:name] }.sort
+                             .map { |r| r[:record_by].sub(/(^#{user},|,#{user}$)/, '') }
+                             .uniq.sort
+        knowns   = Singer.all.map { |r| r[:name] }.sort
         unknowns = joiners - knowns
 
         unknown_set = api.get_users(unknowns, :unknown)
@@ -518,9 +505,17 @@ module SmuleAuto
         fset = %w[following followers].map do |agroup|
           api.get_user_group(user, agroup)
         end
-        SmuleDB.instance(user, cdir: options[:data_dir])
+        SmuleDB.instance(user)
                .set_follows(fset[0], fset[1], unknown_set)
         true
+      end
+    end
+
+    desc "get_user_group(user, agroup)", "get_user_group"
+    def get_user_group(user, agroup)
+      cli_wrap do
+        api = API.new
+        api.get_user_group(user, agroup).to_yaml
       end
     end
 
@@ -561,7 +556,7 @@ module SmuleAuto
     def open_on_itune(user, *filters)
       cli_wrap do
         _tdir_check
-        content = SmuleDB.instance(user, cdir: options[:data_dir])
+        content = SmuleDB.instance(user)
         content.each(filter: filters.join('/')) do |_sid, sinfo|
           song = SmuleSong.new(sinfo)
           sfile = song.ssfile
@@ -589,17 +584,15 @@ module SmuleAuto
     def play(user)
       cli_wrap do
         _tdir_check
-        SmulePlayer.new(user, options[:data_dir], options).play_all
+        SmulePlayer.new(user, options).play_all
       end
     end
 
     desc 'show_follows user [following|follower]', 'Show the activities for following list'
     def show_follows(user, mode='following')
       cli_wrap do
-        _tdir_check
-        content   = SmuleDB.instance(user, cdir: options[:data_dir])
-        following = content.singers.where(following: mode == 'following')
-                           .as_hash(:name)
+        following = Singer.where(following: mode == 'following')
+                          .as_hash(:name)
         bar = TTY::ProgressBar.new('Following [:bar] :percent',
                                    total: Performance.count)
         Performance.where(Sequel.lit('record_by like ?', "%#{user}%"))
@@ -642,11 +635,11 @@ module SmuleAuto
     def fix_content(user, fix_type, *data)
       cli_wrap do
         _tdir_check
-        content = SmuleDB.instance(user, cdir: options[:data_dir])
+        content = SmuleDB.instance(user)
         ccount  = 0
         case fix_type.to_sym
         when :mp3, :m4a
-          content.each(filter: data.join('/')) do |_sid, sinfo|
+          Performance.each(filter: data.join('/')) do |_sid, sinfo|
             asong = SmuleSong.new(sinfo)
             asong._run_command("open -g #{asong.ssfile}") if asong.update_mp4tag(excuser: user) == :updated
           end
@@ -670,18 +663,17 @@ module SmuleAuto
             Plog.dump_info(stitle: stitle, ostitle: sinfo[:stitle],
                            type: sinfo.class)
             sinfo[:stitle] = stitle
-            content.update_song(sinfo)
+            Performance.update_with_sinfo(sinfo)
             ccount += 1
           end
 
           ccount = 0
-          song_tags = content.db[:song_tags]
-          progress_set(song_tags.all, 'song_tags') do |sinfo|
+          progress_set(SongTag.all, 'song_tags') do |sinfo|
             stitle = to_search_str(sinfo[:name])
             if stitle != sinfo[:name]
               Plog.dump_info(stitle: stitle, ostitle: sinfo[:name])
               sinfo[:name] = stitle
-              song_tags.insert_conflict(:replace).insert(sinfo)
+              SongTag.insert_conflict(:replace).insert(sinfo)
               ccount += 1
             end
           end
@@ -714,7 +706,6 @@ module SmuleAuto
     def move_singer(user, old_name, new_name)
       cli_wrap do
         _tdir_check
-        SmuleDB.instance(user, cdir: options[:data_dir])
         name_chk = options[:audit] ? new_name : old_name
         Performance.where(Sequel.ilike(:record_by, "%#{user}%"))
                    .where(Sequel.ilike(:record_by, "%#{name_chk}%")).each do |v|
@@ -743,7 +734,6 @@ module SmuleAuto
     LONGDESC
     def song_info(url)
       cli_wrap do
-        SmuleDB.instance('THV_13', cdir: '.')
         SmuleSong.update_from_url(url, options).to_yaml
       end
     end
@@ -771,11 +761,9 @@ module SmuleAuto
     def to_open(user, *filter)
       cli_wrap do
         _tdir_check
-        SmuleDB.instance(user, cdir: options[:data_dir])
         topen = {}
-        myrecs = Performance
-                 .where(Sequel.lit('performances.record_by = ?', user))
-                 .map { |r| r[:stitle] }.uniq
+        myrecs = Performance.where(Sequel.lit('performances.record_by = ?', user))
+                            .map { |r| r[:stitle] }.uniq
         woptions = writable_options
         wset     = _set_search_filter(user, woptions, filter.join(' '))
                    .where(Sequel.lit('performances.record_by != ?', user))
@@ -806,7 +794,6 @@ module SmuleAuto
     def dump_comment(user, *filter)
       cli_wrap do
         _tdir_check
-        SmuleDB.instance(user, cdir: options[:data_dir])
         woptions = writable_options.update(with_comment: true)
         _set_search_filter(user, woptions, filter.join(' ')).all.each do |sinfo|
           comments = JSON.parse(sinfo[:comments])
@@ -837,7 +824,7 @@ module SmuleAuto
       cli_wrap do
         _tdir_check
         woptions = writable_options
-        content = SmuleDB.instance(user, cdir: woptions[:data_dir])
+        content = SmuleDB.instance(user)
         exclude = if (exclude = woptions[:exclude]).nil?
                     []
                   else
@@ -901,11 +888,9 @@ module SmuleAuto
     desc 'tag_favs(user)', 'tag_favs'
     def tag_favs(user)
       cli_wrap do
-        _tdir_check
-        content = SmuleDB.instance(user, cdir: options[:data_dir])
         filter  = "record_by like '#{user},%' and (isfav=1 or oldfav=1)"
         scanner = Scanner.new(user, options)
-        content.each(filter: filter) do |_sid, sinfo|
+        Performance.each(filter: filter) do |_sid, sinfo|
           next unless sinfo[:record_by].start_with?(user)
 
           href = sinfo[:href].sub(%r{/ensembles$}, '')
